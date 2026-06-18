@@ -1,0 +1,17 @@
+# ignore dependencies and build artifacts of the Next.js app
+heaven-stat-engine/node_modules/
+heaven-stat-engine/.next/
+heaven-stat-engine/out/
+heaven-stat-engine/build/
+heaven-stat-engine/.vercel/
+heaven-stat-engine/*.tsbuildinfo
+heaven-stat-engine/next-env.d.ts
+heaven-stat-engine/.env*
+heaven-stat-engine/npm-debug.log*
+heaven-stat-engine/yarn-debug.log*
+heaven-stat-engine/yarn-error.log*
+heaven-stat-engine/.pnpm-debug.log*
+
+# system files
+.DS_Store
+Thumbs.db
