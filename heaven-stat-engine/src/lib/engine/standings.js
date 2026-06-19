@@ -25,6 +25,7 @@ export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConf
         placementPts: 0, kills: 0, damage: 0,
         bonusPts: 0, sumOfPositions: 0,
         top3Finishes: 0,
+        top5Finishes: 0,
         lobbyData: [],
       };
     }
@@ -36,6 +37,7 @@ export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConf
     t.placementPts += getPlacementPoints(result.placement, placementPoints);
     if (result.placement === 1) t.wins++;
     if (result.placement <= 3) t.top3Finishes++;
+    if (result.placement <= 5) t.top5Finishes++;
     t.lobbyData.push(result);
   }
 
@@ -74,6 +76,7 @@ export function computeSeasonStandings(teamMatchResults, bonusPoints, scoringCon
         placementPts: 0, kills: 0, damage: 0,
         bonusPts: 0, sumOfPositions: 0,
         top3Finishes: 0,
+        top5Finishes: 0,
         activeDays: new Set(),
         perDay: {}, // day → { wins, matches, placePts, kills, totalPts, bonusPts }
       };
@@ -87,6 +90,7 @@ export function computeSeasonStandings(teamMatchResults, bonusPoints, scoringCon
     t.placementPts += ppts;
     if (result.placement === 1) t.wins++;
     if (result.placement <= 3) t.top3Finishes++;
+    if (result.placement <= 5) t.top5Finishes++;
     t.activeDays.add(result.day);
 
     // Per-day accumulation

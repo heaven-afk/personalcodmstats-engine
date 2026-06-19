@@ -37,8 +37,7 @@ export default function AnalyticsPage() {
   const [teams, setTeams] = useState([]);
   const [expandedTeam, setExpandedTeam] = useState(null);
 
-  const { structure = {}, scoring = {} } = tournament;
-  const totalDays = structure.totalDays || 6;
+  const { scoring = {} } = tournament;
 
   useEffect(() => {
     async function load() {
@@ -68,8 +67,8 @@ export default function AnalyticsPage() {
   }, [tournament.id]);
 
   const analyticsData = useMemo(
-    () => computeTeamAnalytics(teamResults, bonusPoints, scoring, totalDays),
-    [teamResults, bonusPoints, scoring, totalDays]
+    () => computeTeamAnalytics(teamResults, bonusPoints, scoring),
+    [teamResults, bonusPoints, scoring]
   );
 
   const teamMap = useMemo(() => {
@@ -327,7 +326,7 @@ export default function AnalyticsPage() {
                     {isExpanded && (
                       <tr key={`${row.teamId}-expanded`}>
                         <td colSpan={24} style={{ padding: 0, background: 'var(--bg-alt-row)' }}>
-                          <TeamDeepDive team={row} totalDays={totalDays} />
+                          <TeamDeepDive team={row} />
                         </td>
                       </tr>
                     )}
@@ -342,14 +341,14 @@ export default function AnalyticsPage() {
   );
 }
 
-function TeamDeepDive({ team, totalDays }) {
+function TeamDeepDive({ team }) {
   const a = team.analytics || {};
   const s = team.scores || {};
   const l = team.labels || {};
   const perDay = team.perDay || {};
 
-  const ppmChartData = Array.from({ length: totalDays }, (_, i) => {
-    const d = i + 1;
+  const activeDays = Object.keys(perDay).map(Number).sort((a, b) => a - b);
+  const ppmChartData = activeDays.map((d) => {
     const pd = perDay[d] || {};
     return {
       day: `D${d}`,

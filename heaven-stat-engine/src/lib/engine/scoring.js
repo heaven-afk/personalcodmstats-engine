@@ -27,6 +27,7 @@ export function computeLobbyScore(result, scoringConfig) {
     totalPts: placementPts + killPts,
     isWin: result.placement === 1,
     isTop3: result.placement >= 1 && result.placement <= 3,
+    isTop5: result.placement >= 1 && result.placement <= 5,
   };
 }
 

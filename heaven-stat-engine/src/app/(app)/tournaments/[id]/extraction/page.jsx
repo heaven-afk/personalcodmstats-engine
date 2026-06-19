@@ -256,7 +256,7 @@ export default function ExtractionPage() {
       }
 
       case 'team-analytics': {
-        const analytics = computeTeamAnalytics(teamResults, bonusPoints, scoring, structure.totalDays);
+        const analytics = computeTeamAnalytics(teamResults, bonusPoints, scoring);
         const sliced = limit > 0 ? analytics.slice(0, limit) : analytics;
         const mapped = sliced.map(t => ({
           Rank: t.analyticsRank,

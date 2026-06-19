@@ -54,6 +54,21 @@ const DEFINITIONS = {
     measures: 'Reflects a team\'s ability to consistently secure high placements compared to the rest of the field.',
     interpretation: 'Higher dominance reflects consistent end-game control.'
   },
+  dpm: {
+    name: 'DPM (Damage Per Match)',
+    measures: 'Average damage dealt per match, reflects combat engagement alongside kills.',
+    interpretation: 'Higher values indicate greater damage contribution.'
+  },
+  top_5_finish_rate: {
+    name: 'Top 5 Finish Rate',
+    measures: 'Frequency of finishing inside the Top 5, a wider lens than Top 3.',
+    interpretation: 'Higher rate indicates consistent high placement.'
+  },
+  top_3_vs_5_spread: {
+    name: 'Top 3 vs 5 Spread',
+    measures: 'The gap between Top 3 and Top 5 finish rate; small spread means most strong finishes are already podium finishes, large spread means many finishes land just outside the podium.',
+    interpretation: 'Reflects how close a team gets to podium finishes.'
+  },
   conversion: {
     name: 'Conversion',
     measures: 'Measures a team\'s ability to turn strong opportunities into match victories.',
@@ -219,6 +234,46 @@ const LABELS = {
     measures: 'Conversion Label',
     interpretation: 'Strong performance converting good placements into wins.'
   },
+  'slayer': {
+    name: 'Slayer',
+    measures: 'Team/Player Identity',
+    interpretation: 'Stands out through raw fighting power.'
+  },
+  'survivalist': {
+    name: 'Survivalist',
+    measures: 'Team/Player Identity',
+    interpretation: 'Stands out through placement and positioning.'
+  },
+  'closer': {
+    name: 'Closer',
+    measures: 'Team/Player Identity',
+    interpretation: 'Stands out through conversion, turning strong positions into wins.'
+  },
+  'complete team': {
+    name: 'Complete Team',
+    measures: 'Team Identity',
+    interpretation: 'No single weak category, strong across all four.'
+  },
+  'complete player': {
+    name: 'Complete Player',
+    measures: 'Player Identity',
+    interpretation: 'No single weak category, strong across all four.'
+  },
+  'momentum team': {
+    name: 'Momentum Team',
+    measures: 'Team Identity',
+    interpretation: 'Defined by trajectory, Form stands out regardless of absolute level elsewhere.'
+  },
+  'momentum player': {
+    name: 'Momentum Player',
+    measures: 'Player Identity',
+    interpretation: 'Defined by trajectory, Form stands out regardless of absolute level elsewhere.'
+  },
+  'dark horse': {
+    name: 'Dark Horse',
+    measures: 'Team/Player Identity',
+    interpretation: 'Below-average overall rating but improving sharply.'
+  },
 
   // Form Labels
   'red hot': {
@@ -311,7 +366,17 @@ const ALIASES = {
   'consistency': 'consistency_score',
   'most consistent': 'consistency_score',
   
-  'playstyle': 'playstyle'
+  'playstyle': 'playstyle',
+  
+  'dpm': 'dpm',
+  'damage per match': 'dpm',
+  'avg dpm': 'dpm',
+  'top 5 finish rate': 'top_5_finish_rate',
+  'top 5 rate %': 'top_5_finish_rate',
+  'top5 rate': 'top_5_finish_rate',
+  'top 5 rate': 'top_5_finish_rate',
+  'top3vs5spread': 'top_3_vs_5_spread',
+  'top 3 vs 5 spread': 'top_3_vs_5_spread'
 };
 
 export function getMetricDefinition(key) {
