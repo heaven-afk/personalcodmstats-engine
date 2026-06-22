@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "teamMatchResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "day", "order": "ASCENDING" },
+        { "fieldPath": "lobby", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "playerMatchResults",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "day", "order": "ASCENDING" },
+        { "fieldPath": "lobby", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bonusPoints",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "day", "order": "ASCENDING" },
+        { "fieldPath": "teamId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

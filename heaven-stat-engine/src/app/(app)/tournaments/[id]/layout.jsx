@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, createContext, useContext } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { getTournament } from '@/lib/firestore/tournaments';
 import TournamentSubNav from '@/components/layout/TournamentSubNav';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -15,6 +15,7 @@ export function useTournament() {
 
 export default function TournamentLayout({ children }) {
   const { id } = useParams();
+  const router = useRouter();
   const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -27,8 +28,15 @@ export default function TournamentLayout({ children }) {
     refresh().finally(() => setLoading(false));
   }, [id]);
 
+  // Redirect away if tournament was deleted or doesn't exist
+  useEffect(() => {
+    if (!loading && !tournament) {
+      router.replace('/tournaments');
+    }
+  }, [loading, tournament]);
+
   if (loading) return <LoadingSpinner size="lg" />;
-  if (!tournament) return <div className="empty-state"><h3 className="empty-state-title">Tournament not found</h3></div>;
+  if (!tournament) return <LoadingSpinner size="lg" />; // Brief spinner while redirecting
 
   return (
     <div>

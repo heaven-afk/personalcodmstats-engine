@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getTeam, updateTeam } from '@/lib/firestore/registry';
@@ -8,7 +8,7 @@ import { getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
 import { computeTeamRanking } from '@/lib/engine/standings';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
-import { ChevronLeft, Trophy, Shield, Calendar, Star, TrendingUp } from 'lucide-react';
+import { ChevronLeft, Trophy, Shield, Star, Link2, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function TeamProfilePage() {
@@ -39,8 +39,7 @@ export default function TeamProfilePage() {
         }
         setTeam(t);
         setLogoUrlInput(t.logoUrl || '');
-        setLogoBase64(t.logo || '');
-        setLogoSourceType(t.logo ? 'upload' : t.logoUrl ? 'url' : 'upload');
+        setBannerUrlInput(t.bannerUrl || '');
 
         const allTourneys = await getTournaments();
 
@@ -118,36 +117,30 @@ export default function TeamProfilePage() {
     loadTeamProfile();
   }, [id, router]);
 
-  const [logoSourceType, setLogoSourceType] = useState('upload'); // 'upload' | 'url'
   const [logoUrlInput, setLogoUrlInput] = useState('');
-  const [logoBase64, setLogoBase64] = useState('');
-  const [updatingLogo, setUpdatingLogo] = useState(false);
+  const [bannerUrlInput, setBannerUrlInput] = useState('');
+  const [updatingImages, setUpdatingImages] = useState(false);
 
-  const handleLogoFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setLogoBase64(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSaveLogo = async () => {
-    setUpdatingLogo(true);
+  const handleSaveImages = async () => {
+    setUpdatingImages(true);
     try {
       const updates = {
-        logo: logoSourceType === 'upload' ? logoBase64 : '',
-        logoUrl: logoSourceType === 'url' ? logoUrlInput.trim() : ''
+        logoUrl: logoUrlInput.trim(),
+        bannerUrl: bannerUrlInput.trim(),
+        logo: '', // Clear old base64 logo so the logoUrl is prioritized globally
       };
       await updateTeam(id, updates);
-      setTeam(prev => ({ ...prev, ...updates }));
-      toast.success('Team logo updated successfully!');
+      setTeam(prev => ({ 
+        ...prev, 
+        logoUrl: updates.logoUrl,
+        bannerUrl: updates.bannerUrl,
+        logo: ''
+      }));
+      toast.success('Team images updated successfully!');
     } catch (err) {
-      toast.error('Failed to update team logo: ' + err.message);
+      toast.error('Failed to update team images: ' + err.message);
     } finally {
-      setUpdatingLogo(false);
+      setUpdatingImages(false);
     }
   };
 
@@ -220,85 +213,93 @@ export default function TeamProfilePage() {
             </div>
           </div>
 
-          {/* Team Logo Card */}
+          {/* Team Logo & Banner Card */}
           <div className="card">
             <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
-              <Shield size={18} className="text-gold" />
-              Team Logo
+              <ImageIcon size={18} className="text-gold" />
+              Team Images
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-              <div style={{
-                width: 80,
-                height: 80,
-                borderRadius: 10,
-                background: 'var(--bg-header)',
-                border: '2px solid var(--border-gold)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                flexShrink: 0
-              }}>
-                {team.logo || team.logoUrl ? (
-                  <img src={team.logo || team.logoUrl} alt="Team Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <Shield size={36} className="text-gold" />
-                )}
-              </div>
-              
-              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                  <button 
-                    type="button" 
-                    className={`btn btn-sm ${logoSourceType === 'upload' ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setLogoSourceType('upload')}
-                  >
-                    Upload File
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`btn btn-sm ${logoSourceType === 'url' ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setLogoSourceType('url')}
-                  >
-                    Logo URL
-                  </button>
+
+            {/* Logo */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Logo</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 64, height: 64, borderRadius: 10, flexShrink: 0,
+                  background: 'var(--bg-header)', border: '2px solid var(--border-gold)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                }}>
+                  {logoUrlInput || team.logo ? (
+                    <img src={logoUrlInput || team.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <Shield size={28} style={{ color: 'var(--gold)' }} />
+                  )}
                 </div>
-
-                {logoSourceType === 'upload' ? (
-                  <div className="form-field">
-                    <label className="form-label text-[10px]">Select Image File</label>
-                    <input 
-                      key="logo-file-input"
-                      type="file" 
-                      accept="image/*" 
-                      className="form-input" 
-                      onChange={handleLogoFileChange}
-                    />
-                  </div>
-                ) : (
-                  <div className="form-field">
-                    <label className="form-label text-[10px]">Enter Image URL</label>
-                    <input 
-                      key="logo-url-input"
-                      type="text" 
-                      className="form-input" 
-                      value={logoUrlInput || ''}
-                      onChange={(e) => setLogoUrlInput(e.target.value)}
-                      placeholder="https://example.com/logo.png"
-                    />
-                  </div>
-                )}
-
-                <button 
-                  type="button" 
-                  className="btn btn-primary btn-primary-full text-xs py-2"
-                  disabled={updatingLogo}
-                  onClick={handleSaveLogo}
-                >
-                  {updatingLogo ? 'Updating...' : 'Save Team Logo'}
-                </button>
+                <div style={{ flex: 1 }} className="form-field">
+                  <label className="form-label text-[10px] mb-1">Logo Image URL</label>
+                  <input
+                    type="text"
+                    className="form-input text-xs"
+                    style={{ padding: '6px 10px', height: 'auto' }}
+                    value={logoUrlInput}
+                    onChange={(e) => setLogoUrlInput(e.target.value)}
+                    placeholder="https://i.imgur.com/...png"
+                  />
+                </div>
               </div>
             </div>
+
+            {/* Banner */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Banner</div>
+              <div style={{
+                width: '100%', height: 85, borderRadius: 8, overflow: 'hidden',
+                background: 'var(--bg-header)', border: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: 10, position: 'relative',
+              }}>
+                {bannerUrlInput ? (
+                  <img src={bannerUrlInput} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No banner set</span>
+                )}
+              </div>
+              <div className="form-field">
+                <label className="form-label text-[10px] mb-1">Banner Image URL</label>
+                <input
+                  type="text"
+                  className="form-input text-xs"
+                  style={{ padding: '6px 10px', height: 'auto' }}
+                  value={bannerUrlInput}
+                  onChange={(e) => setBannerUrlInput(e.target.value)}
+                  placeholder="https://i.imgur.com/...png"
+                />
+              </div>
+            </div>
+
+            {/* Guide Info Box */}
+            <div style={{
+              padding: '10px 12px',
+              background: 'rgba(212, 175, 55, 0.05)',
+              border: '1px dashed rgba(212, 175, 55, 0.25)',
+              borderRadius: '6px',
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              marginBottom: 16,
+              lineHeight: '1.4',
+            }}>
+              💡 <strong>Tip:</strong> Upload your logo and banner files to <a href="https://imgur.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'underline' }}>imgur.com</a> or another host, and paste the <strong>Direct Link</strong> (must end in .png, .jpg, or .webp) here.
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+              disabled={updatingImages || (logoUrlInput.trim() === (team.logoUrl || '') && bannerUrlInput.trim() === (team.bannerUrl || ''))}
+              onClick={handleSaveImages}
+            >
+              {updatingImages ? 'Saving Images...' : 'Save Team Images'}
+            </button>
           </div>
 
           {/* Career Stats */}

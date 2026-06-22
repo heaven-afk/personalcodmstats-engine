@@ -20,21 +20,33 @@ export default function TournamentsListPage() {
   // Delete confirmation state
   const [deletingId, setDeletingId] = useState(null);
   const [deletingName, setDeletingName] = useState('');
-  const [typedConfirmName, setTypedConfirmName] = useState('');
+  const [deleteChecked1, setDeleteChecked1] = useState(false);
+  const [deleteChecked2, setDeleteChecked2] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
+  const openDeleteModal = (id, name) => {
+    setDeletingId(id);
+    setDeletingName(name);
+    setDeleteChecked1(false);
+    setDeleteChecked2(false);
+  };
+
+  const closeDeleteModal = () => {
+    setDeletingId(null);
+    setDeleteChecked1(false);
+    setDeleteChecked2(false);
+  };
+
   const handleConfirmDelete = async () => {
-    if (typedConfirmName !== deletingName) {
-      toast.error('Tournament name does not match');
-      return;
-    }
+    if (!deleteChecked1 || !deleteChecked2) return;
     setConfirming(true);
     try {
       await deleteTournament(deletingId);
-      setTournaments(prev => prev.filter(t => t.id !== deletingId));
       toast.success('Tournament deleted successfully');
-      setDeletingId(null);
-      setTypedConfirmName('');
+      closeDeleteModal();
+      // Re-fetch from source of truth to guarantee UI reflects actual stored data
+      const updated = await getTournaments();
+      setTournaments(updated);
     } catch (err) {
       toast.error('Failed to delete tournament: ' + err.message);
     } finally {
@@ -108,10 +120,7 @@ export default function TournamentsListPage() {
             type="button"
             className="btn btn-ghost btn-sm"
             style={{ color: 'var(--danger)', padding: '5px 8px' }}
-            onClick={() => {
-              setDeletingId(t.id);
-              setDeletingName(t.name);
-            }}
+            onClick={() => openDeleteModal(t.id, t.name)}
             title="Delete Tournament"
           >
             <Trash2 size={14} />
@@ -183,38 +192,43 @@ export default function TournamentsListPage() {
       )}
       {/* Delete Confirmation Modal */}
       {deletingId && (
-        <Modal title="Delete Tournament" onClose={() => { setDeletingId(null); setTypedConfirmName(''); }}>
+        <Modal title="⚠ Delete Tournament" onClose={closeDeleteModal}>
           <div className="space-y-4">
             <p className="text-sm text-text-secondary">
-              Are you sure you want to delete this tournament? All match results, configurations, and player registrations associated with this tournament will be permanently deleted.
+              You are about to permanently delete <strong className="text-text-primary">{deletingName}</strong>.
+              All match results, configurations, registrations, bonuses, and stats will be gone forever.
             </p>
-            <div style={{ padding: '10px 14px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-              <p className="text-xs text-danger font-semibold">WARNING: This action is irreversible!</p>
-            </div>
-            <div className="form-field mt-3">
-              <label className="form-label text-[10px]">
-                Type <strong className="text-text-primary">{deletingName}</strong> to confirm:
+
+            {/* Checkboxes */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '14px 16px', background: 'rgba(239, 68, 68, 0.07)', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={deleteChecked1}
+                  onChange={e => setDeleteChecked1(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: 'var(--danger)', width: 16, height: 16, flexShrink: 0 }}
+                />
+                <span>I understand that all match results, standings, and player stats for this tournament will be <strong>permanently deleted</strong>.</span>
               </label>
-              <input
-                type="text"
-                className="form-input mt-1"
-                placeholder="Type tournament name here..."
-                value={typedConfirmName}
-                onChange={e => setTypedConfirmName(e.target.value)}
-              />
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={deleteChecked2}
+                  onChange={e => setDeleteChecked2(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: 'var(--danger)', width: 16, height: 16, flexShrink: 0 }}
+                />
+                <span>I understand this action is <strong>irreversible</strong> and cannot be undone.</span>
+              </label>
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-border mt-4">
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => { setDeletingId(null); setTypedConfirmName(''); }}
-              >
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={closeDeleteModal}>
                 Cancel
               </button>
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                disabled={typedConfirmName !== deletingName || confirming}
+                disabled={!deleteChecked1 || !deleteChecked2 || confirming}
                 onClick={handleConfirmDelete}
               >
                 {confirming ? 'Deleting...' : 'Permanently Delete'}

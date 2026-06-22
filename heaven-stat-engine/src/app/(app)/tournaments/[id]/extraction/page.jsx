@@ -266,7 +266,7 @@ export default function ExtractionPage() {
           Matches: t.matches,
           Kills: t.kills,
           'Total Pts': t.totalPts,
-          'Team Rating': t.scores?.TEAM_RATING || 0,
+          'Team Rating': t.scores?.FINAL_RATING || 0,
           PPM: t.analytics?.PPM || 0,
           KPM: t.analytics?.KPM || 0,
           'Kill %': t.analytics?.killPct || 0,

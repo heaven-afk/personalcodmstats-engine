@@ -14,7 +14,7 @@ import {
   CartesianGrid, Legend,
 } from 'recharts';
 
-function RatingBar({ label, value, type }) {
+function RatingBar({ label, value, displayValue, type }) {
   return (
     <div className="rating-bar-row">
       <span className="rating-bar-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -24,7 +24,7 @@ function RatingBar({ label, value, type }) {
       <div className="rating-bar-track">
         <div className={`rating-bar-fill ${type}`} style={{ width: `${Math.min(100, value || 0)}%` }} />
       </div>
-      <span className="rating-bar-val">{Math.round(value || 0)}</span>
+      <span className="rating-bar-val">{Math.round(displayValue ?? value ?? 0)}</span>
     </div>
   );
 }
@@ -89,7 +89,7 @@ export default function AnalyticsPage() {
   // Team rating chart data
   const ratingChartData = analyticsData.slice(0, 15).map((t) => ({
     name: t.teamName?.slice(0, 12) || t.teamId,
-    rating: t.scores?.TEAM_RATING || 0,
+    rating: t.scores?.FINAL_RATING || 0,
     power: t.scores?.POWER || 0,
     placement: t.scores?.PLACEMENT || 0,
     conversion: t.scores?.CONVERSION || 0,
@@ -151,7 +151,7 @@ export default function AnalyticsPage() {
           <BarChart data={ratingChartData} margin={{ top: 4, right: 16, bottom: 40, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
-            <YAxis tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[0, 100]} />
+            <YAxis tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[0, 1000]} />
             <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#F1F5F9' }} />
             <Legend wrapperStyle={{ color: '#94A3B8', fontSize: 12 }} />
             <Bar dataKey="rating" fill="#C9A84C" name="Team Rating" radius={[3, 3, 0, 0]} />
@@ -307,7 +307,7 @@ export default function AnalyticsPage() {
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{row.placementPts}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{row.kills}</td>
                       <td className="col-gold">{row.totalPts}</td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)' }}>{s.TEAM_RATING?.toFixed(1)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)' }}>{s.FINAL_RATING?.toFixed(1)}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.PPM}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.KPM}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.killPct}%</td>
@@ -393,7 +393,7 @@ function TeamDeepDive({ team }) {
           <RatingBar label="POWER" value={s.POWER} type="power" />
           <RatingBar label="PLACEMENT" value={s.PLACEMENT} type="placement" />
           <RatingBar label="CONVERSION" value={s.CONVERSION} type="conversion" />
-          <RatingBar label="TEAM RATING" value={s.TEAM_RATING} type="overall" />
+          <RatingBar label="TEAM RATING" value={s.TEAM_RATING} displayValue={s.FINAL_RATING} type="overall" />
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <PlaystyleBadge label={l.playstyle || '—'} />

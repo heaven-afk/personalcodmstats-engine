@@ -1,13 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getTournaments, deleteTournament } from '@/lib/firestore/tournaments';
+import { getTournaments } from '@/lib/firestore/tournaments';
 import { getPlayers } from '@/lib/firestore/registry';
 import { getTeams } from '@/lib/firestore/registry';
 import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import Modal from '@/components/ui/Modal';
-import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star, Trash2 } from 'lucide-react';
+import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function DashboardPage() {
@@ -21,37 +20,6 @@ export default function DashboardPage() {
   const [recentTourneys, setRecentTourneys] = useState([]);
   const [topPlayers, setTopPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Delete confirmation state
-  const [deletingId, setDeletingId] = useState(null);
-  const [deletingName, setDeletingName] = useState('');
-  const [typedConfirmName, setTypedConfirmName] = useState('');
-  const [confirming, setConfirming] = useState(false);
-
-  const handleConfirmDelete = async () => {
-    if (typedConfirmName !== deletingName) {
-      toast.error('Tournament name does not match');
-      return;
-    }
-    setConfirming(true);
-    try {
-      await deleteTournament(deletingId);
-      setActiveTourneys(prev => prev.filter(t => t.id !== deletingId));
-      setRecentTourneys(prev => prev.filter(t => t.id !== deletingId));
-      setStats(prev => ({
-        ...prev,
-        totalTournaments: Math.max(0, prev.totalTournaments - 1),
-        activeTournaments: Math.max(0, prev.activeTournaments - (activeTourneys.find(t => t.id === deletingId)?.status === 'active' ? 1 : 0))
-      }));
-      toast.success('Tournament deleted successfully');
-      setDeletingId(null);
-      setTypedConfirmName('');
-    } catch (err) {
-      toast.error('Failed to delete tournament: ' + err.message);
-    } finally {
-      setConfirming(false);
-    }
-  };
 
   useEffect(() => {
     async function loadDashboard() {
@@ -198,19 +166,6 @@ export default function DashboardPage() {
                             <span className="text-xs text-text-muted font-semibold tracking-wider uppercase">Season {tourney.season || '—'}</span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <StatusBadge status={tourney.status} />
-                              <button
-                                type="button"
-                                style={{ color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
-                                className="hover:text-danger transition"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  setDeletingId(tourney.id);
-                                  setDeletingName(tourney.name);
-                                }}
-                                title="Delete Tournament"
-                              >
-                                <Trash2 size={14} />
-                              </button>
                             </div>
                           </div>
                           <h3 className="text-md font-semibold text-text-primary line-clamp-1">{tourney.name}</h3>
@@ -328,48 +283,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-      {/* Delete Confirmation Modal */}
-      {deletingId && (
-        <Modal title="Delete Tournament" onClose={() => { setDeletingId(null); setTypedConfirmName(''); }}>
-          <div className="space-y-4">
-            <p className="text-sm text-text-secondary">
-              Are you sure you want to delete this tournament? All match results, configurations, and player registrations associated with this tournament will be permanently deleted.
-            </p>
-            <div style={{ padding: '10px 14px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-              <p className="text-xs text-danger font-semibold">WARNING: This action is irreversible!</p>
-            </div>
-            <div className="form-field mt-3">
-              <label className="form-label text-[10px]">
-                Type <strong className="text-text-primary">{deletingName}</strong> to confirm:
-              </label>
-              <input
-                type="text"
-                className="form-input mt-1"
-                placeholder="Type tournament name here..."
-                value={typedConfirmName}
-                onChange={e => setTypedConfirmName(e.target.value)}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-border mt-4">
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => { setDeletingId(null); setTypedConfirmName(''); }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                disabled={typedConfirmName !== deletingName || confirming}
-                onClick={handleConfirmDelete}
-              >
-                {confirming ? 'Deleting...' : 'Permanently Delete'}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

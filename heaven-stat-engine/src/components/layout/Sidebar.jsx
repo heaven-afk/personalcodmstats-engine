@@ -3,16 +3,17 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  LayoutDashboard, Trophy, Users, Shield, Swords, BarChart3, Settings, LogOut, Zap, GitCompare
+  LayoutDashboard, Trophy, Users, Shield, Swords, BarChart3, Settings, LogOut, Zap, GitCompare, FlaskConical
 } from 'lucide-react';
 
 const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard',   label: 'Dashboard',  icon: LayoutDashboard },
   { href: '/tournaments', label: 'Tournaments', icon: Trophy },
-  { href: '/players', label: 'Players', icon: Users },
-  { href: '/teams', label: 'Teams', icon: Shield },
-  { href: '/comparison', label: 'Comparison', icon: GitCompare },
-  { href: '/rankings', label: 'Rankings', icon: BarChart3 },
+  { href: '/players',     label: 'Players',     icon: Users },
+  { href: '/teams',       label: 'Teams',       icon: Shield },
+  { href: '/comparison',  label: 'Comparison',  icon: GitCompare },
+  { href: '/rankings',    label: 'Rankings',    icon: BarChart3 },
+  { href: '/simulate',    label: 'Simulate',    icon: FlaskConical },
 ];
 
 export default function Sidebar() {

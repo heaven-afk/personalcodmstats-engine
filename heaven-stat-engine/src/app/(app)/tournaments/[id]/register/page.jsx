@@ -8,6 +8,8 @@ import {
 } from '@/lib/firestore/tournaments';
 import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
+import Modal from '@/components/ui/Modal';
+import { getSimilarTeams } from '@/lib/utils/similarity';
 import {
   getAllSheetsAsCSV,
   parsePlayerRegistrationCSV,
@@ -388,25 +390,162 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   const [pasteText, setPasteText] = useState('');
   const [parsing, setParsing] = useState(false);
 
-  const matchedTeam = teamSearch.length > 1
-    ? globalTeams.find(t => t.teamName.toLowerCase().includes(teamSearch.toLowerCase()))
+  // Import Preview states
+  const [importQueue, setImportQueue] = useState([]);
+  const [showImportPreview, setShowImportPreview] = useState(false);
+
+  const exactMatch = teamSearch.length > 1
+    ? globalTeams.find(t => t.teamName.toLowerCase() === teamSearch.toLowerCase())
     : null;
+
+  const similarTeams = teamSearch.length > 1
+    ? getSimilarTeams(teamSearch, globalTeams, 0.75).filter(t => t.id !== exactMatch?.id)
+    : [];
+
+  const prepareImport = (parsedRows) => {
+    const queue = parsedRows.map((row, index) => {
+      const name = row.teamName.trim();
+      const clan = row.clanName?.trim() || '';
+      const slot = Number(row.slot) || (registrations.length + index + 1);
+      const tier = row.tier || '';
+
+      const exact = globalTeams.find(t => t.teamName.toLowerCase() === name.toLowerCase());
+      if (exact) {
+        return {
+          id: `imp_${Date.now()}_${index}`,
+          slot,
+          teamName: exact.teamName,
+          clanName: exact.clanName || clan,
+          tier,
+          teamId: exact.id,
+          isLinked: true,
+          originalName: name,
+          conflict: null
+        };
+      }
+
+      const similar = getSimilarTeams(name, globalTeams, 0.75);
+      return {
+        id: `imp_${Date.now()}_${index}`,
+        slot,
+        teamName: name,
+        clanName: clan,
+        tier,
+        teamId: '',
+        isLinked: false,
+        originalName: name,
+        conflict: similar.length > 0 ? similar[0] : null
+      };
+    });
+
+    const hasConflicts = queue.some(item => item.conflict !== null);
+    if (hasConflicts) {
+      setImportQueue(queue);
+      setShowImportPreview(true);
+    } else {
+      executeRegistration(queue);
+    }
+  };
+
+  const executeRegistration = async (queue) => {
+    setSaving(true);
+    let added = 0;
+    try {
+      for (const item of queue) {
+        let team;
+        if (item.isLinked && item.teamId) {
+          team = { id: item.teamId, teamName: item.teamName, clanName: item.clanName };
+        } else {
+          team = await createTeam({ teamName: item.teamName.trim(), clanName: item.clanName.trim() });
+        }
+
+        await addTeamRegistration(tournamentId, {
+          teamId: team.id,
+          teamName: team.teamName,
+          clanName: team.clanName,
+          slot: item.slot,
+          tier: item.tier,
+        });
+        added++;
+      }
+      toast.success(`Registered ${added} teams successfully`);
+      setShowImportPreview(false);
+      setImportQueue([]);
+      await onRefresh();
+    } catch (e) {
+      toast.error('Failed to register teams: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAdd = async () => {
     if (!newTeam.teamName.trim()) { toast.error('Team name required'); return; }
+    
+    const name = newTeam.teamName.trim();
+    const clan = newTeam.clanName.trim();
+    const slot = Number(newTeam.slot) || registrations.length + 1;
+    const tier = newTeam.tier;
+
+    const exact = globalTeams.find(t => t.teamName.toLowerCase() === name.toLowerCase());
+    if (exact) {
+      setSaving(true);
+      try {
+        await addTeamRegistration(tournamentId, {
+          teamId: exact.id,
+          teamName: exact.teamName,
+          clanName: exact.clanName || clan,
+          slot,
+          tier,
+        });
+        toast.success(`${exact.teamName} linked and registered`);
+        setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
+        setAddingRow(false);
+        setTeamSearch('');
+        await onRefresh();
+      } catch (e) {
+        toast.error(e.message);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    const similar = getSimilarTeams(name, globalTeams, 0.75);
+    if (similar.length > 0) {
+      const manualItem = {
+        id: `imp_manual_${Date.now()}`,
+        slot,
+        teamName: name,
+        clanName: clan,
+        tier,
+        teamId: '',
+        isLinked: false,
+        originalName: name,
+        conflict: similar[0]
+      };
+      setImportQueue([manualItem]);
+      setShowImportPreview(true);
+      setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
+      setAddingRow(false);
+      setTeamSearch('');
+      return;
+    }
+
     setSaving(true);
     try {
-      const team = await createTeam({ teamName: newTeam.teamName.trim(), clanName: newTeam.clanName.trim() });
+      const team = await createTeam({ teamName: name, clanName: clan });
       await addTeamRegistration(tournamentId, {
         teamId: team.id,
         teamName: team.teamName,
         clanName: team.clanName,
-        slot: Number(newTeam.slot) || registrations.length + 1,
-        tier: newTeam.tier,
+        slot,
+        tier,
       });
       toast.success(`${team.teamName} registered`);
       setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
       setAddingRow(false);
+      setTeamSearch('');
       await onRefresh();
     } catch (e) { toast.error(e.message); }
     finally { setSaving(false); }
@@ -437,22 +576,9 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
         toast.error('No teams parsed. Please check the copy format.');
         return;
       }
-      let added = 0;
-      for (const row of parsed) {
-        const team = await createTeam({ teamName: row.teamName.trim(), clanName: row.clanName.trim() });
-        await addTeamRegistration(tournamentId, {
-          teamId: team.id,
-          teamName: team.teamName,
-          clanName: team.clanName,
-          slot: row.slot || (registrations.length + added + 1),
-          tier: row.tier || '',
-        });
-        added++;
-      }
-      toast.success(`Registered ${added} teams from paste`);
+      prepareImport(parsed);
       setPasteText('');
       setShowPaste(false);
-      await onRefresh();
     } catch (err) {
       toast.error('Import failed: ' + err.message);
     } finally {
@@ -487,24 +613,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
       return;
     }
 
-    let added = 0, skipped = 0;
-    for (const row of validRows) {
-      try {
-        const team = await createTeam({ teamName: row.teamName, clanName: row.clanName || '' });
-        await addTeamRegistration(tournamentId, {
-          teamId: team.id,
-          teamName: team.teamName,
-          clanName: team.clanName,
-          slot: row.slot || (registrations.length + added + 1),
-          tier: row.tier || '',
-        });
-        added++;
-      } catch {
-        skipped++;
-      }
-    }
-    toast.success(`Imported ${added} team${added !== 1 ? 's' : ''} from "${sheetLabel}"${skipped ? ` (${skipped} skipped)` : ''}`);
-    await onRefresh();
+    prepareImport(validRows);
   };
 
   const { trigger, modal, input, importing } = useSheetUpload(handleTeamImport);
@@ -646,10 +755,21 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
                       setTeamSearch(e.target.value);
                     }}
                   />
-                  {matchedTeam && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--cyan)', marginTop: 3, cursor: 'pointer' }}
-                      onClick={() => { setNewTeam(p => ({ ...p, teamName: matchedTeam.teamName, clanName: matchedTeam.clanName })); setTeamSearch(''); }}>
-                      <Check size={10} /> Link existing: {matchedTeam.teamName}
+                  {exactMatch && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--cyan)', marginTop: 3, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                      onClick={() => { setNewTeam(p => ({ ...p, teamName: exactMatch.teamName, clanName: exactMatch.clanName })); setTeamSearch(''); }}>
+                      <Check size={10} /> Link existing: {exactMatch.teamName}
+                    </div>
+                  )}
+                  {!exactMatch && similarTeams.length > 0 && (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--gold)', marginTop: 4, padding: '4px 6px', background: 'rgba(201,168,76,0.05)', borderRadius: 6, border: '1px dashed rgba(201,168,76,0.15)' }}>
+                      <span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>⚠️ Similar team exists:</span>
+                      {similarTeams.slice(0, 2).map(t => (
+                        <div key={t.id} style={{ cursor: 'pointer', textDecoration: 'underline', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}
+                          onClick={() => { setNewTeam(p => ({ ...p, teamName: t.teamName, clanName: t.clanName })); setTeamSearch(''); }}>
+                          Link: {t.teamName}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </td>
@@ -666,6 +786,100 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
           </tbody>
         </table>
       </div>
+      {showImportPreview && (
+        <Modal title="Sync & Register Preview" onClose={() => setShowImportPreview(false)} size="lg">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              We found existing teams in the registry with names very similar to the ones you're trying to add.
+              Review them below and choose whether to link them or register them as new:
+            </p>
+            <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 60 }}>Slot</th>
+                    <th>Entered Name</th>
+                    <th>Clan / Tier</th>
+                    <th>Similarity Match Resolution</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importQueue.map((item, idx) => (
+                    <tr key={item.id} style={{ background: item.conflict ? 'rgba(201,168,76,0.02)' : 'transparent' }}>
+                      <td>{item.slot}</td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.originalName}</span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {item.clanName ? `Clan: ${item.clanName}` : ''} {item.tier ? `[${item.tier}]` : ''}
+                        </span>
+                      </td>
+                      <td>
+                        {item.conflict ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span>⚠️ Similar: <strong>{item.conflict.teamName}</strong> {item.conflict.clanName ? `(Clan: ${item.conflict.clanName})` : ''}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                type="button"
+                                className={`btn btn-xs ${item.isLinked ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => {
+                                  const newQueue = [...importQueue];
+                                  newQueue[idx] = {
+                                    ...item,
+                                    isLinked: true,
+                                    teamId: item.conflict.id,
+                                    teamName: item.conflict.teamName,
+                                    clanName: item.conflict.clanName || item.clanName
+                                  };
+                                  setImportQueue(newQueue);
+                                }}
+                              >
+                                Link to Existing
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn-xs ${!item.isLinked ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => {
+                                  const newQueue = [...importQueue];
+                                  newQueue[idx] = {
+                                    ...item,
+                                    isLinked: false,
+                                    teamId: '',
+                                    teamName: item.originalName,
+                                    clanName: item.clanName
+                                  };
+                                  setImportQueue(newQueue);
+                                }}
+                              >
+                                Register as New
+                              </button>
+                            </div>
+                          </div>
+                        ) : item.isLinked ? (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--cyan)' }}>✓ Auto-linked to exact match</span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Will register as new team</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowImportPreview(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => executeRegistration(importQueue)} disabled={saving}>
+                {saving ? 'Registering...' : `Confirm & Register ${importQueue.length} Teams`}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
