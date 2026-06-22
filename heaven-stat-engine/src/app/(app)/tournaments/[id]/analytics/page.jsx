@@ -36,6 +36,8 @@ export default function AnalyticsPage() {
   const [bonusPoints, setBonusPoints] = useState([]);
   const [teams, setTeams] = useState([]);
   const [expandedTeam, setExpandedTeam] = useState(null);
+  const [compLeftId, setCompLeftId] = useState('');
+  const [compRightId, setCompRightId] = useState('');
 
   const { scoring = {} } = tournament;
 
@@ -70,6 +72,9 @@ export default function AnalyticsPage() {
     () => computeTeamAnalytics(teamResults, bonusPoints, scoring),
     [teamResults, bonusPoints, scoring]
   );
+
+  const compLeftTeam = useMemo(() => analyticsData.find(t => t.teamId === compLeftId) || null, [compLeftId, analyticsData]);
+  const compRightTeam = useMemo(() => analyticsData.find(t => t.teamId === compRightId) || null, [compRightId, analyticsData]);
 
   const teamMap = useMemo(() => {
     return Object.fromEntries(teams.map((t) => [t.id, t]));
@@ -160,6 +165,130 @@ export default function AnalyticsPage() {
             <Bar dataKey="conversion" fill="#22C55E" name="Conversion" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Tournament-scoped Head-to-Head Comparison Widget */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
+          <Shield size={18} className="text-gold" />
+          Head-to-Head Team Comparison
+        </h3>
+        
+        {/* Dropdowns */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+          <select
+            className="form-select"
+            style={{ flex: 1, marginTop: 0 }}
+            value={compLeftId}
+            onChange={e => setCompLeftId(e.target.value)}
+          >
+            <option value="">— Select Team A —</option>
+            {analyticsData.map(t => (
+              <option key={t.teamId} value={t.teamId} disabled={t.teamId === compRightId}>
+                {t.teamName}
+              </option>
+            ))}
+          </select>
+          <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', padding: '4px 8px', background: 'var(--bg-header)', borderRadius: 4 }}>VS</span>
+          <select
+            className="form-select"
+            style={{ flex: 1, marginTop: 0 }}
+            value={compRightId}
+            onChange={e => setCompRightId(e.target.value)}
+          >
+            <option value="">— Select Team B —</option>
+            {analyticsData.map(t => (
+              <option key={t.teamId} value={t.teamId} disabled={t.teamId === compLeftId}>
+                {t.teamName}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Comparison display */}
+        {compLeftTeam && compRightTeam ? (
+          <div className="space-y-4">
+            {/* Headers with Logos */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 12 }}>
+              {/* Left Team Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
+                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#C9A84C' }}>{compLeftTeam.teamName}</span>
+                {(() => {
+                  const team = teamMap[compLeftTeam.teamId];
+                  const logoSrc = team?.logo || team?.logoUrl;
+                  return logoSrc ? (
+                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} />
+                  ) : (
+                    <Shield size={22} style={{ color: '#C9A84C' }} />
+                  );
+                })()}
+              </div>
+
+              {/* Tally Indicator */}
+              <div style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 8px', background: 'var(--bg-header)', borderRadius: 4, color: 'var(--text-muted)' }}>COMPARE</div>
+
+              {/* Right Team Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 10 }}>
+                {(() => {
+                  const team = teamMap[compRightTeam.teamId];
+                  const logoSrc = team?.logo || team?.logoUrl;
+                  return logoSrc ? (
+                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} />
+                  ) : (
+                    <Shield size={22} style={{ color: '#38BDF8' }} />
+                  );
+                })()}
+                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#38BDF8' }}>{compRightTeam.teamName}</span>
+              </div>
+            </div>
+
+            {/* Stat Comparison Rows */}
+            {(() => {
+              const renderCompRow = (label, lv, rv, decimalPlaces = 0, isPercent = false) => {
+                const l = Number(lv) || 0, r = Number(rv) || 0;
+                const leftWins = l > r;
+                const rightWins = r > l;
+                const maxVal = Math.max(l, r) || 1;
+                const fmt = (v) => {
+                  const s = Number(v).toFixed(decimalPlaces);
+                  return isPercent ? `${s}%` : s;
+                };
+                return (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>
+                      <span style={{ color: leftWins ? '#C9A84C' : 'var(--text-secondary)' }}>{fmt(l)}</span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+                      <span style={{ color: rightWins ? '#38BDF8' : 'var(--text-secondary)' }}>{fmt(r)}</span>
+                    </div>
+                    <div style={{ display: 'flex', width: '100%', gap: 12 }}>
+                      <div style={{ width: '50%', height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 99, display: 'flex', justifyContent: 'flex-end', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(l / maxVal) * 100}%`, background: leftWins ? '#C9A84C' : 'var(--text-muted)', borderRadius: 99 }} />
+                      </div>
+                      <div style={{ width: '50%', height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 99, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(r / maxVal) * 100}%`, background: rightWins ? '#38BDF8' : 'var(--text-muted)', borderRadius: 99 }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              };
+
+              return (
+                <div>
+                  {renderCompRow('Total Points', compLeftTeam.totalPts, compRightTeam.totalPts, 0)}
+                  {renderCompRow('Team Rating', compLeftTeam.scores?.TEAM_RATING, compRightTeam.scores?.TEAM_RATING, 1)}
+                  {renderCompRow('Lobby Wins', compLeftTeam.wins, compRightTeam.wins, 0)}
+                  {renderCompRow('Matches Played', compLeftTeam.matches, compRightTeam.matches, 0)}
+                  {renderCompRow('Total Kills', compLeftTeam.kills, compRightTeam.kills, 0)}
+                  {renderCompRow('Placement Points', compLeftTeam.placementPts, compRightTeam.placementPts, 0)}
+                </div>
+              );
+            })()}
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '16px 0', fontSize: '0.8rem', color: 'var(--text-muted)', border: '1px dashed var(--border)', borderRadius: 8 }}>
+            Select two teams above to compare their performance in this tournament.
+          </div>
+        )}
       </div>
 
       {/* Analytics master table */}
