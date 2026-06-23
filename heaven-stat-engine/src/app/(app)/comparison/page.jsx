@@ -4,9 +4,9 @@ import { getTeams, getPlayers } from '@/lib/firestore/registry';
 import { getTournaments, getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { computeTeamRanking } from '@/lib/engine/standings';
-import { computeTeamAnalytics } from '@/lib/engine/analytics';
+import { computeTeamAnalytics, getTeamRatingRankLabel } from '@/lib/engine/analytics';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { ClassBadge } from '@/components/ui/Badge';
+import { ClassBadge, RankBadge } from '@/components/ui/Badge';
 import { Shield, User, GitCompare, Activity, BarChart2, Target, TrendingUp, Swords, Award, Star, Globe, Trophy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -94,15 +94,19 @@ function aggregateTeams(registryTeams, tournaments, allTeamRegs, allTeamRes, all
       }
     });
   });
-  return Object.values(teamMap).map(t => ({
-    ...t,
-    winRate:           t.careerMatches > 0 ? (t.careerWins / t.careerMatches) * 100 : 0,
-    avgPointsPerMatch: t.careerMatches > 0 ? t.careerTotalPts / t.careerMatches : 0,
-    avgKillsPerMatch:  t.careerMatches > 0 ? t.careerKills / t.careerMatches : 0,
-    careerAvgTeamRating: t.teamRatingCount > 0 ? t.totalTeamRating / t.teamRatingCount : 0,
-    avgPlacementPtsPerTournament: t.tournamentsCount > 0 ? t.careerPlacementPts / t.tournamentsCount : 0,
-    avgRankedPosition: t.tournamentsCount > 0 ? t.careerRankSum / t.tournamentsCount : 0,
-  })).filter(t => t.careerMatches > 0 || t.tournamentsCount > 0);
+  return Object.values(teamMap).map(t => {
+    const avgRating = t.teamRatingCount > 0 ? t.totalTeamRating / t.teamRatingCount : 0;
+    return {
+      ...t,
+      winRate:           t.careerMatches > 0 ? (t.careerWins / t.careerMatches) * 100 : 0,
+      avgPointsPerMatch: t.careerMatches > 0 ? t.careerTotalPts / t.careerMatches : 0,
+      avgKillsPerMatch:  t.careerMatches > 0 ? t.careerKills / t.careerMatches : 0,
+      careerAvgTeamRating: avgRating,
+      careerAvgTeamRatingLabel: getTeamRatingRankLabel(avgRating),
+      avgPlacementPtsPerTournament: t.tournamentsCount > 0 ? t.careerPlacementPts / t.tournamentsCount : 0,
+      avgRankedPosition: t.tournamentsCount > 0 ? t.careerRankSum / t.tournamentsCount : 0,
+    };
+  }).filter(t => t.careerMatches > 0 || t.tournamentsCount > 0);
 }
 
 function aggregatePlayers(registryPlayers, allPlayerRegs, allPlayerRes) {
@@ -240,7 +244,7 @@ export default function ComparisonPage() {
   const rightName = rightEntity ? (mode === 'teams' ? rightEntity.teamName : rightEntity.professionalName) : '';
 
   // ── Render helpers ─────────────────────────────────────────────────────────
-  const renderStatRow = (label, lv, rv, { isPercent = false, decimalPlaces = 0, isLowerBetter = false } = {}) => {
+  const renderStatRow = (label, lv, rv, { isPercent = false, decimalPlaces = 0, isLowerBetter = false, leftBadge = null, rightBadge = null } = {}) => {
     const l = Number(lv) || 0, r = Number(rv) || 0;
     const leftWins  = l !== r && (isLowerBetter ? l < r : l > r);
     const rightWins = l !== r && (isLowerBetter ? r < l : r > l);
@@ -249,9 +253,15 @@ export default function ComparisonPage() {
     return (
       <div key={label} style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{ width: '40%', textAlign: 'right', fontSize: '1.1rem', fontWeight: 700, color: leftWins ? COLOR_LEFT : 'var(--text-secondary)' }}>{fmt(l)}</div>
+          <div style={{ width: '40%', textAlign: 'right', fontSize: '1.1rem', fontWeight: 700, color: leftWins ? COLOR_LEFT : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+            {leftBadge}
+            <span>{fmt(l)}</span>
+          </div>
           <div style={{ width: '20%', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-          <div style={{ width: '40%', textAlign: 'left',  fontSize: '1.1rem', fontWeight: 700, color: rightWins ? COLOR_RIGHT : 'var(--text-secondary)' }}>{fmt(r)}</div>
+          <div style={{ width: '40%', textAlign: 'left',  fontSize: '1.1rem', fontWeight: 700, color: rightWins ? COLOR_RIGHT : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px' }}>
+            <span>{fmt(r)}</span>
+            {rightBadge}
+          </div>
         </div>
         <div style={{ display: 'flex', width: '100%', gap: 20, marginTop: 5 }}>
           <div style={{ width: '50%', height: 5, background: 'rgba(255,255,255,0.04)', borderRadius: 99, display: 'flex', justifyContent: 'flex-end', overflow: 'hidden' }}>
@@ -285,7 +295,7 @@ export default function ComparisonPage() {
     </div>
   );
 
-  const MetricCard = ({ label, icon: Icon, lv, rv, isPercent = false, decimalPlaces = 2, isLowerBetter = false, description = '' }) => {
+  const MetricCard = ({ label, icon: Icon, lv, rv, isPercent = false, decimalPlaces = 2, isLowerBetter = false, description = '', leftBadge = null, rightBadge = null }) => {
     const l = Number(lv) || 0, r = Number(rv) || 0;
     const leftWins  = l !== r && (isLowerBetter ? l < r : l > r);
     const rightWins = l !== r && (isLowerBetter ? r < l : r > l);
@@ -305,7 +315,10 @@ export default function ComparisonPage() {
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
           <div style={{ flex: 1, textAlign: 'center' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 600, color: COLOR_LEFT, marginBottom: 4, textTransform: 'uppercase' }}>{leftName}</div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: leftWins ? COLOR_LEFT : tied ? 'var(--text-secondary)' : 'var(--text-muted)', lineHeight: 1 }}>{fmt(l)}</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: leftWins ? COLOR_LEFT : tied ? 'var(--text-secondary)' : 'var(--text-muted)', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <span>{fmt(l)}</span>
+              {leftBadge}
+            </div>
             {leftWins && <div style={{ fontSize: '0.65rem', marginTop: 4, color: COLOR_WIN, fontWeight: 700 }}>▲ +{fmt(diff)} ahead</div>}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -314,7 +327,10 @@ export default function ComparisonPage() {
           </div>
           <div style={{ flex: 1, textAlign: 'center' }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 600, color: COLOR_RIGHT, marginBottom: 4, textTransform: 'uppercase' }}>{rightName}</div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: rightWins ? COLOR_RIGHT : tied ? 'var(--text-secondary)' : 'var(--text-muted)', lineHeight: 1 }}>{fmt(r)}</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: rightWins ? COLOR_RIGHT : tied ? 'var(--text-secondary)' : 'var(--text-muted)', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <span>{fmt(r)}</span>
+              {rightBadge}
+            </div>
             {rightWins && <div style={{ fontSize: '0.65rem', marginTop: 4, color: COLOR_WIN, fontWeight: 700 }}>▲ +{fmt(diff)} ahead</div>}
           </div>
         </div>
@@ -588,7 +604,11 @@ export default function ComparisonPage() {
               </h3>
               {mode === 'teams' ? (
                 <div>
-                  {renderStatRow('Average Team Rating', leftEntity.careerAvgTeamRating, rightEntity.careerAvgTeamRating, { decimalPlaces: 1 })}
+                  {renderStatRow('Average Team Rating', leftEntity.careerAvgTeamRating, rightEntity.careerAvgTeamRating, {
+                    decimalPlaces: 1,
+                    leftBadge: <RankBadge label={leftEntity.careerAvgTeamRatingLabel} />,
+                    rightBadge: <RankBadge label={rightEntity.careerAvgTeamRatingLabel} />
+                  })}
                   {scope === 'global' && renderStatRow('Tournament Wins', leftEntity.tournamentWins, rightEntity.tournamentWins)}
                   {renderStatRow('Lobby Wins',         leftEntity.careerWins,        rightEntity.careerWins)}
                   {renderStatRow('Matches Played',     leftEntity.careerMatches,     rightEntity.careerMatches)}
@@ -630,7 +650,7 @@ export default function ComparisonPage() {
           {activeTab === 'advanced' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
               {mode === 'teams' ? (<>
-                <MetricCard label="Average Team Rating" icon={Star}      lv={leftEntity.careerAvgTeamRating} rv={rightEntity.careerAvgTeamRating} decimalPlaces={1} description="Mean Team Rating" />
+                <MetricCard label="Average Team Rating" icon={Star}      lv={leftEntity.careerAvgTeamRating} rv={rightEntity.careerAvgTeamRating} decimalPlaces={1} description="Mean Team Rating" leftBadge={<RankBadge label={leftEntity.careerAvgTeamRatingLabel} />} rightBadge={<RankBadge label={rightEntity.careerAvgTeamRatingLabel} />} />
                 {scope === 'global' && (
                   <>
                     <MetricCard label="Avg Ranked Position" icon={Trophy}    lv={leftEntity.avgRankedPosition}    rv={rightEntity.avgRankedPosition}    decimalPlaces={2} isLowerBetter description="Mean tournament rank" />

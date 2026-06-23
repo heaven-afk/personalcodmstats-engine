@@ -300,6 +300,36 @@ const LABELS = {
     name: 'Cold',
     measures: 'Form Label',
     interpretation: 'Currently trending downward.'
+  },
+  'elite rank': {
+    name: 'Elite Rank',
+    measures: 'Team Rating Tier',
+    interpretation: 'The highest tier — sustained excellence across Power, Placement, Conversion, and Form. Reached by roughly the top 3% of team performances.'
+  },
+  'top rank': {
+    name: 'Top Rank',
+    measures: 'Team Rating Tier',
+    interpretation: 'A strong, tournament-contending level of performance, just below the very top tier.'
+  },
+  'pro rank': {
+    name: 'Pro Rank',
+    measures: 'Team Rating Tier',
+    interpretation: 'A solid, competitive level of performance — clearly above average.'
+  },
+  'mid rank': {
+    name: 'Mid Rank',
+    measures: 'Team Rating Tier',
+    interpretation: 'An average, developing level of performance.'
+  },
+  'low rank': {
+    name: 'Low Rank',
+    measures: 'Team Rating Tier',
+    interpretation: 'A below-average level of performance, with room to grow.'
+  },
+  'entry rank': {
+    name: 'Entry Rank',
+    measures: 'Team Rating Tier',
+    interpretation: 'A new or still-developing team with limited results so far.'
   }
 };
 

@@ -157,6 +157,19 @@ function formLabel(forwardMI, consistencyScore) {
   return 'Steady';
 }
 
+function teamRatingRankLabel(finalRating) {
+  if (finalRating >= 850) return 'Elite Rank';
+  if (finalRating >= 750) return 'Top Rank';
+  if (finalRating >= 550) return 'Pro Rank';
+  if (finalRating >= 380) return 'Mid Rank';
+  if (finalRating >= 220) return 'Low Rank';
+  return 'Entry Rank';
+}
+
+export function getTeamRatingRankLabel(finalRating) {
+  return teamRatingRankLabel(finalRating);
+}
+
 // ─── Main analytics computation ───────────────────────────────────────────────
 /**
  * Compute full analytics for all teams in a tournament.
@@ -259,6 +272,7 @@ export function computeTeamAnalytics(teamMatchResults, bonusPoints, scoringConfi
         FORM,
         TEAM_RATING,
         FINAL_RATING,
+        rankLabel: teamRatingRankLabel(FINAL_RATING),
       },
       labels: {
         playstyle: playstyleLabel(POWER, PLACEMENT, CONVERSION),

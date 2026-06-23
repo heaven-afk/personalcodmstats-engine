@@ -440,7 +440,10 @@ export default function AnalyticsPage() {
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{row.placementPts}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{row.kills}</td>
                       <td className="col-gold">{row.totalPts}</td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)' }}>{s.FINAL_RATING?.toFixed(1)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)' }}>
+                        {s.FINAL_RATING?.toFixed(1)}
+                        <RankBadge label={s.rankLabel} />
+                      </td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.PPM}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.KPM}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.killPct}%</td>
@@ -533,6 +536,7 @@ function TeamDeepDive({ team }) {
           <RatingBadge label={l.powerLabel || '—'} type="power" />
           <RatingBadge label={l.placementLabel || '—'} type="placement" />
           <RatingBadge label={l.conversionLabel || '—'} type="conversion" />
+          <RankBadge label={s.rankLabel} />
         </div>
         <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[

@@ -20,7 +20,16 @@ export function ClassBadge({ playerClass }) {
   );
 }
 
-export function RankBadge({ rank }) {
+export function RankBadge({ rank, label }) {
+  if (label) {
+    const isPositive = ['Elite Rank', 'Top Rank', 'Pro Rank'].includes(label);
+    return (
+      <span className={`badge ${isPositive ? 'badge-positive' : 'badge-neutral-rating'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+        {label}
+        <MetricTooltip metricKey={label} />
+      </span>
+    );
+  }
   const cls = rank === 1 ? 'badge-rank1' : rank === 2 ? 'badge-rank2' : rank === 3 ? 'badge-rank3' : '';
   return <span className={`rank-badge ${cls}`}>{rank}</span>;
 }
