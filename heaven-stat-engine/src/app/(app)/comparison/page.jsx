@@ -47,6 +47,7 @@ function aggregateTeams(registryTeams, tournaments, allTeamRegs, allTeamRes, all
       tournamentsCount: 0,
       totalTeamRating: 0,
       teamRatingCount: 0,
+      careerRankSum: 0,
     };
   });
   tournaments.forEach((tourney, index) => {
@@ -68,6 +69,7 @@ function aggregateTeams(registryTeams, tournaments, allTeamRegs, allTeamRes, all
         tm.careerBonusPts     += tr.bonusPts || 0;
         tm.careerTotalPts     += tr.totalPts || 0;
         tm.tournamentsCount   += 1;
+        tm.careerRankSum      += tr.rank || 0;
 
         const teamAnalytics = analyticsMap[tr.teamId];
         if (teamAnalytics && teamAnalytics.scores && typeof teamAnalytics.scores.TEAM_RATING === 'number') {
@@ -83,6 +85,8 @@ function aggregateTeams(registryTeams, tournaments, allTeamRegs, allTeamRes, all
     avgPointsPerMatch: t.careerMatches > 0 ? t.careerTotalPts / t.careerMatches : 0,
     avgKillsPerMatch:  t.careerMatches > 0 ? t.careerKills / t.careerMatches : 0,
     careerAvgTeamRating: t.teamRatingCount > 0 ? t.totalTeamRating / t.teamRatingCount : 0,
+    avgPlacementPtsPerTournament: t.tournamentsCount > 0 ? t.careerPlacementPts / t.tournamentsCount : 0,
+    avgRankedPosition: t.tournamentsCount > 0 ? t.careerRankSum / t.tournamentsCount : 0,
   })).filter(t => t.careerMatches > 0 || t.tournamentsCount > 0);
 }
 
@@ -313,7 +317,7 @@ export default function ComparisonPage() {
     { metric: 'Wins',       [leftName]: normalize(l.careerWins, r.careerWins),         [rightName]: normalize(r.careerWins, l.careerWins) },
     { metric: 'Kills',      [leftName]: normalize(l.careerKills, r.careerKills),       [rightName]: normalize(r.careerKills, l.careerKills) },
     { metric: 'Win Rate',   [leftName]: normalize(l.winRate, r.winRate),               [rightName]: normalize(r.winRate, l.winRate) },
-    { metric: 'Bonus Pts',  [leftName]: normalize(l.careerBonusPts, r.careerBonusPts),[rightName]: normalize(r.careerBonusPts, l.careerBonusPts) },
+    { metric: 'Avg Placement', [leftName]: normalize(l.avgPlacementPtsPerTournament, r.avgPlacementPtsPerTournament), [rightName]: normalize(r.avgPlacementPtsPerTournament, l.avgPlacementPtsPerTournament) },
   ];
 
   const buildPlayerRadarData = (l, r) => [
@@ -327,10 +331,9 @@ export default function ComparisonPage() {
 
   const buildTeamBarData  = (l, r) => [
     { name: 'Avg Rating',    [leftName]: +l.careerAvgTeamRating.toFixed(1),    [rightName]: +r.careerAvgTeamRating.toFixed(1) },
-    { name: 'Kills',         [leftName]: l.careerKills,        [rightName]: r.careerKills },
+    { name: 'Avg Placement Pts', [leftName]: +l.avgPlacementPtsPerTournament.toFixed(1), [rightName]: +r.avgPlacementPtsPerTournament.toFixed(1) },
     { name: 'Wins',          [leftName]: l.careerWins,         [rightName]: r.careerWins },
-    { name: 'Placement Pts', [leftName]: l.careerPlacementPts, [rightName]: r.careerPlacementPts },
-    { name: 'Bonus Pts',     [leftName]: l.careerBonusPts,     [rightName]: r.careerBonusPts },
+    { name: 'Kills',         [leftName]: l.careerKills,        [rightName]: r.careerKills },
   ];
 
   const buildPlayerBarData = (l, r) => [
@@ -344,12 +347,34 @@ export default function ComparisonPage() {
   // ── Tally ──────────────────────────────────────────────────────────────────
   const tallyCounts = () => {
     if (!leftEntity || !rightEntity) return { left: 0, right: 0, tied: 0 };
-    const metrics = mode === 'teams'
-      ? [leftEntity.careerAvgTeamRating, leftEntity.careerWins, leftEntity.careerKills, leftEntity.careerPlacementPts, leftEntity.careerBonusPts, leftEntity.avgKillsPerMatch, leftEntity.winRate].map((lv, i) => ({ l: lv, r: [rightEntity.careerAvgTeamRating, rightEntity.careerWins, rightEntity.careerKills, rightEntity.careerPlacementPts, rightEntity.careerBonusPts, rightEntity.avgKillsPerMatch, rightEntity.winRate][i] }))
-      : [leftEntity.careerKills, leftEntity.avgKillsPerMatch, leftEntity.avgDamagePerMatch, leftEntity.avgAccuracy, leftEntity.damagePerKill, leftEntity.careerMatches].map((lv, i) => ({ l: lv, r: [rightEntity.careerKills, rightEntity.avgKillsPerMatch, rightEntity.avgDamagePerMatch, rightEntity.avgAccuracy, rightEntity.damagePerKill, rightEntity.careerMatches][i] }));
-    let left = 0, right = 0, tied = 0;
-    metrics.forEach(({ l, r }) => { if (l > r) left++; else if (r > l) right++; else tied++; });
-    return { left, right, tied };
+    if (mode === 'teams') {
+      let left = 0, right = 0, tied = 0;
+      const compare = (l, r, lowerBetter = false) => {
+        const valL = Number(l) || 0;
+        const valR = Number(r) || 0;
+        if (valL === valR) {
+          tied++;
+        } else if (lowerBetter ? valL < valR : valL > valR) {
+          left++;
+        } else {
+          right++;
+        }
+      };
+      compare(leftEntity.careerAvgTeamRating, rightEntity.careerAvgTeamRating);
+      compare(leftEntity.avgRankedPosition, rightEntity.avgRankedPosition, true);
+      compare(leftEntity.winRate, rightEntity.winRate);
+      compare(leftEntity.careerWins, rightEntity.careerWins);
+      compare(leftEntity.careerMatches, rightEntity.careerMatches);
+      compare(leftEntity.avgPlacementPtsPerTournament, rightEntity.avgPlacementPtsPerTournament);
+      compare(leftEntity.careerKills, rightEntity.careerKills);
+      compare(leftEntity.avgKillsPerMatch, rightEntity.avgKillsPerMatch);
+      return { left, right, tied };
+    } else {
+      const metrics = [leftEntity.careerKills, leftEntity.avgKillsPerMatch, leftEntity.avgDamagePerMatch, leftEntity.avgAccuracy, leftEntity.damagePerKill, leftEntity.careerMatches].map((lv, i) => ({ l: lv, r: [rightEntity.careerKills, rightEntity.avgKillsPerMatch, rightEntity.avgDamagePerMatch, rightEntity.avgAccuracy, rightEntity.damagePerKill, rightEntity.careerMatches][i] }));
+      let left = 0, right = 0, tied = 0;
+      metrics.forEach(({ l, r }) => { if (l > r) left++; else if (r > l) right++; else tied++; });
+      return { left, right, tied };
+    }
   };
 
   const tally = tallyCounts();
@@ -534,15 +559,15 @@ export default function ComparisonPage() {
               {mode === 'teams' ? (
                 <div>
                   {renderStatRow('Average Team Rating', leftEntity.careerAvgTeamRating, rightEntity.careerAvgTeamRating, { decimalPlaces: 1 })}
+                  {renderStatRow('Avg Ranked Position', leftEntity.avgRankedPosition, rightEntity.avgRankedPosition, { isLowerBetter: true, decimalPlaces: 2 })}
+                  {renderStatRow('Win Rate',           leftEntity.winRate,           rightEntity.winRate,           { isPercent: true, decimalPlaces: 1 })}
                   {renderStatRow('Lobby Wins',         leftEntity.careerWins,        rightEntity.careerWins)}
                   {renderStatRow('Matches Played',     leftEntity.careerMatches,     rightEntity.careerMatches)}
-                  {renderStatRow('Placement Points',   leftEntity.careerPlacementPts,rightEntity.careerPlacementPts)}
+                  {renderStatRow('Avg Placement Points', leftEntity.avgPlacementPtsPerTournament, rightEntity.avgPlacementPtsPerTournament, { decimalPlaces: 1 })}
                   {renderStatRow('Total Kills',        leftEntity.careerKills,       rightEntity.careerKills)}
-                  {renderStatRow('Bonus Points',       leftEntity.careerBonusPts,    rightEntity.careerBonusPts)}
                   {renderStatRow('Avg Kills / Match',  leftEntity.avgKillsPerMatch,  rightEntity.avgKillsPerMatch,  { decimalPlaces: 2 })}
-                  {renderStatRow('Win Rate',           leftEntity.winRate,           rightEntity.winRate,           { decimalPlaces: 1, isPercent: true })}
-                  {scope === 'global' && renderStatRow('Tournaments', leftEntity.tournamentsCount, rightEntity.tournamentsCount)}
-                  {renderTextRow('Clan', leftEntity.clanName, rightEntity.clanName)}
+                  {scope === 'global' && renderStatRow('Tournaments Played', leftEntity.tournamentsCount, rightEntity.tournamentsCount)}
+                  {renderTextRow('Clan Name',          leftEntity.clanName,          rightEntity.clanName)}
                 </div>
               ) : (
                 <div>
@@ -567,12 +592,12 @@ export default function ComparisonPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
               {mode === 'teams' ? (<>
                 <MetricCard label="Average Team Rating" icon={Star}      lv={leftEntity.careerAvgTeamRating} rv={rightEntity.careerAvgTeamRating} decimalPlaces={1} description="Mean Team Rating" />
+                <MetricCard label="Avg Ranked Position" icon={Trophy}    lv={leftEntity.avgRankedPosition}    rv={rightEntity.avgRankedPosition}    decimalPlaces={2} isLowerBetter description="Mean tournament rank" />
+                <MetricCard label="Avg Placement Points" icon={Target}   lv={leftEntity.avgPlacementPtsPerTournament} rv={rightEntity.avgPlacementPtsPerTournament} decimalPlaces={1} description="Per tournament" />
                 <MetricCard label="Lobby Wins"         icon={Award}     lv={leftEntity.careerWins}        rv={rightEntity.careerWins}        decimalPlaces={0} description="1st place finishes" />
                 <MetricCard label="Win Rate"           icon={TrendingUp}lv={leftEntity.winRate}           rv={rightEntity.winRate}           decimalPlaces={1} isPercent description="Wins ÷ matches" />
                 <MetricCard label="Total Kills"        icon={Swords}    lv={leftEntity.careerKills}       rv={rightEntity.careerKills}       decimalPlaces={0} description="Career kills" />
                 <MetricCard label="Avg Kills / Match"  icon={Swords}    lv={leftEntity.avgKillsPerMatch}  rv={rightEntity.avgKillsPerMatch}  decimalPlaces={2} description="Kill pace" />
-                <MetricCard label="Placement Points"   icon={Target}    lv={leftEntity.careerPlacementPts}rv={rightEntity.careerPlacementPts}decimalPlaces={0} description="From placements" />
-                <MetricCard label="Bonus Points"       icon={Star}      lv={leftEntity.careerBonusPts}   rv={rightEntity.careerBonusPts}    decimalPlaces={0} description="From bonuses" />
                 <MetricCard label="Matches Played"     icon={Activity}  lv={leftEntity.careerMatches}    rv={rightEntity.careerMatches}     decimalPlaces={0} description="Total lobbies" />
               </>) : (<>
                 <MetricCard label="Career Kills"       icon={Swords}    lv={leftEntity.careerKills}        rv={rightEntity.careerKills}        decimalPlaces={0} description="All-time kills" />

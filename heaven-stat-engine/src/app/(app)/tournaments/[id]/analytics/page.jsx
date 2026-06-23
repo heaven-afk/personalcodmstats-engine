@@ -276,10 +276,14 @@ export default function AnalyticsPage() {
                 <div>
                   {renderCompRow('Total Points', compLeftTeam.totalPts, compRightTeam.totalPts, 0)}
                   {renderCompRow('Team Rating', compLeftTeam.scores?.TEAM_RATING, compRightTeam.scores?.TEAM_RATING, 1)}
-                  {renderCompRow('Lobby Wins', compLeftTeam.wins, compRightTeam.wins, 0)}
-                  {renderCompRow('Matches Played', compLeftTeam.matches, compRightTeam.matches, 0)}
-                  {renderCompRow('Total Kills', compLeftTeam.kills, compRightTeam.kills, 0)}
+                  {renderCompRow('Wins', compLeftTeam.wins, compRightTeam.wins, 0)}
+                  {renderCompRow('Matches', compLeftTeam.matches, compRightTeam.matches, 0)}
+                  {renderCompRow('Kills', compLeftTeam.kills, compRightTeam.kills, 0)}
                   {renderCompRow('Placement Points', compLeftTeam.placementPts, compRightTeam.placementPts, 0)}
+                  {renderCompRow('Points Per Match (PPM)', compLeftTeam.analytics?.PPM, compRightTeam.analytics?.PPM, 2)}
+                  {renderCompRow('Kills Per Match (KPM)', compLeftTeam.analytics?.KPM, compRightTeam.analytics?.KPM, 2)}
+                  {renderCompRow('Top 3 Rate', compLeftTeam.analytics?.top3Rate, compRightTeam.analytics?.top3Rate, 1, true)}
+                  {renderCompRow('Top 5 Rate', compLeftTeam.analytics?.top5Rate, compRightTeam.analytics?.top5Rate, 1, true)}
                 </div>
               );
             })()}
