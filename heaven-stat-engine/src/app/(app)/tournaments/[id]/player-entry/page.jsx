@@ -9,8 +9,9 @@ import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge } from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
-import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight } from 'lucide-react';
+import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
 import { getAllSheetsAsCSV } from '@/lib/importers/csvParser';
+import { extractTextFromImage, parsePlayerOCRResult } from '@/lib/importers/ocrParser';
 
 // ─── Player Paste Parser ──────────────────────────────────────────────────────
 function parsePlayerEntryPaste(text, playerRegs) {
@@ -124,6 +125,13 @@ export default function PlayerEntryPage() {
   const fileRef = useRef(null);
   const [sheetModal, setSheetModal] = useState(null);
   const [importingFile, setImportingFile] = useState(false);
+
+  // OCR States
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [ocrResults, setOcrResults] = useState([]);
+  const [isOcrMode, setIsOcrMode] = useState(false);
+  const ocrFileRef = useRef(null);
 
   // Live preview parse effect
   useEffect(() => {
@@ -283,6 +291,8 @@ export default function PlayerEntryPage() {
 
       if (names.length === 1) {
         setPasteText(allSheets[names[0]]);
+        setIsOcrMode(false);
+        setOcrResults([]);
         toast.success(`Loaded "${names[0]}" sheet from spreadsheet`);
       } else {
         setSheetModal({ sheets: names, allSheets });
@@ -297,9 +307,134 @@ export default function PlayerEntryPage() {
   const handleSheetSelect = (sheetName) => {
     if (!sheetModal) return;
     setPasteText(sheetModal.allSheets[sheetName]);
+    setIsOcrMode(false);
+    setOcrResults([]);
     toast.success(`Loaded "${sheetName}" sheet from spreadsheet`);
     setSheetModal(null);
   };
+
+  const handleOcrFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setOcrProcessing(true);
+    setOcrProgress(0);
+    setOcrResults([]);
+    setIsOcrMode(true);
+    setPasteText(''); // Clear paste input
+
+    try {
+      const text = await extractTextFromImage(file, (p) => setOcrProgress(p));
+      const { results } = parsePlayerOCRResult(text, playerRegs);
+      setOcrResults(results);
+      toast.success('Image scanned successfully!');
+    } catch (err) {
+      toast.error('Failed to extract text: ' + err.message);
+      setIsOcrMode(false);
+    } finally {
+      setOcrProcessing(false);
+    }
+  };
+
+  const handleOcrClear = () => {
+    setOcrResults([]);
+    setIsOcrMode(false);
+    setOcrProgress(0);
+    setOcrProcessing(false);
+  };
+
+  const handleOcrNameChange = (idx, newName) => {
+    const normalized = newName.toLowerCase().replace(/\s+/g, '');
+    let player = playerRegs.find(p => p.ign?.toLowerCase().replace(/\s+/g, '') === normalized);
+    let matchType = 'ign';
+
+    if (!player) {
+      player = playerRegs.find(p => p.professionalName?.toLowerCase().replace(/\s+/g, '') === normalized);
+      matchType = 'proName';
+    }
+
+    setOcrResults(prev => prev.map((row, i) => {
+      if (i !== idx) return row;
+      return {
+        ...row,
+        originalParsedName: newName,
+        playerId: player?.playerId || null,
+        playerName: player?.professionalName || player?.ign || newName,
+        teamName: player?.teamName || '',
+        matchType: player ? matchType : null,
+      };
+    }));
+  };
+
+  const handleOcrKillsChange = (idx, val) => {
+    const numericKills = parseInt(val) || 0;
+    setOcrResults(prev => prev.map((row, i) => {
+      if (i !== idx) return row;
+      return {
+        ...row,
+        kills: val === '' ? '' : numericKills,
+      };
+    }));
+  };
+
+  const handleOcrRemoveRow = (idx) => {
+    setOcrResults(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleOcrSave = async () => {
+    const validResults = ocrResults.filter(r => r.playerId !== null);
+    if (validResults.length === 0) {
+      toast.error('No valid matches with registered players to save.');
+      return;
+    }
+    setParsing(true);
+    try {
+      let updatedCount = 0;
+      let addedCount = 0;
+
+      for (const row of validResults) {
+        const existing = formData[row.playerId]?.existingId;
+        const payload = {
+          playerId: row.playerId,
+          playerName: row.playerName,
+          teamName: row.teamName || '',
+          day,
+          lobby,
+          kills: row.kills,
+          damage: existing ? formData[row.playerId]?.damage || 0 : 0,
+          accuracy: existing ? formData[row.playerId]?.accuracy || 0 : 0,
+        };
+
+        if (existing) {
+          await updatePlayerMatchResult(tournament.id, existing, payload);
+          updatedCount++;
+        } else {
+          await savePlayerMatchResult(tournament.id, payload);
+          addedCount++;
+        }
+      }
+
+      toast.success(`Successfully saved OCR player results! Added ${addedCount}, updated ${updatedCount} records.`);
+      handleOcrClear();
+      setShowPaste(false);
+      await loadData();
+    } catch (err) {
+      toast.error('Failed to save OCR results: ' + err.message);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const ocrErrors = useMemo(() => {
+    const errs = [];
+    ocrResults.forEach((row, idx) => {
+      if (!row.playerId) {
+        errs.push(`Row ${idx + 1}: "${row.originalParsedName}" did not match any registered IGN or Professional Name.`);
+      }
+    });
+    return errs;
+  }, [ocrResults]);
 
   // Check if Roster Update section should be shown
   const ruDays = getRUDays();
@@ -433,12 +568,12 @@ export default function PlayerEntryPage() {
             <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>
               Paste or Upload Player Stats (Day {day} · Lobby {lobby})
             </span>
-            <button onClick={() => { setShowPaste(false); setPasteText(''); }} style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
+            <button onClick={() => { setShowPaste(false); setPasteText(''); handleOcrClear(); }} style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
               <X size={15} />
             </button>
           </div>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8 }}>
-            Paste columns copied from Excel (Player Name or IGN, Kills, Damage, Accuracy) or upload a CSV or Excel file.
+            Paste columns copied from Excel (Player Name or IGN, Kills, Damage, Accuracy) or upload a CSV or Excel file or scan an image.
           </p>
           <div style={{ display: 'flex', gap: 12, marginBottom: 10, alignItems: 'stretch' }}>
             <div style={{ flex: 1 }}>
@@ -446,7 +581,11 @@ export default function PlayerEntryPage() {
                 className="form-textarea"
                 rows={5}
                 value={pasteText}
-                onChange={e => setPasteText(e.target.value)}
+                onChange={e => {
+                  setPasteText(e.target.value);
+                  setIsOcrMode(false);
+                  setOcrResults([]);
+                }}
                 placeholder={`Example:\nPlayerOne\t5\t1200\t45\nPlayerTwo\t2\t850\t35`}
                 style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', width: '100%', minHeight: 120 }}
               />
@@ -477,10 +616,52 @@ export default function PlayerEntryPage() {
                 onChange={handleFileChange}
               />
             </div>
+
+            {/* Scan Image (OCR) box */}
+            <div style={{
+              width: 200,
+              border: '2px dashed var(--border-md)',
+              borderRadius: 'var(--r-md)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              background: 'var(--bg-card)',
+              textAlign: 'center',
+              padding: 8,
+              position: 'relative'
+            }}
+            onClick={() => {
+              if (!ocrProcessing) ocrFileRef.current?.click();
+            }}
+            >
+              {ocrProcessing ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <LoadingSpinner size="sm" />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 600, marginTop: 8 }}>
+                    Scanning ({ocrProgress}%)
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <Camera size={24} style={{ color: 'var(--text-muted)', marginBottom: 6 }} />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 600 }}>Scan Image (OCR)</span>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 4 }}>Camera capture or upload</span>
+                </>
+              )}
+              <input
+                ref={ocrFileRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleOcrFileChange}
+              />
+            </div>
           </div>
 
           {/* Live Parser Preview */}
-          {parsedPreview.length > 0 && (
+          {!isOcrMode && parsedPreview.length > 0 && (
             <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
               <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
                 Previewing Parsed Stats ({parsedPreview.length} players mapped):
@@ -512,8 +693,125 @@ export default function PlayerEntryPage() {
             </div>
           )}
 
+          {/* OCR Review Table */}
+          {isOcrMode && ocrResults.length > 0 && (
+            <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Review OCR Scanned Players (Day {day} · Lobby {lobby}):
+              </div>
+              <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--border-md)', borderRadius: 'var(--r-sm)' }}>
+                <table className="data-table" style={{ fontSize: '0.75rem', width: '100%' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-header)' }}>
+                      <th>Parsed Name / IGN</th>
+                      <th>Matched Player Name</th>
+                      <th>Team</th>
+                      <th style={{ width: 80 }}>Kills</th>
+                      <th>Raw OCR Line</th>
+                      <th style={{ width: 50 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ocrResults.map((item, idx) => {
+                      const isUnmatched = !item.playerId;
+                      const isFallback = item.matchType === 'proName';
+                      
+                      let rowBg = undefined;
+                      let statusBadge = null;
+
+                      if (isUnmatched) {
+                        rowBg = 'rgba(239, 68, 68, 0.08)';
+                        statusBadge = (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            color: 'white',
+                            background: 'var(--danger)',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}>
+                            <AlertCircle size={10} /> Unmatched
+                          </span>
+                        );
+                      } else if (isFallback) {
+                        rowBg = 'rgba(245, 158, 11, 0.08)';
+                        statusBadge = (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            color: 'white',
+                            background: 'var(--warning)',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }} title="Matched via Professional Name instead of IGN (Confidence Low)">
+                            <AlertTriangle size={10} /> Low Confidence
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <tr key={idx} style={{ background: rowBg }}>
+                          <td>
+                            <input
+                              type="text"
+                              className="editable-input"
+                              style={{
+                                width: '100%',
+                                fontSize: '0.75rem',
+                                padding: '2px 4px',
+                                borderColor: isUnmatched ? 'var(--danger)' : isFallback ? 'var(--warning)' : undefined
+                              }}
+                              value={item.originalParsedName}
+                              onChange={e => handleOcrNameChange(idx, e.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 600 }}>{item.playerName}</span>
+                              {statusBadge}
+                            </div>
+                          </td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{item.teamName || '—'}</td>
+                          <td>
+                            <input
+                              type="number"
+                              className="editable-input"
+                              style={{ width: 60, fontSize: '0.75rem', padding: '2px 4px' }}
+                              value={item.kills}
+                              onChange={e => handleOcrKillsChange(idx, e.target.value)}
+                            />
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', fontSize: '0.7rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.sourceLine}>
+                            {item.sourceLine}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              onClick={() => handleOcrRemoveRow(idx)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                              onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                              title="Remove this row"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Parsing errors/warnings */}
-          {pasteErrors.length > 0 && (
+          {!isOcrMode && pasteErrors.length > 0 && (
             <div style={{ marginTop: 10, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 'var(--r-sm)', padding: 10 }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--danger)', marginBottom: 4 }}>
                 Warnings / Skipped Rows:
@@ -529,17 +827,44 @@ export default function PlayerEntryPage() {
             </div>
           )}
 
+          {/* OCR errors/warnings */}
+          {isOcrMode && ocrErrors.length > 0 && (
+            <div style={{ marginTop: 10, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 'var(--r-sm)', padding: 10 }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--danger)', marginBottom: 4 }}>
+                Warnings / Skipped Rows:
+              </div>
+              <ul style={{ listStyleType: 'disc', paddingLeft: 16, fontSize: '0.72rem', color: 'var(--text-secondary)' }} className="space-y-1">
+                {ocrErrors.slice(0, 10).map((err, idx) => (
+                  <li key={idx}>{err}</li>
+                ))}
+                {ocrErrors.length > 10 && (
+                  <li style={{ fontStyle: 'italic', listStyleType: 'none', paddingLeft: 0 }}>...and {ocrErrors.length - 10} more warnings</li>
+                )}
+              </ul>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={handlePasteImport}
-              disabled={parsedPreview.length === 0 || parsing}
-            >
-              {parsing ? 'Saving stats...' : `Save stats to Lobby ${lobby}`}
-            </button>
+            {isOcrMode ? (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleOcrSave}
+                disabled={ocrResults.length === 0 || ocrProcessing || parsing}
+              >
+                {parsing ? 'Saving results...' : `Save OCR results to Lobby ${lobby}`}
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handlePasteImport}
+                disabled={parsedPreview.length === 0 || parsing}
+              >
+                {parsing ? 'Saving stats...' : `Save stats to Lobby ${lobby}`}
+              </button>
+            )}
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => { setShowPaste(false); setPasteText(''); }}
+              onClick={() => { setShowPaste(false); setPasteText(''); handleOcrClear(); }}
             >
               Cancel
             </button>
