@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  LayoutDashboard, Trophy, Users, Shield, Swords, BarChart3, Settings, LogOut, Zap, GitCompare, FlaskConical
+  LayoutDashboard, Trophy, Users, Shield, Swords, BarChart3, Settings, LogOut, Zap, GitCompare, FlaskConical, X
 } from 'lucide-react';
 
 const NAV = [
@@ -16,7 +16,7 @@ const NAV = [
   { href: '/simulate',    label: 'Simulate',    icon: FlaskConical },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen, onClose }) {
   const pathname = usePathname();
   const { logout } = useAuth();
 
@@ -25,7 +25,22 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
+      {/* Mobile close button */}
+      <button 
+        className="mobile-sidebar-close" 
+        onClick={onClose}
+        style={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          color: 'var(--text-muted)',
+          display: 'none'
+        }}
+      >
+        <X size={20} />
+      </button>
+
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="sidebar-logo-icon">
@@ -45,6 +60,7 @@ export default function Sidebar() {
           <Link
             key={href}
             href={href}
+            onClick={onClose}
             className={`sidebar-link ${isActive(href) ? 'active' : ''}`}
           >
             <Icon size={17} />
@@ -58,11 +74,11 @@ export default function Sidebar() {
 
       {/* Bottom */}
       <div className="sidebar-bottom">
-        <Link href="/settings" className={`sidebar-link ${pathname === '/settings' ? 'active' : ''}`}>
+        <Link href="/settings" onClick={onClose} className={`sidebar-link ${pathname === '/settings' ? 'active' : ''}`}>
           <Settings size={17} />
           <span>Settings</span>
         </Link>
-        <button className="sidebar-link sidebar-logout" onClick={logout}>
+        <button className="sidebar-link sidebar-logout" onClick={() => { onClose?.(); logout(); }}>
           <LogOut size={17} />
           <span>Sign Out</span>
         </button>

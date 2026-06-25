@@ -1112,4 +1112,172 @@ input, select, textarea { font-family: var(--font); }
     0 0 12px rgba(201, 168, 76, 0.08);
 }
 
+/* ═══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVENESS & UI/UX (strictly max-width: 768px)
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Shell & Layout adjustments */
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-main {
+    margin-left: 0 !important;
+    padding-top: 60px; /* Safe space for top bar */
+  }
+
+  .app-content {
+    padding: 16px !important;
+    width: 100%;
+  }
+
+  /* Desktop sidebar hiding */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    box-shadow: none;
+    width: 260px !important;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0) !important;
+    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.8) !important;
+  }
+
+  /* Mobile Top Navigation Bar */
+  .mobile-topbar {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: var(--bg-sidebar);
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 99;
+  }
+
+  .mobile-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mobile-logo-icon {
+    width: 28px;
+    height: 28px;
+    background: var(--gold);
+    border-radius: var(--r-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-logo-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.01em;
+  }
+
+  /* Modern Navigator Floating Button */
+  .mobile-nav-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 1px solid var(--border-gold);
+    color: var(--gold);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .mobile-nav-toggle:active {
+    transform: scale(0.95);
+    background: var(--bg-hover);
+  }
+
+  /* Sidebar drawer backdrop overlay */
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 98;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .sidebar-backdrop.mobile-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mobile-sidebar-close {
+    display: block !important;
+  }
+
+  /* Roster / Tables mobile responsiveness */
+  .data-table-container {
+    border-radius: var(--r-md);
+    margin-bottom: 16px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table {
+    width: 100%;
+    min-width: 600px; /* Force minimum width to trigger smooth horizontal scroll */
+  }
+
+  /* Subnav overflow horizontal scrolling */
+  .tournament-subnav {
+    padding: 0 4px 6px !important;
+    margin-bottom: 20px !important;
+    border-bottom: 1px solid var(--border) !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 12px !important;
+  }
+
+  .tournament-subnav-tab {
+    padding: 6px 12px !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Forms and dashboard cards */
+  .grid, .comparison-selectors {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .form-field {
+    width: 100% !important;
+  }
+
+  .btn {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  .btn-sm, .tab, .tab-bar button {
+    width: auto !important;
+  }
+
+  /* Standings duplicate alert spacing on mobile */
+  div[style*="marginBottom: 20"] {
+    flex-direction: column !important;
+    gap: 12px !important;
+    align-items: flex-start !important;
+  }
+}
+
 
