@@ -1127,7 +1127,7 @@ input, select, textarea { font-family: var(--font); }
   }
 
   .app-content {
-    padding: 16px !important;
+    padding: 12px !important;
     width: 100%;
   }
 
@@ -1152,12 +1152,14 @@ input, select, textarea { font-family: var(--font); }
     left: 0;
     right: 0;
     height: 60px;
-    background: var(--bg-sidebar);
+    background: rgba(10, 21, 32, 0.85) !important;
+    backdrop-filter: blur(12px) !important;
     border-bottom: 1px solid var(--border);
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
     z-index: 99;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25) !important;
   }
 
   .mobile-logo {
@@ -1183,18 +1185,18 @@ input, select, textarea { font-family: var(--font); }
     letter-spacing: 0.01em;
   }
 
-  /* Modern Navigator Floating Button */
+  /* Modern Navigator Toggle Button */
   .mobile-nav-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
-    background: var(--bg-card);
-    border: 1px solid var(--border-gold);
-    color: var(--gold);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    background: rgba(17, 24, 39, 0.9) !important;
+    border: 1px solid var(--border-gold) !important;
+    color: var(--gold) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 10px rgba(201, 168, 76, 0.15) !important;
     cursor: pointer;
     transition: all 0.2s ease;
   }
@@ -1225,6 +1227,30 @@ input, select, textarea { font-family: var(--font); }
     display: block !important;
   }
 
+  /* Cards Mobile Padding */
+  .card {
+    padding: 14px 16px !important;
+    border-radius: var(--r-md) !important;
+  }
+
+  .card-header {
+    margin-bottom: 12px !important;
+  }
+
+  .stat-card {
+    padding: 12px 14px !important;
+    gap: 12px !important;
+  }
+
+  .stat-card-value {
+    font-size: 1.45rem !important;
+  }
+
+  .stat-card-icon {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
   /* Roster / Tables mobile responsiveness */
   .data-table-container {
     border-radius: var(--r-md);
@@ -1238,25 +1264,61 @@ input, select, textarea { font-family: var(--font); }
     min-width: 600px; /* Force minimum width to trigger smooth horizontal scroll */
   }
 
-  /* Subnav overflow horizontal scrolling */
+  .data-table th, .data-table td {
+    padding: 8px 10px !important;
+    font-size: 0.78rem !important;
+  }
+
+  /* Subnav horizontal pill slider */
   .tournament-subnav {
-    padding: 0 4px 6px !important;
-    margin-bottom: 20px !important;
-    border-bottom: 1px solid var(--border) !important;
+    display: flex !important;
+    gap: 8px !important;
+    border-bottom: none !important;
+    padding: 8px 10px !important;
+    margin-bottom: 16px !important;
     overflow-x: auto !important;
+    background: var(--bg-sidebar) !important;
+    border-radius: var(--r-md) !important;
     -webkit-overflow-scrolling: touch;
-    gap: 12px !important;
+  }
+
+  .tournament-subnav::-webkit-scrollbar {
+    display: none !important; /* Hide scrollbars for clean app feel */
   }
 
   .tournament-subnav-tab {
-    padding: 6px 12px !important;
+    padding: 8px 14px !important;
+    font-size: 0.8rem !important;
+    border-bottom: none !important;
+    border-radius: var(--r-sm) !important;
+    background: transparent !important;
+    color: var(--text-secondary) !important;
+    transition: all 0.2s ease;
+  }
+
+  .tournament-subnav-tab.active {
+    background: rgba(201, 168, 76, 0.15) !important;
+    color: var(--gold) !important;
+  }
+
+  /* Page title sizing */
+  .page-header {
+    margin-bottom: 18px !important;
+    gap: 12px !important;
+  }
+
+  .page-title {
+    font-size: 1.35rem !important;
+  }
+
+  .page-subtitle {
     font-size: 0.8rem !important;
   }
 
   /* Forms and dashboard cards */
-  .grid, .comparison-selectors {
+  .grid, .card-grid, .comparison-selectors {
     grid-template-columns: 1fr !important;
-    gap: 16px !important;
+    gap: 12px !important;
   }
 
   .form-field {
@@ -1266,10 +1328,17 @@ input, select, textarea { font-family: var(--font); }
   .btn {
     width: 100% !important;
     justify-content: center !important;
+    padding: 10px 16px !important; /* Slightly taller touch target */
   }
 
   .btn-sm, .tab, .tab-bar button {
     width: auto !important;
+  }
+
+  .pagination {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 8px !important;
   }
 
   /* Standings duplicate alert spacing on mobile */
