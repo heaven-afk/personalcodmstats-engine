@@ -1243,11 +1243,11 @@ export default function TeamEntryPage() {
                         {lobbyData.map((r, li) => (
                           <Fragment key={`${reg.teamId}-l-${li+1}`}>
                             <CellInput
-                              value={r.placement || ''}
+                              value={r.placement === null || r.placement === undefined || r.placement === '' ? '' : r.placement}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'placement', v)}
                             />
                             <CellInput
-                              value={r.kills || ''}
+                              value={r.kills === null || r.kills === undefined || r.kills === '' ? '' : r.kills}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'kills', v)}
                             />
                           </Fragment>
@@ -1326,8 +1326,25 @@ export default function TeamEntryPage() {
 function CellInput({ value, onSave }) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value);
+  const isCancelled = useRef(false);
 
-  useEffect(() => { setLocal(value); }, [value]);
+  useEffect(() => {
+    if (!editing) {
+      setLocal(value);
+    }
+  }, [value, editing]);
+
+  const handleBlur = () => {
+    setEditing(false);
+    if (!isCancelled.current && local !== value) {
+      onSave(local);
+    }
+  };
+
+  const handleStartEdit = () => {
+    isCancelled.current = false;
+    setEditing(true);
+  };
 
   if (editing) {
     return (
@@ -1339,10 +1356,16 @@ function CellInput({ value, onSave }) {
           value={local}
           autoFocus
           onChange={e => setLocal(e.target.value)}
-          onBlur={() => { setEditing(false); if (local !== value) onSave(local); }}
+          onBlur={handleBlur}
           onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === 'Tab') { setEditing(false); if (local !== value) onSave(local); }
-            if (e.key === 'Escape') { setEditing(false); setLocal(value); }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              e.currentTarget.blur();
+            }
+            if (e.key === 'Escape') {
+              isCancelled.current = true;
+              setLocal(value);
+              setEditing(false);
+            }
           }}
         />
       </td>
@@ -1353,10 +1376,10 @@ function CellInput({ value, onSave }) {
       <div
         className="editable-cell-display"
         tabIndex={0}
-        onClick={() => setEditing(true)}
-        onFocus={() => setEditing(true)}
+        onClick={handleStartEdit}
+        onFocus={handleStartEdit}
       >
-        {local !== '' && local !== 0 ? <span style={{ fontFamily: 'var(--font-mono)' }}>{local}</span> : <span className="cell-empty">—</span>}
+        {local !== '' && local !== undefined && local !== null ? <span style={{ fontFamily: 'var(--font-mono)' }}>{local}</span> : <span className="cell-empty">—</span>}
       </div>
     </td>
   );
