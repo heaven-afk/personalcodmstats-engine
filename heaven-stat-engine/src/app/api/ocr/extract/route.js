@@ -10,7 +10,7 @@ of the results table.
 For each visible row in the results table extract:
 - rank: placement number (integer)
 - kills: kill count shown for that row (integer, use 0 if blank or not visible)
-- slot: squad slot label if visible (string, or null if not present)
+- slot: the team name/label or squad slot shown in the row next to the rank (string, e.g. "TEAM1", "TEAM 3", etc., or null if not present)
 
 Rules:
 - Return ONLY valid JSON, no explanation, no markdown, no preamble
@@ -22,8 +22,8 @@ Response schema:
 {
   "lobby": <lobby_number passed in via the user message>,
   "rows": [
-    { "rank": 1, "kills": 5, "slot": "A" },
-    { "rank": 2, "kills": 3, "slot": null }
+    { "rank": 1, "kills": 5, "slot": "TEAM1" },
+    { "rank": 2, "kills": 3, "slot": "TEAM3" }
   ]
 }`;
 
