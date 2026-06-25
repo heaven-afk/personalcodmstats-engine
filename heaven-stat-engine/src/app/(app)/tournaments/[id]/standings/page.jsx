@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTournament } from '../layout';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
@@ -9,7 +10,7 @@ import { computePlayerStats, filterSet1Players, filterSet2Players, sortCombined 
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { RankBadge, ClassBadge } from '@/components/ui/Badge';
-import { BarChart3, ArrowUpDown, ArrowUp, ArrowDown, Shield } from 'lucide-react';
+import { BarChart3, ArrowUpDown, ArrowUp, ArrowDown, Shield, AlertTriangle } from 'lucide-react';
 
 const TABS = [
   { key: 'daily',      label: 'Daily' },
@@ -60,6 +61,7 @@ function useSort(data, defaultKey = null, defaultDir = 'desc') {
 
 export default function StandingsPage() {
   const { tournament } = useTournament();
+  const router = useRouter();
   const [tab, setTab] = useState('daily');
   const [selectedDay, setSelectedDay] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -126,6 +128,22 @@ export default function StandingsPage() {
     return Object.fromEntries(teams.map((t) => [t.id, t]));
   }, [teams]);
 
+  const hasDuplicates = useMemo(() => {
+    const teamSeen = new Set();
+    for (const r of teamResults) {
+      const key = `${r.teamId}-${r.day}-${r.lobby}`;
+      if (teamSeen.has(key)) return true;
+      teamSeen.add(key);
+    }
+    const playerSeen = new Set();
+    for (const r of playerResults) {
+      const key = `${r.playerId}-${r.day}-${r.lobby}`;
+      if (playerSeen.has(key)) return true;
+      playerSeen.add(key);
+    }
+    return false;
+  }, [teamResults, playerResults]);
+
   if (loading) return <LoadingSpinner size="lg" />;
 
   const renderTeamTable = (data, showRank = false) => (
@@ -134,6 +152,33 @@ export default function StandingsPage() {
 
   return (
     <div>
+      {hasDuplicates && (
+        <div className="card" style={{
+          border: '1px solid var(--border-gold)',
+          background: 'rgba(201,168,76,0.05)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 18px',
+          marginBottom: 20,
+          borderRadius: 'var(--r-md)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <AlertTriangle style={{ color: 'var(--gold)' }} size={20} />
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+              <strong>Duplicate entries detected in database!</strong> This can skew standings and increase match counts.
+            </span>
+          </div>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => router.push(`/tournaments/${tournament.id}/config`)}
+            style={{ fontSize: '0.75rem' }}
+          >
+            Clean Database
+          </button>
+        </div>
+      )}
+
       {/* Tab bar */}
       <div className="tab-bar">
         {TABS.map((t) => (
