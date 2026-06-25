@@ -38,6 +38,15 @@ export default function AnalyticsPage() {
   const [expandedTeam, setExpandedTeam] = useState(null);
   const [compLeftId, setCompLeftId] = useState('');
   const [compRightId, setCompRightId] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
+  const [expandedTeamId, setExpandedTeamId] = useState(null);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const { scoring = {} } = tournament;
 
@@ -94,10 +103,12 @@ export default function AnalyticsPage() {
   // Team rating chart data
   const ratingChartData = analyticsData.slice(0, 15).map((t) => ({
     name: t.teamName?.slice(0, 12) || t.teamId,
+    fullName: t.teamName || t.teamId,
     rating: t.scores?.FINAL_RATING || 0,
     power: t.scores?.POWER || 0,
     placement: t.scores?.PLACEMENT || 0,
     conversion: t.scores?.CONVERSION || 0,
+    teamId: t.teamId,
   }));
 
   return (
@@ -152,19 +163,132 @@ export default function AnalyticsPage() {
           Team Rating Comparison
           <MetricTooltip metricKey="Team Rating" />
         </h3>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={ratingChartData} margin={{ top: 4, right: 16, bottom: 40, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
-            <YAxis tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[0, 1000]} />
-            <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#F1F5F9' }} />
-            <Legend wrapperStyle={{ color: '#94A3B8', fontSize: 12 }} />
-            <Bar dataKey="rating" fill="#C9A84C" name="Team Rating" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="power" fill="#C00000" name="Power" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="placement" fill="#0070C0" name="Placement" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="conversion" fill="#22C55E" name="Conversion" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {isMobile ? (
+          <div className="space-y-3" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+            {ratingChartData.map((item, idx) => {
+              const team = teamMap[item.teamId];
+              const logoSrc = team?.logo || team?.logoUrl;
+              const isExpanded = expandedTeamId === item.teamId;
+              
+              return (
+                <div 
+                  key={item.teamId} 
+                  style={{
+                    background: 'var(--bg-header)',
+                    border: '1px solid var(--border-md)',
+                    borderRadius: 10,
+                    padding: 12,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={() => setExpandedTeamId(isExpanded ? null : item.teamId)}
+                >
+                  {/* Top Row: Rank, Logo, Name, Value, Chevron */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        fontWeight: 800, 
+                        color: 'var(--text-muted)',
+                        minWidth: 16,
+                        textAlign: 'center'
+                      }}>
+                        {idx + 1}
+                      </span>
+                      {logoSrc ? (
+                        <img 
+                          src={logoSrc} 
+                          alt="" 
+                          style={{ width: 24, height: 24, borderRadius: 5, objectFit: 'cover' }}
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <Shield size={16} style={{ color: 'var(--gold)' }} />
+                      )}
+                      <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                        {item.fullName}
+                      </span>
+                    </div>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--gold)', fontSize: '0.85rem' }}>
+                        {item.rating.toFixed(1)}
+                      </span>
+                      {isExpanded ? <ChevronUp size={14} className="text-text-muted" /> : <ChevronDown size={14} className="text-text-muted" />}
+                    </div>
+                  </div>
+
+                  {/* Primary Progress Bar */}
+                  <div style={{ marginTop: 8, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(100, (item.rating / 1000) * 100)}%`, height: '100%', background: 'linear-gradient(90deg, var(--gold) 0%, #E2C974 100%)', borderRadius: 3 }} />
+                  </div>
+
+                  {/* Expanded Breakdown */}
+                  {isExpanded && (
+                    <div 
+                      style={{ 
+                        marginTop: 12, 
+                        paddingTop: 12, 
+                        borderTop: '1px solid rgba(255,255,255,0.05)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
+                      }}
+                      onClick={(e) => e.stopPropagation()} // Prevent collapse on details click
+                    >
+                      {/* Power */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                          <span>Power Score</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{item.power.toFixed(1)}</span>
+                        </div>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, (item.power / 1000) * 100)}%`, height: '100%', background: '#C00000', borderRadius: 2 }} />
+                        </div>
+                      </div>
+
+                      {/* Placement */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                          <span>Placement Consistency</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{item.placement.toFixed(1)}</span>
+                        </div>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, (item.placement / 1000) * 100)}%`, height: '100%', background: '#0070C0', borderRadius: 2 }} />
+                        </div>
+                      </div>
+
+                      {/* Conversion */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                          <span>Kill Conversion</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{item.conversion.toFixed(1)}</span>
+                        </div>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, (item.conversion / 1000) * 100)}%`, height: '100%', background: '#22C55E', borderRadius: 2 }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={ratingChartData} margin={{ top: 4, right: 16, bottom: 40, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
+              <YAxis tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[0, 1000]} />
+              <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#F1F5F9' }} />
+              <Legend wrapperStyle={{ color: '#94A3B8', fontSize: 12 }} />
+              <Bar dataKey="rating" fill="#C9A84C" name="Team Rating" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="power" fill="#C00000" name="Power" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="placement" fill="#0070C0" name="Placement" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="conversion" fill="#22C55E" name="Conversion" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* Tournament-scoped Head-to-Head Comparison Widget */}
