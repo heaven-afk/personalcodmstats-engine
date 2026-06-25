@@ -487,3 +487,9 @@ export function localDeleteBonusPoint(tId, bonusId) {
   list = list.filter(b => b.id !== bonusId);
   setStorageItem(`heaven_bonus_${tId}`, list);
 }
+
+export function localDeletePlayerMatchResult(tId, resId) {
+  let list = localGetPlayerMatchResults(tId);
+  list = list.filter(r => r.id !== resId);
+  setStorageItem(`heaven_results_players_${tId}`, list);
+}

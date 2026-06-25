@@ -100,6 +100,13 @@ export async function updatePlayerMatchResult(tournamentId, resultId, data) {
   await updateDoc(doc(db, 'tournaments', tournamentId, 'playerMatchResults', resultId), data);
 }
 
+export async function deletePlayerMatchResult(tournamentId, resultId) {
+  if (!isFirebaseConfigured) {
+    return localDb.localDeletePlayerMatchResult(tournamentId, resultId);
+  }
+  await deleteDoc(doc(db, 'tournaments', tournamentId, 'playerMatchResults', resultId));
+}
+
 // ─── Bonus Points ─────────────────────────────────────────────────────────────
 export async function getBonusPoints(tournamentId) {
   if (!isFirebaseConfigured) {

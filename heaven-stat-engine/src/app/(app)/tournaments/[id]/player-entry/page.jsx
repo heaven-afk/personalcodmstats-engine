@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTournament } from '../layout';
 import {
-  getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult,
+  getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
 } from '@/lib/firestore/matchData';
 import { getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayers } from '@/lib/firestore/registry';
@@ -207,12 +207,27 @@ export default function PlayerEntryPage() {
   const saveRow = async (playerId) => {
     const row = formData[playerId];
     if (!row) return;
+
+    const isKillsEmpty = row.kills === '' || row.kills === null || row.kills === undefined;
+    const isDamageEmpty = row.damage === '' || row.damage === null || row.damage === undefined;
+    const isAccuracyEmpty = row.accuracy === '' || row.accuracy === null || row.accuracy === undefined;
+
+    if (isKillsEmpty && isDamageEmpty && isAccuracyEmpty) {
+      if (row.existingId) {
+        try {
+          await deletePlayerMatchResult(tournament.id, row.existingId);
+          setFormData((prev) => ({ ...prev, [playerId]: { ...prev[playerId], existingId: null, kills: '', damage: '', accuracy: '' } }));
+        } catch (err) { console.error('Auto-delete error', err); }
+      }
+      return;
+    }
+
     const payload = {
       playerId: row.playerId, playerName: row.playerName, teamName: row.teamName,
       day, lobby,
-      kills: parseInt(row.kills) || 0,
-      damage: parseFloat(row.damage) || 0,
-      accuracy: parseFloat(row.accuracy) || 0,
+      kills: isKillsEmpty ? null : (parseInt(row.kills) ?? 0),
+      damage: isDamageEmpty ? null : (parseFloat(row.damage) ?? 0),
+      accuracy: isAccuracyEmpty ? null : (parseFloat(row.accuracy) ?? 0),
     };
     try {
       if (row.existingId) {
@@ -1287,7 +1302,8 @@ export default function PlayerEntryPage() {
               <tbody>
                 {rows.map((row) => {
                   const active = isClass2ActiveToday(row);
-                  const kills = parseInt(row.kills) || 0;
+                  const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
+                  const killsVal = hasKills ? parseInt(row.kills) : 0;
                   return (
                     <tr key={row.playerId} style={{ opacity: active ? 1 : 0.45 }}>
                       <td className="col-slot" style={{ textAlign: 'center', fontWeight: 700 }}>{row.slot}</td>
@@ -1303,7 +1319,7 @@ export default function PlayerEntryPage() {
                           />
                         ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                       </td>
-                      <td className="col-kills">{kills > 0 ? kills : '—'}</td>
+                      <td className="col-kills">{hasKills ? killsVal : '—'}</td>
                     </tr>
                   );
                 })}
@@ -1332,8 +1348,10 @@ export default function PlayerEntryPage() {
               <tbody>
                 {rows.map((row) => {
                   const active = isClass2ActiveToday(row);
-                  const dmg = parseFloat(row.damage) || 0;
-                  const acc = parseFloat(row.accuracy) || 0;
+                  const hasDmg = row.damage !== null && row.damage !== undefined && row.damage !== '';
+                  const hasAcc = row.accuracy !== null && row.accuracy !== undefined && row.accuracy !== '';
+                  const dmgVal = hasDmg ? parseFloat(row.damage) : 0;
+                  const accVal = hasAcc ? parseFloat(row.accuracy) : 0;
                   return (
                     <tr key={row.playerId} style={{ opacity: active ? 1 : 0.45 }}>
                       <td style={{ fontWeight: 600 }}>{row.playerName}</td>
@@ -1355,10 +1373,10 @@ export default function PlayerEntryPage() {
                           />
                         ) : '—'}
                       </td>
-                      <td style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{dmg > 0 ? dmg : '—'}</td>
-                      <td style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{acc > 0 ? `${acc}%` : '—'}</td>
-                      <td className="col-avg-red">{dmg > 0 ? Math.round(dmg) : '—'}</td>
-                      <td className="col-avg-red">{acc > 0 ? `${acc.toFixed(1)}%` : '—'}</td>
+                      <td style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{hasDmg ? row.damage : '—'}</td>
+                      <td style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{hasAcc ? `${row.accuracy}%` : '—'}</td>
+                      <td className="col-avg-red">{hasDmg ? Math.round(dmgVal) : '—'}</td>
+                      <td className="col-avg-red">{hasAcc ? `${accVal.toFixed(1)}%` : '—'}</td>
                     </tr>
                   );
                 })}
@@ -1393,7 +1411,8 @@ export default function PlayerEntryPage() {
                 </thead>
                 <tbody>
                   {getClass2Players().map((row) => {
-                    const kills = parseInt(row.kills) || 0;
+                    const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
+                    const killsVal = hasKills ? parseInt(row.kills) : 0;
                     return (
                       <tr key={row.playerId}>
                         <td style={{ fontWeight: 600 }}>{row.playerName}<br /><span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{row.ign}</span></td>
@@ -1419,8 +1438,8 @@ export default function PlayerEntryPage() {
                             onBlur={() => saveRow(row.playerId)}
                           />
                         </td>
-                        <td className="col-cyan">{kills > 0 ? kills : '—'}</td>
-                        <td className="col-cyan">{kills > 0 ? 1 : '—'}</td>
+                        <td className="col-cyan">{hasKills ? killsVal : '—'}</td>
+                        <td className="col-cyan">{hasKills ? 1 : '—'}</td>
                       </tr>
                     );
                   })}
