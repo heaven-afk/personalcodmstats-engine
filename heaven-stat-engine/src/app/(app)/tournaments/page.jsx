@@ -74,7 +74,7 @@ export default function TournamentsListPage() {
           <Link href={`/tournaments/${t.id}`} className="text-gold" style={{ fontWeight: 600 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {bannerSrc ? (
-                <img src={bannerSrc} alt="" style={{ width: 40, height: 24, borderRadius: 4, objectFit: 'cover', background: 'var(--bg-header)', border: '1px solid var(--border-md)' }} />
+                <img src={bannerSrc} alt="" style={{ width: 40, height: 24, borderRadius: 4, objectFit: 'cover', background: 'var(--bg-header)', border: '1px solid var(--border-md)' }} referrerPolicy="no-referrer" />
               ) : (
                 <div style={{ width: 40, height: 24, borderRadius: 4, background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-md)' }}>
                   <Trophy size={11} className="text-gold" style={{ opacity: 0.8 }} />

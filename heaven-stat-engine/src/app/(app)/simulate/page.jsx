@@ -715,6 +715,7 @@ export default function SimulatePage() {
                         src={t.banner || t.bannerUrl}
                         alt=""
                         style={{ width: 44, height: 26, borderRadius: 5, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border-md)' }}
+                        referrerPolicy="no-referrer"
                       />
                     ) : (
                       <div style={{

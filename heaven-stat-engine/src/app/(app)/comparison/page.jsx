@@ -783,7 +783,7 @@ function EntityHeader({ entity, name, side, logo, mode, color }) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: isLeft ? 'flex-start' : 'flex-end', background: 'var(--bg-card)', border: `1px solid ${color}33`, borderRadius: 12, padding: '16px 20px', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexDirection: isLeft ? 'row' : 'row-reverse' }}>
         {logo
-          ? <img src={logo} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: 'cover', border: `2px solid ${color}` }} />
+          ? <img src={logo} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: 'cover', border: `2px solid ${color}` }} referrerPolicy="no-referrer" />
           : <div style={{ width: 52, height: 52, borderRadius: 10, background: `${color}22`, border: `2px solid ${color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Shield size={24} style={{ color }} /></div>
         }
         <div style={{ textAlign: isLeft ? 'left' : 'right' }}>

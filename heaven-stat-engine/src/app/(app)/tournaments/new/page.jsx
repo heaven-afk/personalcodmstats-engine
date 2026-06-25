@@ -380,7 +380,7 @@ export default function CreateTournamentPage() {
                     placeholder="https://example.com/banner.jpg"
                   />
                   {bannerUrl && (
-                    <img src={bannerUrl} alt="Preview" className="banner-preview-lg" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    <img src={bannerUrl} alt="Preview" className="banner-preview-lg" onError={(e) => { e.currentTarget.style.display = 'none'; }} referrerPolicy="no-referrer" />
                   )}
                 </div>
               )}

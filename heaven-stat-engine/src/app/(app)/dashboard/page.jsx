@@ -145,7 +145,7 @@ export default function DashboardPage() {
                     <div key={tourney.id} className="tourney-square-card">
                       {/* Banner area */}
                       {bannerSrc ? (
-                        <img src={bannerSrc} alt="" className="tourney-card-banner" />
+                        <img src={bannerSrc} alt="" className="tourney-card-banner" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="tourney-card-banner" style={{
                           background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',

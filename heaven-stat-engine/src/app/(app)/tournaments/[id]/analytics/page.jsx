@@ -217,7 +217,7 @@ export default function AnalyticsPage() {
                   const team = teamMap[compLeftTeam.teamId];
                   const logoSrc = team?.logo || team?.logoUrl;
                   return logoSrc ? (
-                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} />
+                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} referrerPolicy="no-referrer" />
                   ) : (
                     <Shield size={22} style={{ color: '#C9A84C' }} />
                   );
@@ -233,7 +233,7 @@ export default function AnalyticsPage() {
                   const team = teamMap[compRightTeam.teamId];
                   const logoSrc = team?.logo || team?.logoUrl;
                   return logoSrc ? (
-                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} />
+                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} referrerPolicy="no-referrer" />
                   ) : (
                     <Shield size={22} style={{ color: '#38BDF8' }} />
                   );
@@ -425,7 +425,7 @@ export default function AnalyticsPage() {
                             const team = teamMap?.[row.teamId];
                             const logoSrc = team?.logo || team?.logoUrl;
                             return logoSrc ? (
-                              <img src={logoSrc} alt="" className="team-logo-thumbnail" width={20} height={20} />
+                              <img src={logoSrc} alt="" className="team-logo-thumbnail" width={20} height={20} referrerPolicy="no-referrer" />
                             ) : (
                               <Shield size={16} className="text-gold flex-shrink-0" />
                             )

@@ -152,7 +152,7 @@ export default function TeamsPage() {
           <Link href={`/teams/${row.id}`} className="font-semibold text-text-primary hover:text-gold transition">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {logoSrc ? (
-                <img src={logoSrc} alt="" className="team-logo-thumbnail" width={20} height={20} />
+                <img src={logoSrc} alt="" className="team-logo-thumbnail" width={20} height={20} referrerPolicy="no-referrer" />
               ) : (
                 <Shield size={16} className="text-gold flex-shrink-0" />
               )}
