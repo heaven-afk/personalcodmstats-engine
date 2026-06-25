@@ -9,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import { PlaystyleBadge, RatingBadge, RankBadge } from '@/components/ui/Badge';
 import MetricTooltip from '@/components/ui/MetricTooltip';
 import { BarChart3, ChevronDown, ChevronUp, TrendingUp, Shield } from 'lucide-react';
+import { cleanImageUrl } from '@/lib/utils/image';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line,
   CartesianGrid, Legend,
@@ -164,28 +165,38 @@ export default function AnalyticsPage() {
           <MetricTooltip metricKey="Team Rating" />
         </h3>
         {isMobile ? (
-          <div className="space-y-3" style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+          <div style={{ 
+            maxHeight: '420px', 
+            overflowY: 'auto', 
+            paddingRight: '6px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px'
+          }}>
             {ratingChartData.map((item, idx) => {
               const team = teamMap[item.teamId];
-              const logoSrc = team?.logo || team?.logoUrl;
+              const logoSrc = cleanImageUrl(team?.logo || team?.logoUrl);
               const isExpanded = expandedTeamId === item.teamId;
               
               return (
                 <div 
                   key={item.teamId} 
                   style={{
-                    background: 'var(--bg-header)',
-                    border: '1px solid var(--border-md)',
-                    borderRadius: 10,
-                    padding: 12,
+                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    border: isExpanded ? '1px solid rgba(201, 168, 76, 0.25)' : '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: 12,
+                    padding: '12px 14px',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
+                    boxShadow: isExpanded ? '0 4px 20px 0 rgba(201, 168, 76, 0.08)' : '0 4px 12px 0 rgba(0, 0, 0, 0.2)',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                   onClick={() => setExpandedTeamId(isExpanded ? null : item.teamId)}
                 >
                   {/* Top Row: Rank, Logo, Name, Value, Chevron */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <span style={{ 
                         fontSize: '0.75rem', 
                         fontWeight: 800, 
@@ -199,18 +210,25 @@ export default function AnalyticsPage() {
                         <img 
                           src={logoSrc} 
                           alt="" 
-                          style={{ width: 24, height: 24, borderRadius: 5, objectFit: 'cover' }}
+                          style={{ width: 24, height: 24, borderRadius: 5, objectFit: 'cover', flexShrink: 0 }}
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <Shield size={16} style={{ color: 'var(--gold)' }} />
+                        <Shield size={16} style={{ color: 'var(--gold)', flexShrink: 0 }} />
                       )}
-                      <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                      <span style={{ 
+                        fontWeight: 600, 
+                        fontSize: '0.85rem', 
+                        color: 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
                         {item.fullName}
                       </span>
                     </div>
                     
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--gold)', fontSize: '0.85rem' }}>
                         {item.rating.toFixed(1)}
                       </span>
@@ -292,17 +310,35 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Tournament-scoped Head-to-Head Comparison Widget */}
-      <div className="card" style={{ marginBottom: 24 }}>
+      <div 
+        className="card" 
+        style={{ 
+          marginBottom: 24,
+          ...(isMobile ? {
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.65) 0%, rgba(15, 23, 42, 0.8) 100%)',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.25)'
+          } : {})
+        }}
+      >
         <h3 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
           <Shield size={18} className="text-gold" />
           Head-to-Head Team Comparison
         </h3>
         
         {/* Dropdowns */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row', 
+          alignItems: 'center', 
+          gap: isMobile ? 8 : 14, 
+          marginBottom: 20 
+        }}>
           <select
             className="form-select"
-            style={{ flex: 1, marginTop: 0 }}
+            style={{ width: '100%', marginTop: 0 }}
             value={compLeftId}
             onChange={e => setCompLeftId(e.target.value)}
           >
@@ -313,10 +349,14 @@ export default function AnalyticsPage() {
               </option>
             ))}
           </select>
-          <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', padding: '4px 8px', background: 'var(--bg-header)', borderRadius: 4 }}>VS</span>
+          {isMobile ? (
+            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--bg-header)', borderRadius: 4 }}>VS</span>
+          ) : (
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', padding: '4px 8px', background: 'var(--bg-header)', borderRadius: 4 }}>VS</span>
+          )}
           <select
             className="form-select"
-            style={{ flex: 1, marginTop: 0 }}
+            style={{ width: '100%', marginTop: 0 }}
             value={compRightId}
             onChange={e => setCompRightId(e.target.value)}
           >
@@ -333,36 +373,73 @@ export default function AnalyticsPage() {
         {compLeftTeam && compRightTeam ? (
           <div className="space-y-4">
             {/* Headers with Logos */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 12 }}>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: '1fr auto 1fr', 
+              alignItems: 'center', 
+              gap: isMobile ? 6 : 12, 
+              borderBottom: '1px solid var(--border)', 
+              paddingBottom: 12, 
+              marginBottom: 12 
+            }}>
               {/* Left Team Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
-                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#C9A84C' }}>{compLeftTeam.teamName}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isMobile ? 6 : 10, minWidth: 0 }}>
+                <span style={{ 
+                  fontWeight: 700, 
+                  fontSize: isMobile ? '0.78rem' : '0.95rem', 
+                  color: '#C9A84C',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  textAlign: 'right'
+                }} title={compLeftTeam.teamName}>
+                  {compLeftTeam.teamName}
+                </span>
                 {(() => {
                   const team = teamMap[compLeftTeam.teamId];
-                  const logoSrc = team?.logo || team?.logoUrl;
+                  const logoSrc = cleanImageUrl(team?.logo || team?.logoUrl);
                   return logoSrc ? (
-                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                    <img src={logoSrc} alt="" style={{ width: isMobile ? 22 : 28, height: isMobile ? 22 : 28, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} referrerPolicy="no-referrer" />
                   ) : (
-                    <Shield size={22} style={{ color: '#C9A84C' }} />
+                    <Shield size={isMobile ? 18 : 22} style={{ color: '#C9A84C', flexShrink: 0 }} />
                   );
                 })()}
               </div>
 
               {/* Tally Indicator */}
-              <div style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 8px', background: 'var(--bg-header)', borderRadius: 4, color: 'var(--text-muted)' }}>COMPARE</div>
+              <div style={{ 
+                fontSize: isMobile ? '0.55rem' : '0.65rem', 
+                fontWeight: 800, 
+                padding: isMobile ? '2px 5px' : '3px 8px', 
+                background: 'var(--bg-header)', 
+                borderRadius: 4, 
+                color: 'var(--text-muted)' 
+              }}>
+                VS
+              </div>
 
               {/* Right Team Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: isMobile ? 6 : 10, minWidth: 0 }}>
                 {(() => {
                   const team = teamMap[compRightTeam.teamId];
-                  const logoSrc = team?.logo || team?.logoUrl;
+                  const logoSrc = cleanImageUrl(team?.logo || team?.logoUrl);
                   return logoSrc ? (
-                    <img src={logoSrc} alt="" className="team-logo-thumbnail" width={28} height={28} style={{ borderRadius: 6, objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                    <img src={logoSrc} alt="" style={{ width: isMobile ? 22 : 28, height: isMobile ? 22 : 28, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} referrerPolicy="no-referrer" />
                   ) : (
-                    <Shield size={22} style={{ color: '#38BDF8' }} />
+                    <Shield size={isMobile ? 18 : 22} style={{ color: '#38BDF8', flexShrink: 0 }} />
                   );
                 })()}
-                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#38BDF8' }}>{compRightTeam.teamName}</span>
+                <span style={{ 
+                  fontWeight: 700, 
+                  fontSize: isMobile ? '0.78rem' : '0.95rem', 
+                  color: '#38BDF8',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  textAlign: 'left'
+                }} title={compRightTeam.teamName}>
+                  {compRightTeam.teamName}
+                </span>
               </div>
             </div>
 

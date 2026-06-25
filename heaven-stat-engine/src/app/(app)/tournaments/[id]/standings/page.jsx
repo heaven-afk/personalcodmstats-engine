@@ -11,6 +11,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { RankBadge, ClassBadge } from '@/components/ui/Badge';
 import { BarChart3, ArrowUpDown, ArrowUp, ArrowDown, Shield, AlertTriangle } from 'lucide-react';
+import { cleanImageUrl } from '@/lib/utils/image';
 
 const TABS = [
   { key: 'daily',      label: 'Daily' },
@@ -279,7 +280,7 @@ function TeamTable({ data, scoring, showRank, teamMap }) {
           <tbody>
             {sorted.map((row, i) => {
               const team = teamMap?.[row.teamId];
-              const logoSrc = team?.logo || team?.logoUrl;
+              const logoSrc = cleanImageUrl(team?.logo || team?.logoUrl);
               return (
                 <tr key={row.teamId || i}>
                   {showRank && <td><RankBadge rank={row.rank ?? i + 1} /></td>}
@@ -349,7 +350,7 @@ function SeasonTable({ data, totalDays, teamMap }) {
           <tbody>
             {sorted.map((row, i) => {
               const team = teamMap?.[row.teamId];
-              const logoSrc = team?.logo || team?.logoUrl;
+              const logoSrc = cleanImageUrl(team?.logo || team?.logoUrl);
               return (
                 <tr key={row.teamId || i}>
                   <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>

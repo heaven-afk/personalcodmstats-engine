@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
 import { mergeTeams } from '@/lib/firestore/merge';
 import { scanForDuplicates } from '@/lib/utils/similarity';
+import { cleanImageUrl } from '@/lib/utils/image';
 
 export default function TeamsPage() {
   const [teams, setTeams] = useState([]);
@@ -147,7 +148,7 @@ export default function TeamsPage() {
       header: 'Team Name',
       accessor: 'teamName',
       render: (row) => {
-        const logoSrc = row.logo || row.logoUrl;
+        const logoSrc = cleanImageUrl(row.logo || row.logoUrl);
         return (
           <Link href={`/teams/${row.id}`} className="font-semibold text-text-primary hover:text-gold transition">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

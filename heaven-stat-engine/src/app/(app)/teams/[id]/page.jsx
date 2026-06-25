@@ -10,6 +10,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
 import { ChevronLeft, Trophy, Shield, Star, Link2, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { cleanImageUrl } from '@/lib/utils/image';
 
 export default function TeamProfilePage() {
   const { id } = useParams();
@@ -230,7 +231,7 @@ export default function TeamProfilePage() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
                 }}>
                   {logoUrlInput || team.logo ? (
-                    <img src={logoUrlInput || team.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                    <img src={cleanImageUrl(logoUrlInput || team.logo)} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
                   ) : (
                     <Shield size={28} style={{ color: 'var(--gold)' }} />
                   )}
@@ -259,7 +260,7 @@ export default function TeamProfilePage() {
                 marginBottom: 10, position: 'relative',
               }}>
                 {bannerUrlInput ? (
-                  <img src={bannerUrlInput} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                  <img src={cleanImageUrl(bannerUrlInput)} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
                 ) : (
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No banner set</span>
                 )}
