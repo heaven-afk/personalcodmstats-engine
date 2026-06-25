@@ -357,7 +357,9 @@ export default function TeamEntryPage() {
         clearInterval(progressInterval);
 
         const mappedRows = (data.rows || []).map(row => {
-          const numericSlot = parseInt(row.slot) || 0;
+          const slotStr = String(row.slot || '');
+          const match = slotStr.match(/\d+/);
+          const numericSlot = match ? parseInt(match[0]) : 0;
           const team = teamRegs.find(t => t.slot === numericSlot);
           return {
             placement: parseInt(row.rank) || 0,
@@ -414,7 +416,9 @@ export default function TeamEntryPage() {
         let updatedRow = { ...row, [field]: val };
         
         if (field === 'slot') {
-          const numericSlot = parseInt(val) || 0;
+          const slotStr = String(val || '');
+          const match = slotStr.match(/\d+/);
+          const numericSlot = match ? parseInt(match[0]) : 0;
           const team = teamRegs.find(t => t.slot === numericSlot);
           updatedRow.teamId = team?.teamId || null;
           updatedRow.teamName = team?.teamName || null;
