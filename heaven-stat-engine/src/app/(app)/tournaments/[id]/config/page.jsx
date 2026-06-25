@@ -129,6 +129,86 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
     setDeleteChecked2(false);
   };
 
+  const [cleaning, setCleaning] = useState(false);
+
+  const handleCleanDuplicates = async () => {
+    setCleaning(true);
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs, deleteDoc, doc } = await import('firebase/firestore');
+
+      // 1. Clean Team Match Results
+      const teamSnap = await getDocs(collection(db, 'tournaments', id, 'teamMatchResults'));
+      const teamDocs = teamSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const teamSeen = new Map();
+      teamDocs.forEach(docData => {
+        const key = `${docData.teamId}-${docData.day}-${docData.lobby}`;
+        if (!teamSeen.has(key)) {
+          teamSeen.set(key, []);
+        }
+        teamSeen.get(key).push(docData);
+      });
+
+      let teamCount = 0;
+      for (const [key, docsList] of teamSeen.entries()) {
+        if (docsList.length > 1) {
+          docsList.sort((a, b) => {
+            if (a.placement && !b.placement) return -1;
+            if (!a.placement && b.placement) return 1;
+            return (b.kills || 0) - (a.kills || 0);
+          });
+          const toDelete = docsList.slice(1);
+          for (const d of toDelete) {
+            await deleteDoc(doc(db, 'tournaments', id, 'teamMatchResults', d.id));
+            teamCount++;
+          }
+        }
+      }
+
+      // 2. Clean Player Match Results
+      const playerSnap = await getDocs(collection(db, 'tournaments', id, 'playerMatchResults'));
+      const playerDocs = playerSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const playerSeen = new Map();
+      playerDocs.forEach(docData => {
+        const key = `${docData.playerId}-${docData.day}-${docData.lobby}`;
+        if (!playerSeen.has(key)) {
+          playerSeen.set(key, []);
+        }
+        playerSeen.get(key).push(docData);
+      });
+
+      let playerCount = 0;
+      for (const [key, docsList] of playerSeen.entries()) {
+        if (docsList.length > 1) {
+          docsList.sort((a, b) => {
+            if (a.kills && !b.kills) return -1;
+            if (!a.kills && b.kills) return 1;
+            return (b.damage || 0) - (a.damage || 0);
+          });
+          const toDelete = docsList.slice(1);
+          for (const d of toDelete) {
+            await deleteDoc(doc(db, 'tournaments', id, 'playerMatchResults', d.id));
+            playerCount++;
+          }
+        }
+      }
+
+      if (teamCount > 0 || playerCount > 0) {
+        toast.success(`Cleanup complete! Removed ${teamCount} duplicate team scores and ${playerCount} duplicate player scores.`);
+      } else {
+        toast.success('No duplicates found! Your database is clean.');
+      }
+      refresh();
+    } catch (err) {
+      console.error(err);
+      toast.error('Cleanup failed: ' + err.message);
+    } finally {
+      setCleaning(false);
+    }
+  };
+
   const handleDeleteTournament = async () => {
     if (!deleteChecked1 || !deleteChecked2) return;
     setConfirming(true);
@@ -452,6 +532,24 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
             )}
           </button>
         </div>
+      </div>
+
+      {/* Database Utilities */}
+      <div className="card" style={{ border: '1px solid var(--border-md)', marginTop: 24 }}>
+        <h2 className="card-title mb-2 flex items-center gap-2">
+          <Zap size={18} style={{ color: 'var(--gold)' }} /> Database Utilities
+        </h2>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
+          Run database utilities to clean up duplicate records or resolve synchronization anomalies.
+        </p>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={cleaning}
+          onClick={handleCleanDuplicates}
+        >
+          {cleaning ? 'Cleaning Duplicates...' : 'Clean Duplicate Match Scores'}
+        </button>
       </div>
 
       {/* Danger Zone */}
