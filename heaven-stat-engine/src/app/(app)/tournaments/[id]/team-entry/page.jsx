@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, Fragment, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
-import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, getBonusPoints, addBonusPoint, updateBonusPoint, deleteBonusPoint } from '@/lib/firestore/matchData';
+import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, deleteTeamMatchResult, getBonusPoints, addBonusPoint, updateBonusPoint, deleteBonusPoint } from '@/lib/firestore/matchData';
 import { getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { computeDailyStandings } from '@/lib/engine/standings';
 import { getPlacementPoints } from '@/lib/engine/scoring';
@@ -212,14 +212,47 @@ export default function TeamEntryPage() {
       let updatedCount = 0;
       let addedCount = 0;
 
+      // Use a local copy of dayResults to track saves synchronously and avoid duplicate creations
+      const tempDayResults = [...dayResults];
+
       for (const row of parsedPreview) {
         for (const lv of row.lobbyValues) {
-          const existing = dayResults.find(r => r.teamId === row.teamId && r.lobby === lv.lobby);
-          if (existing) {
-            await updateTeamMatchResult(id, existing.id, { placement: lv.placement, kills: lv.kills });
+          // Find all existing entries for this team and lobby
+          const existingIdxs = [];
+          tempDayResults.forEach((r, idx) => {
+            if (r.teamId === row.teamId && r.lobby === lv.lobby) {
+              existingIdxs.push(idx);
+            }
+          });
+
+          const payload = {
+            placement: lv.placement,
+            kills: lv.kills
+          };
+
+          if (existingIdxs.length > 0) {
+            const firstIdx = existingIdxs[0];
+            const existing = tempDayResults[firstIdx];
+            await updateTeamMatchResult(id, existing.id, payload);
+            tempDayResults[firstIdx] = { ...existing, ...payload };
             updatedCount++;
+
+            // Delete any extra duplicate documents
+            for (let i = 1; i < existingIdxs.length; i++) {
+              const idxToDelete = existingIdxs[i];
+              const extraDoc = tempDayResults[idxToDelete];
+              await deleteTeamMatchResult(id, extraDoc.id);
+            }
+
+            // Re-filter tempDayResults to remove the extra deleted documents
+            if (existingIdxs.length > 1) {
+              const idsToDelete = new Set(existingIdxs.slice(1).map(idx => tempDayResults[idx].id));
+              let filtered = tempDayResults.filter(r => !idsToDelete.has(r.id));
+              tempDayResults.length = 0;
+              tempDayResults.push(...filtered);
+            }
           } else {
-            await saveTeamMatchResult(id, {
+            const saved = await saveTeamMatchResult(id, {
               teamId: row.teamId,
               teamName: row.teamName,
               day,
@@ -227,6 +260,7 @@ export default function TeamEntryPage() {
               placement: lv.placement,
               kills: lv.kills
             });
+            tempDayResults.push(saved);
             addedCount++;
           }
         }
@@ -470,8 +504,18 @@ export default function TeamEntryPage() {
       let updatedCount = 0;
       let addedCount = 0;
 
+      // Use a local copy of dayResults to track saves synchronously and avoid duplicate creations
+      const tempDayResults = [...dayResults];
+
       for (const row of validResults) {
-        const existing = dayResults.find(r => r.teamId === row.teamId && r.lobby === lobbyNum);
+        // Find all existing entries for this team and lobby
+        const existingIdxs = [];
+        tempDayResults.forEach((r, idx) => {
+          if (r.teamId === row.teamId && r.lobby === lobbyNum) {
+            existingIdxs.push(idx);
+          }
+        });
+
         const payload = {
           teamId: row.teamId,
           teamName: row.teamName,
@@ -482,11 +526,31 @@ export default function TeamEntryPage() {
           inputMethod: 'ocr'
         };
 
-        if (existing) {
+        if (existingIdxs.length > 0) {
+          // Update the first existing document
+          const firstIdx = existingIdxs[0];
+          const existing = tempDayResults[firstIdx];
           await updateTeamMatchResult(id, existing.id, payload);
+          tempDayResults[firstIdx] = { ...existing, ...payload };
           updatedCount++;
+
+          // Delete any extra duplicate documents
+          for (let i = 1; i < existingIdxs.length; i++) {
+            const idxToDelete = existingIdxs[i];
+            const extraDoc = tempDayResults[idxToDelete];
+            await deleteTeamMatchResult(id, extraDoc.id);
+          }
+
+          // Re-filter tempDayResults to remove the extra deleted documents
+          if (existingIdxs.length > 1) {
+            const idsToDelete = new Set(existingIdxs.slice(1).map(idx => tempDayResults[idx].id));
+            let filtered = tempDayResults.filter(r => !idsToDelete.has(r.id));
+            tempDayResults.length = 0;
+            tempDayResults.push(...filtered);
+          }
         } else {
-          await saveTeamMatchResult(id, payload);
+          const saved = await saveTeamMatchResult(id, payload);
+          tempDayResults.push(saved);
           addedCount++;
         }
       }

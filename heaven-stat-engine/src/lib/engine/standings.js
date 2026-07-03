@@ -30,14 +30,15 @@ export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConf
       };
     }
     const t = teamMap[key];
-    t.matches++;
+    // Only count a lobby as a completed match if placement was actually entered
+    if (result.placement > 0) t.matches++;
     t.kills += result.kills || 0;
     t.damage += result.damage || 0;
     t.sumOfPositions += result.placement || 0;
     t.placementPts += getPlacementPoints(result.placement, placementPoints);
     if (result.placement === 1) t.wins++;
-    if (result.placement <= 3) t.top3Finishes++;
-    if (result.placement <= 5) t.top5Finishes++;
+    if (result.placement >= 1 && result.placement <= 3) t.top3Finishes++;
+    if (result.placement >= 1 && result.placement <= 5) t.top5Finishes++;
     t.lobbyData.push(result);
   }
 
@@ -82,22 +83,23 @@ export function computeSeasonStandings(teamMatchResults, bonusPoints, scoringCon
       };
     }
     const t = teamMap[key];
-    t.matches++;
+    // Only count a lobby as a completed match if placement was actually entered
+    if (result.placement > 0) t.matches++;
     t.kills += result.kills || 0;
     t.damage += result.damage || 0;
     t.sumOfPositions += result.placement || 0;
     const ppts = getPlacementPoints(result.placement, placementPoints);
     t.placementPts += ppts;
     if (result.placement === 1) t.wins++;
-    if (result.placement <= 3) t.top3Finishes++;
-    if (result.placement <= 5) t.top5Finishes++;
+    if (result.placement >= 1 && result.placement <= 3) t.top3Finishes++;
+    if (result.placement >= 1 && result.placement <= 5) t.top5Finishes++;
     t.activeDays.add(result.day);
 
     // Per-day accumulation
     if (!t.perDay[result.day]) {
       t.perDay[result.day] = { wins: 0, matches: 0, placePts: 0, kills: 0, bonusPts: 0 };
     }
-    t.perDay[result.day].matches++;
+    t.perDay[result.day].matches += result.placement > 0 ? 1 : 0;
     t.perDay[result.day].kills += result.kills || 0;
     t.perDay[result.day].placePts += ppts;
     if (result.placement === 1) t.perDay[result.day].wins++;

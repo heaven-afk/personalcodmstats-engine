@@ -1,11 +1,16 @@
 /**
  * src/app/api/overlay/standings/top/route.js
  *
- * GET /api/overlay/standings/top?tournamentId={id}&n={count}&type={team|player}
+ * GET /api/overlay/standings/top?tournamentId={id}&n={count}&type={team|player}&day={dayNumber}
  *
- * Returns the top N teams or players for a given tournament, using the same
- * analytics computations as the main engine. The `n` and `type` parameters
- * are flexible — no separate endpoint per count or per type is needed.
+ * Returns the top N teams or players for a given tournament.
+ *
+ * When `day` is supplied the response reflects ONLY that day's results
+ * (placement pts + kill pts + that day's bonus pts), which is what the
+ * "Live Rankings" overlay scene should display.
+ *
+ * When `day` is omitted the full season analytics are returned (legacy
+ * behaviour — used by recap / season-overview overlays).
  *
  * Authentication: every request must include the `x-overlay-api-key` header
  * with a value matching the OVERLAY_API_KEY environment variable on this server.
@@ -19,7 +24,9 @@
 import { NextResponse } from 'next/server';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTournament, getPlayerRegistrations } from '@/lib/firestore/tournaments';
+import { getTeams } from '@/lib/firestore/registry';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
+import { computeDailyStandings } from '@/lib/engine/standings';
 import { computePlayerStats, computePlayerAnalytics } from '@/lib/engine/playerStats';
 
 // ─── Auth & CORS helpers (shared pattern across all overlay routes) ───────────
@@ -71,6 +78,9 @@ export async function GET(request) {
   const tournamentId = searchParams.get('tournamentId');
   const n = parseInt(searchParams.get('n') || '5', 10);
   const type = searchParams.get('type') || 'team';
+  // Optional: when supplied, return ONLY that day's standings (for live ranking overlays)
+  const dayParam = searchParams.get('day');
+  const day = dayParam !== null ? parseInt(dayParam, 10) : null;
 
   if (!tournamentId) {
     return corsJson({ error: 'tournamentId is required' }, 400);
@@ -88,16 +98,39 @@ export async function GET(request) {
     return corsJson({ error: 'tournament not found' }, 404);
   }
 
+  const scoringConfig = tournament.scoring || {};
+
   try {
     if (type === 'team') {
-      const [teamResults, bonusPoints] = await Promise.all([
+      const [teamResults, bonusPoints, allTeams] = await Promise.all([
         getTeamMatchResults(tournamentId),
         getBonusPoints(tournamentId),
+        getTeams(),
       ]);
+
+      // ── Daily mode: return standings for a single day only ──────────────────
+      if (day !== null && !isNaN(day)) {
+        // Enrich raw Firestore results with team names from the global registry
+        const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
+        const enriched = teamResults.map((r) => ({
+          ...r,
+          teamName: teamMap[r.teamId]?.teamName || r.teamName || r.teamId,
+          clanName: teamMap[r.teamId]?.clanName || r.clanName || '',
+          logo:     teamMap[r.teamId]?.logo || teamMap[r.teamId]?.logoUrl || null,
+        }));
+
+        const dailyStandings = computeDailyStandings(enriched, bonusPoints, scoringConfig, day);
+        // Attach rank number and logo for the overlay
+        const ranked = dailyStandings.map((t, i) => ({ ...t, rank: i + 1 }));
+        return corsJson({ tournamentId, type, day, n, mode: 'daily', results: ranked.slice(0, n) });
+      }
+
+      // ── Season mode (default): full analytics sorted by season totalPts ─────
       // computeTeamAnalytics returns teams sorted by totalPts (with tiebreakers)
       // and attaches analyticsRank — reuse that ordering directly.
-      const analytics = computeTeamAnalytics(teamResults, bonusPoints, tournament.scoring || {});
-      return corsJson({ tournamentId, type, n, results: analytics.slice(0, n) });
+      const analytics = computeTeamAnalytics(teamResults, bonusPoints, scoringConfig);
+      return corsJson({ tournamentId, type, n, mode: 'season', results: analytics.slice(0, n) });
+
     } else {
       // type === 'player'
       const [playerResults, playerRegs, teamResults] = await Promise.all([
