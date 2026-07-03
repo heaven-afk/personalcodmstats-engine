@@ -855,6 +855,7 @@ export default function TeamEntryPage() {
                       accept=".xlsx,.xls,.csv"
                       style={{ display: 'none' }}
                       onChange={handleFileChange}
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </div>
 
@@ -885,6 +886,7 @@ export default function TeamEntryPage() {
                       multiple
                       style={{ display: 'none' }}
                       onChange={handleOcrFileChange}
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </div>
                 </div>
