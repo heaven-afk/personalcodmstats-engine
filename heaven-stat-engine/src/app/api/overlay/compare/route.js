@@ -25,6 +25,7 @@
 import { NextResponse } from 'next/server';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTournament, getPlayerRegistrations } from '@/lib/firestore/tournaments';
+import { getTeams, getPlayers } from '@/lib/firestore/registry';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
 import { computePlayerStats, computePlayerAnalytics } from '@/lib/engine/playerStats';
 import { aggregateGlobalTeams, aggregateGlobalPlayers } from '@/lib/engine/globalAggregations';
@@ -80,6 +81,9 @@ export async function GET(request) {
     const scope = tournamentId ? 'tournament' : 'career';
 
     if (type === 'team') {
+      const registryTeams = await getTeams();
+      const teamMap = Object.fromEntries(registryTeams.map((t) => [t.id, t]));
+
       if (tournamentId) {
         // ── Tournament-scoped: pull analytics for this tournament only ──────
         const tournament = await getTournament(tournamentId);
@@ -98,19 +102,66 @@ export async function GET(request) {
           tournament.scoring || {}
         );
 
-        entityA = analytics.find((t) => t.teamId === a) || null;
-        entityB = analytics.find((t) => t.teamId === b) || null;
+        // Join logoUrl and registry name to the analytics items
+        const enrichedAnalytics = analytics.map((t) => ({
+          ...t,
+          logoUrl: teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || null,
+          teamName: teamMap[t.teamId]?.teamName || t.teamName || '',
+          clanName: teamMap[t.teamId]?.clanName || t.clanName || '',
+        }));
+
+        const rawA = enrichedAnalytics.find((t) => t.teamId === a);
+        const rawB = enrichedAnalytics.find((t) => t.teamId === b);
+
+        entityA = rawA || {
+          teamId: a,
+          teamName: teamMap[a]?.teamName || 'UNKNOWN TEAM',
+          clanName: teamMap[a]?.clanName || '',
+          logoUrl: teamMap[a]?.logoUrl || teamMap[a]?.logo || null,
+          wins: 0, matches: 0, placementPts: 0, kills: 0, totalPts: 0,
+          analytics: { PPM: 0, KPM: 0, killPct: 0, winRate: 0, top5Rate: 0, avgPlace: 0 }
+        };
+
+        entityB = rawB || {
+          teamId: b,
+          teamName: teamMap[b]?.teamName || 'UNKNOWN TEAM',
+          clanName: teamMap[b]?.clanName || '',
+          logoUrl: teamMap[b]?.logoUrl || teamMap[b]?.logo || null,
+          wins: 0, matches: 0, placementPts: 0, kills: 0, totalPts: 0,
+          analytics: { PPM: 0, KPM: 0, killPct: 0, winRate: 0, top5Rate: 0, avgPlace: 0 }
+        };
       } else {
         // ── Career-wide: use global aggregation ──────────────────────────────
         const allTeams = await aggregateGlobalTeams();
-        entityA = allTeams.find((t) => t.id === a) || null;
-        entityB = allTeams.find((t) => t.id === b) || null;
+        const rawA = allTeams.find((t) => t.id === a);
+        const rawB = allTeams.find((t) => t.id === b);
+
+        entityA = rawA || {
+          id: a,
+          teamName: teamMap[a]?.teamName || 'UNKNOWN TEAM',
+          clanName: teamMap[a]?.clanName || '',
+          logoUrl: teamMap[a]?.logoUrl || teamMap[a]?.logo || null,
+          wins: 0, matches: 0, placementPts: 0, kills: 0, totalPts: 0,
+          analytics: { PPM: 0, KPM: 0, killPct: 0, winRate: 0, top5Rate: 0, avgPlace: 0 }
+        };
+
+        entityB = rawB || {
+          id: b,
+          teamName: teamMap[b]?.teamName || 'UNKNOWN TEAM',
+          clanName: teamMap[b]?.clanName || '',
+          logoUrl: teamMap[b]?.logoUrl || teamMap[b]?.logo || null,
+          wins: 0, matches: 0, placementPts: 0, kills: 0, totalPts: 0,
+          analytics: { PPM: 0, KPM: 0, killPct: 0, winRate: 0, top5Rate: 0, avgPlace: 0 }
+        };
       }
 
       return corsJson({ type, scope, tournamentId, teamA: entityA, teamB: entityB });
 
     } else {
       // ── type === 'player' ───────────────────────────────────────────────────
+      const registryPlayers = await getPlayers();
+      const playerMap = Object.fromEntries(registryPlayers.map((p) => [p.id, p]));
+
       if (tournamentId) {
         // Tournament-scoped player comparison
         const tournament = await getTournament(tournamentId);
@@ -127,13 +178,49 @@ export async function GET(request) {
         const playerStats = computePlayerStats(playerResults, playerRegs, tournament);
         const analytics   = computePlayerAnalytics(playerStats, teamResults);
 
-        entityA = analytics.find((p) => p.playerId === a) || null;
-        entityB = analytics.find((p) => p.playerId === b) || null;
+        const rawA = analytics.find((p) => p.playerId === a);
+        const rawB = analytics.find((p) => p.playerId === b);
+
+        entityA = rawA || {
+          playerId: a,
+          ign: playerMap[a]?.ign || 'UNKNOWN PLAYER',
+          professionalName: playerMap[a]?.professionalName || '',
+          teamName: playerMap[a]?.teamName || '—',
+          logoUrl: playerMap[a]?.logoUrl || null,
+          careerKills: 0, avgKills: 0, avgDamage: 0, winRate: 0, top5Rate: 0, avgPlacement: 0
+        };
+
+        entityB = rawB || {
+          playerId: b,
+          ign: playerMap[b]?.ign || 'UNKNOWN PLAYER',
+          professionalName: playerMap[b]?.professionalName || '',
+          teamName: playerMap[b]?.teamName || '—',
+          logoUrl: playerMap[b]?.logoUrl || null,
+          careerKills: 0, avgKills: 0, avgDamage: 0, winRate: 0, top5Rate: 0, avgPlacement: 0
+        };
       } else {
         // Career-wide player comparison
         const allPlayers = await aggregateGlobalPlayers();
-        entityA = allPlayers.find((p) => p.id === a) || null;
-        entityB = allPlayers.find((p) => p.id === b) || null;
+        const rawA = allPlayers.find((p) => p.id === a);
+        const rawB = allPlayers.find((p) => p.id === b);
+
+        entityA = rawA || {
+          id: a,
+          ign: playerMap[a]?.ign || 'UNKNOWN PLAYER',
+          professionalName: playerMap[a]?.professionalName || '',
+          teamName: playerMap[a]?.teamName || '—',
+          logoUrl: playerMap[a]?.logoUrl || null,
+          careerKills: 0, avgKills: 0, avgDamage: 0, winRate: 0, top5Rate: 0, avgPlacement: 0
+        };
+
+        entityB = rawB || {
+          id: b,
+          ign: playerMap[b]?.ign || 'UNKNOWN PLAYER',
+          professionalName: playerMap[b]?.professionalName || '',
+          teamName: playerMap[b]?.teamName || '—',
+          logoUrl: playerMap[b]?.logoUrl || null,
+          careerKills: 0, avgKills: 0, avgDamage: 0, winRate: 0, top5Rate: 0, avgPlacement: 0
+        };
       }
 
       return corsJson({ type, scope, tournamentId, playerA: entityA, playerB: entityB });
