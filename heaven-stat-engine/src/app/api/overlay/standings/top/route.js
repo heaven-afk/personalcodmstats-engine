@@ -110,26 +110,36 @@ export async function GET(request) {
 
       // ── Daily mode: return standings for a single day only ──────────────────
       if (day !== null && !isNaN(day)) {
-        // Enrich raw Firestore results with team names from the global registry
+        // Enrich raw Firestore results with team names and logos from the global registry
         const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
         const enriched = teamResults.map((r) => ({
           ...r,
           teamName: teamMap[r.teamId]?.teamName || r.teamName || r.teamId,
           clanName: teamMap[r.teamId]?.clanName || r.clanName || '',
-          logo:     teamMap[r.teamId]?.logo || teamMap[r.teamId]?.logoUrl || null,
+          logoUrl:  teamMap[r.teamId]?.logoUrl || teamMap[r.teamId]?.logo || null,
         }));
 
         const dailyStandings = computeDailyStandings(enriched, bonusPoints, scoringConfig, day);
-        // Attach rank number and logo for the overlay
-        const ranked = dailyStandings.map((t, i) => ({ ...t, rank: i + 1 }));
+        // Attach rank number and logoUrl for the overlay
+        const ranked = dailyStandings.map((t, i) => ({
+          ...t,
+          rank: i + 1,
+          logoUrl: t.logoUrl || teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || null,
+        }));
         return corsJson({ tournamentId, type, day, n, mode: 'daily', results: ranked.slice(0, n) });
       }
 
       // ── Season mode (default): full analytics sorted by season totalPts ─────
       // computeTeamAnalytics returns teams sorted by totalPts (with tiebreakers)
       // and attaches analyticsRank — reuse that ordering directly.
+      const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
       const analytics = computeTeamAnalytics(teamResults, bonusPoints, scoringConfig);
-      return corsJson({ tournamentId, type, n, mode: 'season', results: analytics.slice(0, n) });
+      // Join logoUrl from the registry — computeTeamAnalytics doesn't have access to it
+      const enrichedAnalytics = analytics.map((t) => ({
+        ...t,
+        logoUrl: teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || t.logoUrl || null,
+      }));
+      return corsJson({ tournamentId, type, n, mode: 'season', results: enrichedAnalytics.slice(0, n) });
 
     } else {
       // type === 'player'
