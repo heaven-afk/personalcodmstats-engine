@@ -66,7 +66,7 @@ function unauthorizedResponse() {
 
 // ─── OPTIONS preflight (CORS) ─────────────────────────────────────────────────
 export async function OPTIONS() {
-  return corsJson(null, 204);
+  return corsJson({}, 200);
 }
 
 // ─── GET handler ──────────────────────────────────────────────────────────────
