@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
 import { getTournament, getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { getPlacementPoints } from '@/lib/engine/scoring';
+import { getTeams } from '@/lib/firestore/registry';
 
 // ─── Auth & CORS helpers ──────────────────────────────────────────────────────
 function checkApiAuth(request) {
@@ -46,6 +47,8 @@ export async function GET(request) {
   const allResults = await getTeamMatchResults(tournamentId);
   const bonusPoints = await getBonusPoints(tournamentId);
   const teamRegs = await getTeamRegistrations(tournamentId);
+  const allTeams = await getTeams();
+  const globalTeamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
 
   // Filter to the requested day + optional lobby
   const scopedResults = allResults.filter(r => {
@@ -61,11 +64,12 @@ export async function GET(request) {
   for (const r of scopedResults) {
     if (!teamMap[r.teamId]) {
       const reg = teamRegs.find(t => t.teamId === r.teamId);
+      const globalTeam = globalTeamMap[r.teamId];
       teamMap[r.teamId] = {
         teamId: r.teamId,
-        teamName: r.teamName || reg?.teamName || r.teamId,
-        clanName: reg?.clanName || '',
-        logoUrl: reg?.logoUrl || null,
+        teamName: r.teamName || reg?.teamName || globalTeam?.teamName || r.teamId,
+        clanName: reg?.clanName || globalTeam?.clanName || '',
+        logoUrl: reg?.logoUrl || globalTeam?.logoUrl || globalTeam?.logo || null,
         wins: 0,
         matches: 0,
         placementPts: 0,
