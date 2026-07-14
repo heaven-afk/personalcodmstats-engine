@@ -293,7 +293,7 @@ export default function TeamEntryPage() {
       if (names.length === 1) {
         setPasteText(allSheets[names[0]]);
         setIsOcrMode(false);
-        setOcrResults([]);
+        setOcrQueue([]);
         toast.success(`Loaded "${names[0]}" sheet from spreadsheet`);
       } else {
         setSheetModal({ sheets: names, allSheets });
@@ -309,7 +309,7 @@ export default function TeamEntryPage() {
     if (!sheetModal) return;
     setPasteText(sheetModal.allSheets[sheetName]);
     setIsOcrMode(false);
-    setOcrResults([]);
+    setOcrQueue([]);
     toast.success(`Loaded "${sheetName}" sheet from spreadsheet`);
     setSheetModal(null);
   };
@@ -825,7 +825,7 @@ export default function TeamEntryPage() {
                       onChange={e => {
                         setPasteText(e.target.value);
                         setIsOcrMode(false);
-                        setOcrResults([]);
+                        setOcrQueue([]);
                       }}
                       placeholder={`Example:\nTeam Alpha\t1\t12\t3\t8\nTeam Beta\t5\t2\t1\t15`}
                       style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', width: '100%', minHeight: 120 }}

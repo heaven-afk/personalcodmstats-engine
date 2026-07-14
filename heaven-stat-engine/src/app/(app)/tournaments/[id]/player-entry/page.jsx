@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTournament } from '../layout';
 import {
   getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
@@ -816,7 +816,7 @@ export default function PlayerEntryPage() {
                 onChange={e => {
                   setPasteText(e.target.value);
                   setIsOcrMode(false);
-                  setOcrResults([]);
+                  setOcrQueue([]);
                 }}
                 placeholder={`Example:\nPlayerOne\t5\t1200\t45\nPlayerTwo\t2\t850\t35`}
                 style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', width: '100%', minHeight: 120 }}
