@@ -502,3 +502,24 @@ export function localDeletePlayerMatchResult(tId, resId) {
   list = list.filter(r => r.id !== resId);
   setStorageItem(`heaven_results_players_${tId}`, list);
 }
+
+export function localFindPlayerByName(professionalName, ign) {
+  const players = localGetPlayers();
+  const pn = professionalName?.toLowerCase().trim();
+  const ignLower = ign?.toLowerCase().trim();
+  return players.find(
+    (p) => (pn && p.professionalName?.toLowerCase().trim() === pn) || (ignLower && p.ign?.toLowerCase().trim() === ignLower)
+  ) || null;
+}
+
+export function localFindTeamByName(teamName) {
+  const teams = localGetTeams();
+  const name = teamName?.toLowerCase().trim();
+  return teams.find((t) => t.teamName?.toLowerCase().trim() === name) || null;
+}
+
+export function localFindClanByName(clanName) {
+  const clans = localGetClans();
+  const name = clanName?.toLowerCase().trim();
+  return clans.find((c) => c.clanName?.toLowerCase().trim() === name) || null;
+}

@@ -1,6 +1,7 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
   query, orderBy, serverTimestamp, writeBatch,
+  where, limit,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase';
 import * as localDb from './localStorageDb';
@@ -24,11 +25,38 @@ export async function getPlayer(id) {
 }
 
 export async function findPlayerByName(professionalName, ign) {
-  const players = await getPlayers();
-  const pn = professionalName?.toLowerCase();
-  const ignLower = ign?.toLowerCase();
-  return players.find(
-    (p) => p.professionalName?.toLowerCase() === pn || p.ign?.toLowerCase() === ignLower
+  if (!isFirebaseConfigured) {
+    return localDb.localFindPlayerByName(professionalName, ign);
+  }
+  
+  const pnLower = professionalName?.trim().toLowerCase();
+  const ignLower = ign?.trim().toLowerCase();
+
+  if (pnLower) {
+    // Try query by professionalNameLower
+    let snap = await getDocs(query(collection(db, 'players'), where('professionalNameLower', '==', pnLower), limit(1)));
+    if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    
+    // Try query by exact professionalName
+    snap = await getDocs(query(collection(db, 'players'), where('professionalName', '==', professionalName.trim()), limit(1)));
+    if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  }
+
+  if (ignLower) {
+    // Try query by ignLower
+    let snap = await getDocs(query(collection(db, 'players'), where('ignLower', '==', ignLower), limit(1)));
+    if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    
+    // Try query by exact ign
+    snap = await getDocs(query(collection(db, 'players'), where('ign', '==', ign.trim()), limit(1)));
+    if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  }
+
+  // Fallback to loading all (for legacy data compatibility)
+  const allPlayers = await getPlayers();
+  return allPlayers.find(p => 
+    (pnLower && p.professionalName?.toLowerCase() === pnLower) ||
+    (ignLower && p.ign?.toLowerCase() === ignLower)
   ) || null;
 }
 
@@ -50,8 +78,15 @@ export async function createPlayer(data) {
     professionalName: '', ign: '', gender: '', region: '', country: '',
     device: '', deviceModel: '', category: 'Registered', tournamentIds: [], createdAt: serverTimestamp(),
     ...enriched,
+    professionalNameLower: (enriched.professionalName || '').toLowerCase().trim(),
+    ignLower: (enriched.ign || '').toLowerCase().trim(),
   });
-  return { id: ref.id, ...enriched };
+  return { 
+    id: ref.id, 
+    ...enriched,
+    professionalNameLower: (enriched.professionalName || '').toLowerCase().trim(),
+    ignLower: (enriched.ign || '').toLowerCase().trim(),
+  };
 }
 
 
@@ -87,8 +122,23 @@ export async function getTeam(id) {
 }
 
 export async function findTeamByName(teamName) {
+  if (!isFirebaseConfigured) {
+    return localDb.localFindTeamByName(teamName);
+  }
+  if (!teamName?.trim()) return null;
+  const nameLower = teamName.trim().toLowerCase();
+
+  // Try querying by teamNameLower first
+  let snap = await getDocs(query(collection(db, 'teams'), where('teamNameLower', '==', nameLower), limit(1)));
+  if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+
+  // Try querying by exact teamName
+  snap = await getDocs(query(collection(db, 'teams'), where('teamName', '==', teamName.trim()), limit(1)));
+  if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+
+  // Fallback to loading all (for legacy compatibility)
   const teams = await getTeams();
-  return teams.find((t) => t.teamName?.toLowerCase() === teamName?.toLowerCase()) || null;
+  return teams.find((t) => t.teamName?.toLowerCase() === nameLower) || null;
 }
 
 export async function createTeam(data) {
@@ -106,8 +156,9 @@ export async function createTeam(data) {
   const ref = await addDoc(collection(db, 'teams'), {
     teamName: '', clanName: '', tournamentIds: [], createdAt: serverTimestamp(),
     ...data,
+    teamNameLower: (data.teamName || '').toLowerCase().trim(),
   });
-  return { id: ref.id, ...data };
+  return { id: ref.id, ...data, teamNameLower: (data.teamName || '').toLowerCase().trim() };
 }
 
 export async function updateTeam(id, data) {
@@ -134,8 +185,23 @@ export async function getClans() {
 }
 
 export async function findClanByName(clanName) {
+  if (!isFirebaseConfigured) {
+    return localDb.localFindClanByName(clanName);
+  }
+  if (!clanName?.trim()) return null;
+  const nameLower = clanName.trim().toLowerCase();
+
+  // Try querying by clanNameLower first
+  let snap = await getDocs(query(collection(db, 'clans'), where('clanNameLower', '==', nameLower), limit(1)));
+  if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+
+  // Try querying by exact clanName
+  snap = await getDocs(query(collection(db, 'clans'), where('clanName', '==', clanName.trim()), limit(1)));
+  if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+
+  // Legacy fallback
   const clans = await getClans();
-  return clans.find((c) => c.clanName?.toLowerCase() === clanName?.toLowerCase()) || null;
+  return clans.find((c) => c.clanName?.toLowerCase() === nameLower) || null;
 }
 
 export async function ensureClan(clanName) {
@@ -147,8 +213,9 @@ export async function ensureClan(clanName) {
   if (existing) return existing;
   const ref = await addDoc(collection(db, 'clans'), {
     clanName, teamIds: [], createdAt: serverTimestamp(),
+    clanNameLower: clanName.toLowerCase().trim(),
   });
-  return { id: ref.id, clanName, teamIds: [] };
+  return { id: ref.id, clanName, teamIds: [], clanNameLower: clanName.toLowerCase().trim() };
 }
 
 export async function getClan(id) {
