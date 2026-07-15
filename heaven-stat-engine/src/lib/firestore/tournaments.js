@@ -1,6 +1,6 @@
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
-  query, orderBy, serverTimestamp,
+  query, orderBy, serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase';
 import * as localDb from './localStorageDb';
@@ -130,3 +130,34 @@ export async function deletePlayerRegistration(tournamentId, regId) {
   }
   await deleteDoc(doc(db, 'tournaments', tournamentId, 'playerRegistrations', regId));
 }
+
+export async function clearAllPlayerRegistrations(tournamentId, regIds) {
+  if (!isFirebaseConfigured) {
+    return localDb.localClearAllPlayerRegistrations(tournamentId);
+  }
+  const chunkSize = 500;
+  for (let i = 0; i < regIds.length; i += chunkSize) {
+    const chunk = regIds.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    chunk.forEach(id => {
+      batch.delete(doc(db, 'tournaments', tournamentId, 'playerRegistrations', id));
+    });
+    await batch.commit();
+  }
+}
+
+export async function clearAllTeamRegistrations(tournamentId, regIds) {
+  if (!isFirebaseConfigured) {
+    return localDb.localClearAllTeamRegistrations(tournamentId);
+  }
+  const chunkSize = 500;
+  for (let i = 0; i < regIds.length; i += chunkSize) {
+    const chunk = regIds.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    chunk.forEach(id => {
+      batch.delete(doc(db, 'tournaments', tournamentId, 'teamRegistrations', id));
+    });
+    await batch.commit();
+  }
+}
+

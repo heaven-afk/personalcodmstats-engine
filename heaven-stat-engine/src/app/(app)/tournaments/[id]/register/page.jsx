@@ -5,6 +5,7 @@ import { useTournament } from '../layout';
 import {
   getTeamRegistrations, addTeamRegistration, updateTeamRegistration, deleteTeamRegistration,
   getPlayerRegistrations, addPlayerRegistration, updatePlayerRegistration, deletePlayerRegistration,
+  clearAllTeamRegistrations, clearAllPlayerRegistrations,
 } from '@/lib/firestore/tournaments';
 import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
@@ -246,6 +247,8 @@ export default function RegisterPage() {
   const [globalTeams, setGlobalTeams] = useState([]);
   const [globalPlayers, setGlobalPlayers] = useState([]);
 
+  const [importProgress, setImportProgress] = useState(null);
+
   const classes = tournament?.structure?.playerClasses || [];
 
   const refresh = useCallback(async () => {
@@ -291,6 +294,7 @@ export default function RegisterPage() {
           registrations={teamRegs}
           globalTeams={globalTeams}
           onRefresh={refresh}
+          setImportProgress={setImportProgress}
         />
       )}
       {tab === 'players' && (
@@ -302,7 +306,24 @@ export default function RegisterPage() {
           globalTeams={globalTeams}
           classes={classes}
           onRefresh={refresh}
+          setImportProgress={setImportProgress}
         />
+      )}
+
+      {importProgress !== null && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div className="card text-center" style={{ padding: 24, width: 300, background: 'var(--bg-card)', border: '1px solid var(--border-md)' }}>
+            <div style={{ fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>Importing data... {importProgress}%</div>
+            <div style={{ height: 6, background: 'var(--bg-alt-row)', borderRadius: 999, overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{ width: `${importProgress}%`, height: '100%', background: 'var(--gold)', transition: 'width 0.1s ease' }} />
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Please do not close this page.</div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -379,7 +400,7 @@ function useSheetUpload(onImport) {
 }
 
 // ─── Team Registration Panel ─────────────────────────────────────────────────
-function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh }) {
+function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress }) {
   const [addingRow, setAddingRow] = useState(false);
   const [newTeam, setNewTeam] = useState({ slot: '', teamName: '', clanName: '', tier: '' });
   const [teamSearch, setTeamSearch] = useState('');
@@ -450,8 +471,11 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   const executeRegistration = async (queue) => {
     setSaving(true);
     let added = 0;
+    const total = queue.length;
+    if (setImportProgress) setImportProgress(0);
     try {
-      for (const item of queue) {
+      for (let i = 0; i < total; i++) {
+        const item = queue[i];
         let team;
         if (item.isLinked && item.teamId) {
           team = { id: item.teamId, teamName: item.teamName, clanName: item.clanName };
@@ -467,6 +491,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
           tier: item.tier,
         });
         added++;
+        if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
       }
       toast.success(`Registered ${added} teams successfully`);
       setShowImportPreview(false);
@@ -476,6 +501,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
       toast.error('Failed to register teams: ' + e.message);
     } finally {
       setSaving(false);
+      if (setImportProgress) setImportProgress(null);
     }
   };
 
@@ -590,9 +616,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
     if (!confirm(`Are you sure you want to remove all ${registrations.length} teams from this tournament? This will not delete teams globally, but will remove their registrations.`)) return;
     setSaving(true);
     try {
-      for (const reg of registrations) {
-        await deleteTeamRegistration(tournamentId, reg.id);
-      }
+      await clearAllTeamRegistrations(tournamentId, registrations.map(r => r.id));
       toast.success('All team registrations cleared');
       await onRefresh();
     } catch (e) {
@@ -885,7 +909,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
 }
 
 // ─── Player Registration Panel ───────────────────────────────────────────────
-function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistrations, globalPlayers, globalTeams, classes, onRefresh }) {
+function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistrations, globalPlayers, globalTeams, classes, onRefresh, setImportProgress }) {
   const [addingRow, setAddingRow] = useState(false);
   const [newPlayer, setNewPlayer] = useState({ slot: '', professionalName: '', ign: '', teamName: '', category: 'Registered', gender: '', region: '', country: '', device: '', deviceModel: '' });
   const [saving, setSaving] = useState(false);
@@ -906,8 +930,22 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
     if (!newPlayer.professionalName.trim() && !newPlayer.ign.trim()) { toast.error('Name or IGN required'); return; }
     setSaving(true);
     try {
+      const proName = newPlayer.professionalName.trim();
+      const teamName = newPlayer.teamName || '';
+      if (proName) {
+        const hasDuplicate = registrations.some(r => 
+          r.teamName?.toLowerCase() === teamName.toLowerCase() &&
+          r.professionalName?.trim().toLowerCase() === proName.toLowerCase()
+        );
+        if (hasDuplicate) {
+          toast.error(`Player with Professional Name "${proName}" is already registered in team "${teamName || 'Unassigned'}".`);
+          setSaving(false);
+          return;
+        }
+      }
+
       const player = await createPlayer({
-        professionalName: newPlayer.professionalName.trim(),
+        professionalName: proName,
         ign: newPlayer.ign.trim(),
         gender: newPlayer.gender,
         region: newPlayer.region || deriveRegion(newPlayer.country),
@@ -934,6 +972,24 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   };
 
   const handleUpdatePlayer = async (regId, fields) => {
+    const currentReg = registrations.find(r => r.id === regId);
+    if (!currentReg) return;
+
+    const targetProName = (fields.professionalName !== undefined ? fields.professionalName : currentReg.professionalName || '').trim();
+    const targetTeamName = fields.teamName !== undefined ? fields.teamName : currentReg.teamName || '';
+
+    if (targetProName) {
+      const hasDuplicate = registrations.some(r => 
+        r.id !== regId &&
+        r.teamName?.toLowerCase() === targetTeamName.toLowerCase() &&
+        r.professionalName?.trim().toLowerCase() === targetProName.toLowerCase()
+      );
+      if (hasDuplicate) {
+        toast.error(`Player with Professional Name "${targetProName}" is already registered in team "${targetTeamName || 'Unassigned'}".`);
+        return;
+      }
+    }
+
     try {
       await updatePlayerRegistration(tournamentId, regId, fields);
       await onRefresh();
@@ -959,12 +1015,35 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         return;
       }
       let added = 0;
+      let skipped = 0;
+      const newlyAdded = [];
+
       for (const row of parsed) {
+        const teamName = row.teamName || '';
+        const proName = row.professionalName || '';
+
+        if (proName.trim()) {
+          const proNameLower = proName.trim().toLowerCase();
+          const teamLower = teamName.trim().toLowerCase();
+          const hasDuplicate = registrations.some(r => 
+            (r.teamName || '').toLowerCase() === teamLower &&
+            (r.professionalName || '').trim().toLowerCase() === proNameLower
+          ) || newlyAdded.some(r => 
+            r.teamName.toLowerCase() === teamLower &&
+            r.professionalName.toLowerCase() === proNameLower
+          );
+
+          if (hasDuplicate) {
+            skipped++;
+            continue;
+          }
+        }
+
         const matchedTeam = teamRegistrations.find(
-          t => t.teamName?.toLowerCase() === row.teamName?.toLowerCase()
+          t => t.teamName?.toLowerCase() === teamName.toLowerCase()
         );
         const player = await createPlayer({
-          professionalName: row.professionalName,
+          professionalName: proName,
           ign: row.ign,
           gender: row.gender,
           region: row.region || deriveRegion(row.country || ''),
@@ -978,13 +1057,14 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           slot: row.slot || (registrations.length + added + 1),
           class: row.class || 'Registered',
           teamId: matchedTeam?.teamId || '',
-          teamName: row.teamName || '',
+          teamName: teamName,
           ign: player.ign,
           professionalName: player.professionalName,
         });
+        newlyAdded.push({ professionalName: player.professionalName, teamName });
         added++;
       }
-      toast.success(`Registered ${added} players from paste`);
+      toast.success(`Registered ${added} players from paste${skipped ? ` (skipped ${skipped} duplicates)` : ''}`);
       setPasteText('');
       setShowPaste(false);
       await onRefresh();
@@ -999,9 +1079,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
     if (!confirm(`Are you sure you want to remove all ${registrations.length} players from this tournament?`)) return;
     setSaving(true);
     try {
-      for (const reg of registrations) {
-        await deletePlayerRegistration(tournamentId, reg.id);
-      }
+      await clearAllPlayerRegistrations(tournamentId, registrations.map(r => r.id));
       toast.success('All player registrations cleared');
       await onRefresh();
     } catch (e) {
@@ -1023,13 +1101,38 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
     }
 
     let added = 0, skipped = 0;
-    for (const row of validRows) {
+    const total = validRows.length;
+    const newlyAdded = [];
+    if (setImportProgress) setImportProgress(0);
+    for (let i = 0; i < total; i++) {
+      const row = validRows[i];
       try {
+        const teamName = row.teamName || '';
+        const proName = row.professionalName || '';
+
+        if (proName.trim()) {
+          const proNameLower = proName.trim().toLowerCase();
+          const teamLower = teamName.trim().toLowerCase();
+          const hasDuplicate = registrations.some(r => 
+            (r.teamName || '').toLowerCase() === teamLower &&
+            (r.professionalName || '').trim().toLowerCase() === proNameLower
+          ) || newlyAdded.some(r => 
+            r.teamName.toLowerCase() === teamLower &&
+            r.professionalName.toLowerCase() === proNameLower
+          );
+
+          if (hasDuplicate) {
+            skipped++;
+            if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
+            continue;
+          }
+        }
+
         const matchedTeam = teamRegistrations.find(
-          t => t.teamName?.toLowerCase() === row.teamName?.toLowerCase()
+          t => t.teamName?.toLowerCase() === teamName.toLowerCase()
         );
         const player = await createPlayer({
-          professionalName: row.professionalName || '',
+          professionalName: proName || '',
           ign: row.ign || '',
           gender: row.gender || '',
           region: row.region || deriveRegion(row.country || ''),
@@ -1043,15 +1146,18 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           slot: row.slot || (registrations.length + added + 1),
           class: row.class || 'Registered',
           teamId: matchedTeam?.teamId || '',
-          teamName: row.teamName || '',
+          teamName: teamName,
           ign: player.ign,
           professionalName: player.professionalName,
         });
+        newlyAdded.push({ professionalName: player.professionalName, teamName });
         added++;
       } catch {
         skipped++;
       }
+      if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
     }
+    if (setImportProgress) setImportProgress(null);
     toast.success(`Imported ${added} player${added !== 1 ? 's' : ''} from "${sheetLabel}"${skipped ? ` (${skipped} skipped)` : ''}`);
     await onRefresh();
   };

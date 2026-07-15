@@ -290,6 +290,15 @@ export function localDeletePlayerRegistration(tId, regId) {
   setStorageItem(`heaven_regs_players_${tId}`, list);
 }
 
+export function localClearAllPlayerRegistrations(tId) {
+  setStorageItem(`heaven_regs_players_${tId}`, []);
+}
+
+export function localClearAllTeamRegistrations(tId) {
+  setStorageItem(`heaven_regs_teams_${tId}`, []);
+}
+
+
 // Players Global Registry
 export function localGetPlayers() {
   seedDatabase();

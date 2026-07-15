@@ -10,7 +10,7 @@ export function parseCSV(text) {
   // Trim trailing empty columns from spreadsheet exports to prevent PapaParse warnings
   const lines = text.trim().split('\n');
   if (lines.length > 0) {
-    const delimiter = lines[0].includes('\t') ? '\t' : ',';
+    const delimiter = lines[0].includes('\t') ? '\t' : (lines[0].includes(';') ? ';' : ',');
     const headers = lines[0].split(delimiter);
     let lastValid = headers.length - 1;
     while (lastValid >= 0 && !headers[lastValid].trim()) {
@@ -27,7 +27,11 @@ export function parseCSV(text) {
   const result = Papa.parse(text.trim(), {
     header: true,
     skipEmptyLines: true,
-    transformHeader: (h) => h.trim().toLowerCase().replace(/\s+/g, ''),
+    transformHeader: (h) => {
+      let clean = h.trim().toLowerCase();
+      if (clean === '#') return 'slot';
+      return clean.replace(/[^a-z0-9]/g, '');
+    },
   });
   return { data: result.data, errors: result.errors };
 }
@@ -44,16 +48,16 @@ export function parsePlayerRegistrationCSV(text) {
   return {
     rows: data.map((row, i) => ({
       rowIndex: i,
-      professionalName: str(row.professionalname || row.proname || row.playername || row.name || row.fullname || row.professional_name || row.pro_name || row.player_name || ''),
-      ign: str(row.ign || row.ingamename || row.ingame_name || row.playerign || row.player_ign || row.ingame || ''),
-      teamName: str(row.teamname || row.team || row.team_name || row.clan || ''),
-      clanName: str(row.clanname || row.clan || row.clan_name || ''),
-      class: str(row.class || row.playerclass || row.category || row.player_class || row.tier || row.group || 'Class 1'),
+      professionalName: str(row.professionalname || row.proname || row.playername || row.name || row.fullname || ''),
+      ign: str(row.ign || row.ingamename || row.playerign || row.ingame || ''),
+      teamName: str(row.teamname || row.team || row.clan || ''),
+      clanName: str(row.clanname || row.clan || ''),
+      class: str(row.class || row.playerclass || row.category || row.tier || row.group || 'Class 1'),
       gender: str(row.gender || row.sex || ''),
       region: str(row.region || row.zone || row.reg || ''),
       country: str(row.country || row.nation || row.cntry || ''),
       device: str(row.device || row.platform || row.dev || ''),
-      deviceModel: str(row.devicemodel || row.model || row.phone || row.device_model || ''),
+      deviceModel: str(row.devicemodel || row.model || row.phone || ''),
     })),
     errors,
   };
@@ -66,9 +70,9 @@ export function parseTeamRegistrationCSV(text) {
   return {
     rows: data.map((row, i) => ({
       rowIndex: i,
-      slot: int(row.slot || row['#'] || row.id || row.no || row.index || i + 1),
-      teamName: str(row.teamname || row.team || row.team_name || row.name || ''),
-      clanName: str(row.clanname || row.clan || row.clan_name || ''),
+      slot: int(row.slot || row.id || row.no || row.index || i + 1),
+      teamName: str(row.teamname || row.team || row.name || ''),
+      clanName: str(row.clanname || row.clan || ''),
       tier: str(row.tier || row.class || row.group || ''),
     })),
     errors,
@@ -84,7 +88,7 @@ export function parseTeamMatchCSV(text) {
       rowIndex: i,
       day: int(row.day || row.d || 0),
       lobby: int(row.lobby || row.l || row.match || row.game || 0),
-      teamName: str(row.teamname || row.team || row.team_name || row.name || ''),
+      teamName: str(row.teamname || row.team || row.name || ''),
       placement: int(row.placement || row.position || row.place || row.pos || row.rank || row.rnk || 0),
       kills: int(row.kills || row.kill || row.k || 0),
     })),
@@ -101,11 +105,11 @@ export function parsePlayerMatchCSV(text) {
       rowIndex: i,
       day: int(row.day || row.d || 0),
       lobby: int(row.lobby || row.l || row.match || row.game || 0),
-      playerIGN: str(row.playerign || row.ign || row.player || row.playername || row.name || row.player_ign || row.proname || ''),
-      teamName: str(row.teamname || row.team || row.team_name || ''),
+      playerIGN: str(row.playerign || row.ign || row.player || row.playername || row.name || row.proname || ''),
+      teamName: str(row.teamname || row.team || ''),
       kills: int(row.kills || row.kill || row.k || 0),
-      damage: num(row.damage || row.dmg || row.damage_dealt || 0),
-      accuracy: num(row.accuracy || row.acc || row.accuracy_pct || row.accuracy_percent || 0),
+      damage: num(row.damage || row.dmg || row.damagedealt || 0),
+      accuracy: num(row.accuracy || row.acc || row.accuracypct || row.accuracypercent || 0),
     })),
     errors,
   };

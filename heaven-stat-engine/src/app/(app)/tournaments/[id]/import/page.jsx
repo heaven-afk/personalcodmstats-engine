@@ -24,6 +24,7 @@ import {
   Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import Papa from 'papaparse';
 
 export default function ImportHubPage() {
   const { id: tournamentId } = useParams();
@@ -33,6 +34,7 @@ export default function ImportHubPage() {
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState([]); // Array of { id, name, size, isExcel, sheets: { sheetName: csvText }, mappings: { sheetName: 'skip' | 'teams' | 'players' | 'team_matches' | 'player_matches' } }
   const [results, setResults] = useState(null); // { status: 'success' | 'partial_error' | 'error', details: [...] }
+  const [previewSheet, setPreviewSheet] = useState(null); // { fileName, sheetName, csvText, mappingType }
 
   // Session Progress States
   const [importProgress, setImportProgress] = useState(0);
@@ -54,7 +56,7 @@ export default function ImportHubPage() {
         const sheets = await getAllSheetsAsCSV(file);
         const mappings = {};
         Object.keys(sheets).forEach(sheetName => {
-          mappings[sheetName] = guessMapping(sheetName, file.name);
+          mappings[sheetName] = guessMapping(sheetName, file.name, sheets[sheetName]);
         });
 
         newFiles.push({
@@ -74,7 +76,56 @@ export default function ImportHubPage() {
     setLoading(false);
   };
 
-  const guessMapping = (sheetName, fileName) => {
+  const guessMapping = (sheetName, fileName, csvText) => {
+    let headers = [];
+    if (csvText) {
+      const firstLine = csvText.trim().split('\n')[0] || '';
+      const delimiter = firstLine.includes('\t') ? '\t' : (firstLine.includes(';') ? ';' : ',');
+      headers = firstLine.split(delimiter).map(h => h.trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+    }
+
+    const hasHeader = (names) => names.some(n => headers.includes(n));
+
+    const hasPlayerName = hasHeader(['professionalname', 'proname', 'playername', 'ign', 'playerign', 'player', 'ingamename', 'fullname']);
+    const hasTeamName = hasHeader(['teamname', 'team', 'clanname', 'clan']);
+    const hasPlacement = hasHeader(['placement', 'position', 'place', 'pos', 'rank', 'rnk']);
+    const hasKills = hasHeader(['kills', 'kill']);
+    const hasDamage = hasHeader(['damage', 'dmg', 'damagedealt']);
+    const hasAccuracy = hasHeader(['accuracy', 'acc', 'accuracypct', 'accuracypercent']);
+    const hasDayOrLobby = hasHeader(['day', 'lobby', 'match', 'game']);
+    const hasRosterFields = hasHeader(['device', 'devicemodel', 'gender', 'region', 'country', 'category', 'class', 'tier']);
+
+    if (hasDayOrLobby) {
+      if (hasPlayerName) {
+        return 'player_matches';
+      }
+      if (hasTeamName || hasPlacement) {
+        return 'team_matches';
+      }
+    }
+
+    if (hasPlacement) {
+      return 'team_matches';
+    }
+
+    if (hasDamage || hasAccuracy) {
+      return 'player_matches';
+    }
+
+    if (hasPlayerName && (hasRosterFields || !hasTeamName)) {
+      return 'players';
+    }
+    
+    if (hasTeamName && hasPlayerName) {
+      if (hasRosterFields) return 'players';
+      return 'players';
+    }
+
+    if (hasTeamName && !hasPlayerName) {
+      return 'teams';
+    }
+
+    // Fallback to name-based guessing
     const combined = `${sheetName} ${fileName}`.toLowerCase();
     if (combined.includes('player') && (combined.includes('match') || combined.includes('result') || combined.includes('entry') || combined.includes('stat'))) {
       return 'player_matches';
@@ -295,7 +346,7 @@ export default function ImportHubPage() {
         {/* Main Workspace */}
         <div className="space-y-6">
           {/* Progress Card when session is active */}
-          {loading && importProgress > 0 && (
+          {loading && importProgress >= 0 && (
             <div className="card space-y-3" style={{ background: 'rgba(201,168,76,0.05)', borderColor: 'var(--gold)' }}>
               <div className="flex-between">
                 <span style={{ fontWeight: 600, color: 'var(--gold)', fontSize: '0.9rem' }}>Import Session in Progress</span>
@@ -396,7 +447,7 @@ export default function ImportHubPage() {
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Map as:</span>
                             <select
                               className="form-select text-xs py-1 px-2"
-                              style={{ width: 180, height: 30 }}
+                              style={{ width: 180, height: 30, marginRight: 6 }}
                               value={f.mappings[sheetName]}
                               onChange={e => updateMapping(f.id, sheetName, e.target.value)}
                             >
@@ -406,6 +457,13 @@ export default function ImportHubPage() {
                               <option value="team_matches">🏆 Team Match Results</option>
                               <option value="player_matches">🎯 Player Match Results</option>
                             </select>
+                            <button
+                              className="btn btn-secondary btn-xs"
+                              style={{ padding: '2px 8px', fontSize: '0.72rem', height: 30, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              onClick={() => setPreviewSheet({ fileName: f.name, sheetName, csvText: f.sheets[sheetName], mappingType: f.mappings[sheetName] })}
+                            >
+                              👁️ Preview
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -533,6 +591,141 @@ export default function ImportHubPage() {
         </div>
       </div>
       {loading && importProgress === 0 && <LoadingSpinner size="lg" text="Processing data, please wait..." />}
+      {previewSheet && (
+        <SheetPreviewModal
+          fileName={previewSheet.fileName}
+          sheetName={previewSheet.sheetName}
+          csvText={previewSheet.csvText}
+          mappingType={previewSheet.mappingType}
+          onClose={() => setPreviewSheet(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SheetPreviewModal({ fileName, sheetName, csvText, mappingType, onClose }) {
+  const { data } = Papa.parse(csvText.trim(), {
+    header: true,
+    skipEmptyLines: true
+  });
+
+  const headers = data && data.length > 0 ? Object.keys(data[0]) : [];
+  const rows = data ? data.slice(0, 10) : [];
+
+  const cleanHeader = (h) => h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+        borderRadius: 14, padding: 24, width: '90%', maxWidth: 800,
+        maxHeight: '85vh', overflowY: 'auto',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)' }}>
+              Sheet Preview: {sheetName}
+            </h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Showing first {rows.length} rows from file <code>{fileName}</code>
+            </p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {mappingType && mappingType !== 'skip' && (
+          <div style={{
+            background: 'var(--bg-alt-row)',
+            border: '1px solid var(--border-md)',
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 16,
+            fontSize: '0.8rem'
+          }}>
+            <strong style={{ color: 'var(--gold)' }}>Column Mapping for {
+              mappingType === 'teams' ? 'Teams Registration' :
+              mappingType === 'players' ? 'Players Registration' :
+              mappingType === 'team_matches' ? 'Team Match Results' : 'Player Match Results'
+            }:</strong>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginTop: 8 }}>
+              {mappingType === 'teams' && (
+                <>
+                  <div>Slot: <code>{headers.find(h => ['slot', 'id', 'no', 'index'].includes(cleanHeader(h))) || 'Auto-generated'}</code></div>
+                  <div>Team Name: <code>{headers.find(h => ['teamname', 'team', 'name'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Clan Name: <code>{headers.find(h => ['clanname', 'clan'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Tier: <code>{headers.find(h => ['tier', 'class', 'group'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                </>
+              )}
+              {mappingType === 'players' && (
+                <>
+                  <div>Pro Name: <code>{headers.find(h => ['professionalname', 'proname', 'playername', 'name', 'fullname'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>IGN: <code>{headers.find(h => ['ign', 'ingamename', 'playerign', 'ingame'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Team: <code>{headers.find(h => ['teamname', 'team', 'clan'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Class: <code>{headers.find(h => ['class', 'playerclass', 'category', 'tier', 'group'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Gender: <code>{headers.find(h => ['gender', 'sex'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Region: <code>{headers.find(h => ['region', 'zone', 'reg'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Country: <code>{headers.find(h => ['country', 'nation', 'cntry'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Device: <code>{headers.find(h => ['device', 'platform', 'dev'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Model: <code>{headers.find(h => ['devicemodel', 'model', 'phone'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                </>
+              )}
+              {mappingType === 'team_matches' && (
+                <>
+                  <div>Day: <code>{headers.find(h => ['day', 'd'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Lobby: <code>{headers.find(h => ['lobby', 'l', 'match', 'game'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Team: <code>{headers.find(h => ['teamname', 'team', 'name'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Placement: <code>{headers.find(h => ['placement', 'position', 'place', 'pos', 'rank', 'rnk'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Kills: <code>{headers.find(h => ['kills', 'kill', 'k'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                </>
+              )}
+              {mappingType === 'player_matches' && (
+                <>
+                  <div>Day: <code>{headers.find(h => ['day', 'd'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Lobby: <code>{headers.find(h => ['lobby', 'l', 'match', 'game'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Player IGN: <code>{headers.find(h => ['playerign', 'ign', 'player', 'playername', 'name', 'proname'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Team: <code>{headers.find(h => ['teamname', 'team'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Kills: <code>{headers.find(h => ['kills', 'kill', 'k'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Damage: <code>{headers.find(h => ['damage', 'dmg', 'damagedealt'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                  <div>Accuracy: <code>{headers.find(h => ['accuracy', 'acc', 'accuracypct', 'accuracypercent'].includes(cleanHeader(h))) || 'Not found'}</code></div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {rows.length === 0 ? (
+          <div className="empty-row" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>No rows found in this sheet.</div>
+        ) : (
+          <div style={{ overflowX: 'auto', border: '1px solid var(--border-md)', borderRadius: 8, maxHeight: '40vh' }}>
+            <table className="data-table" style={{ fontSize: '0.75rem', width: '100%', margin: 0 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-header)' }}>
+                  {headers.map(h => <th key={h} style={{ padding: '8px 12px' }}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i}>
+                    {headers.map(h => <td key={h} style={{ padding: '8px 12px' }}>{row[h] || ''}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'end', marginTop: 20 }}>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }

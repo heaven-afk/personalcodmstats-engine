@@ -60,11 +60,29 @@ export async function importPlayerRegistrations(tournamentId, csvText, onProgres
   let added = 0;
   let skipped = 0;
   const errorLogs = [];
+  const newlyAdded = [];
 
   for (let i = 0; i < total; i++) {
     const row = validRows[i];
     try {
       const key = `${(row.professionalName || '').toLowerCase()}|${(row.ign || '').toLowerCase()}`;
+      
+      // Duplication check for Professional Name within the same team
+      if (row.professionalName?.trim()) {
+        const proNameLower = row.professionalName.trim().toLowerCase();
+        const teamLower = (row.teamName || '').trim().toLowerCase();
+        const isDuplicateProName = existingRegs.some(r => 
+          (r.teamName || '').toLowerCase() === teamLower && 
+          (r.professionalName || '').trim().toLowerCase() === proNameLower
+        ) || newlyAdded.some(r => 
+          r.teamName.toLowerCase() === teamLower && 
+          r.professionalName.toLowerCase() === proNameLower
+        );
+        if (isDuplicateProName) {
+          throw new Error(`Duplicate Professional Name: "${row.professionalName}" is already registered in team "${row.teamName || 'Unassigned'}"`);
+        }
+      }
+
       if (existingKeys.has(key)) {
         skipped++;
       } else {
@@ -91,6 +109,11 @@ export async function importPlayerRegistrations(tournamentId, csvText, onProgres
           teamName: row.teamName || '',
           ign: player.ign,
           professionalName: player.professionalName,
+        });
+        
+        newlyAdded.push({
+          professionalName: player.professionalName,
+          teamName: row.teamName || ''
         });
         added++;
       }

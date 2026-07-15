@@ -535,9 +535,17 @@ export default function PlayerEntryPage() {
       let addedCount = 0;
 
       const existingResults = await getPlayerMatchResultsByDayLobby(tournament.id, day, lobbyNum);
+      const tempResults = [...existingResults];
 
       for (const row of validResults) {
-        const existing = existingResults.find(r => r.playerId === row.playerId);
+        // Find existing index
+        const existingIdxs = [];
+        tempResults.forEach((r, idx) => {
+          if (r.playerId === row.playerId) {
+            existingIdxs.push(idx);
+          }
+        });
+
         const payload = {
           playerId: row.playerId,
           playerName: row.playerName,
@@ -545,16 +553,37 @@ export default function PlayerEntryPage() {
           day,
           lobby: lobbyNum,
           kills: row.kills === null ? 0 : row.kills,
-          damage: existing ? existing.damage || 0 : 0,
-          accuracy: existing ? existing.accuracy || 0 : 0,
+          damage: existingIdxs.length > 0 ? tempResults[existingIdxs[0]].damage || 0 : 0,
+          accuracy: existingIdxs.length > 0 ? tempResults[existingIdxs[0]].accuracy || 0 : 0,
           inputMethod: 'ocr'
         };
 
-        if (existing) {
+        if (existingIdxs.length > 0) {
+          // Update the first existing document
+          const firstIdx = existingIdxs[0];
+          const existing = tempResults[firstIdx];
           await updatePlayerMatchResult(tournament.id, existing.id, payload);
+          tempResults[firstIdx] = { ...existing, ...payload };
           updatedCount++;
+
+          // Delete any extra duplicate documents
+          for (let i = 1; i < existingIdxs.length; i++) {
+            const idxToDelete = existingIdxs[i];
+            const extraDoc = tempResults[idxToDelete];
+            await deletePlayerMatchResult(tournament.id, extraDoc.id);
+          }
+
+          // Re-filter tempResults to remove the extra deleted documents
+          if (existingIdxs.length > 1) {
+            const idsToDelete = new Set(existingIdxs.slice(1).map(idx => tempResults[idx].id));
+            let filtered = tempResults.filter(r => !idsToDelete.has(r.id));
+            tempResults.length = 0;
+            tempResults.push(...filtered);
+          }
         } else {
-          await savePlayerMatchResult(tournament.id, payload);
+          // Save new
+          const saved = await savePlayerMatchResult(tournament.id, payload);
+          tempResults.push(saved);
           addedCount++;
         }
       }

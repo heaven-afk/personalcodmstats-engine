@@ -9,7 +9,7 @@ of the results table.
 
 For each visible row in the results table extract:
 - rank: placement number (integer)
-- kills: kill count shown for that row (integer, use 0 if blank or not visible)
+- kills: kill count shown for that row (integer, use 0 if blank or not visible). Be very careful to look specifically for the team kills count column (typically a single or double-digit integer). DO NOT confuse it with the Match Score (typically a 4-digit number like 1500, 2400) or other metrics.
 - slot: the team name/label or squad slot shown in the row next to the rank (string, e.g. "TEAM1", "TEAM 3", etc., or null if not present)
 
 Rules:
@@ -17,6 +17,8 @@ Rules:
 - If a field is unreadable or genuinely ambiguous, return null for that field only — do not guess
 - rank values should be sequential integers starting at 1
 - If the image is not a CODM scoreboard return: { "error": "not a scoreboard" }
+- Deduplicate by team: Do not output multiple rows for the same team slot.
+- Ensure the kills count matches the correct team row. Do not repeat or shift numbers between rows.
 
 Response schema:
 {
@@ -36,12 +38,14 @@ of the results table.
 
 For each visible row in the results table extract:
 - name: player name or IGN (string)
-- kills: kill count shown for that row (integer, use 0 if blank or not visible)
+- kills: kill count shown for that row (integer, use 0 if blank or not visible). Be very careful to look specifically for the kills count column (typically a single or double-digit integer, e.g., 0 to 30). DO NOT confuse it with the Match Score (typically a 4-digit number like 1500, 2400) or Damage Dealt (typically a 3 or 4-digit number). The kills count is a separate column. If both are present, extract the actual kills count, not the match score.
 
 Rules:
 - Return ONLY valid JSON, no explanation, no markdown, no preamble
 - If a field is unreadable or genuinely ambiguous, return null for that field only — do not guess
 - If the image is not a CODM scoreboard return: { "error": "not a scoreboard" }
+- Deduplicate by player name: Do not output multiple rows for the same player. If a player appears more than once, combine their data or return the most complete entry.
+- Ensure the kills count matches the correct player row. Do not repeat or shift numbers between rows. Do not confuse the Match Score or Damage with Kills.
 
 Response schema:
 {
