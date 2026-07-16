@@ -713,6 +713,42 @@ export default function PlayerEntryPage() {
 
   const rows = getAllPlayers();
 
+  const playersByTeam = useMemo(() => {
+    const groups = {};
+    rows.forEach(p => {
+      const team = p.teamName || 'Unassigned';
+      if (!groups[team]) groups[team] = [];
+      groups[team].push(p);
+    });
+    return groups;
+  }, [rows]);
+
+  const teams = useMemo(() => {
+    return Object.keys(playersByTeam).sort((a, b) => {
+      if (a === 'Unassigned') return 1;
+      if (b === 'Unassigned') return -1;
+      return a.localeCompare(b);
+    });
+  }, [playersByTeam]);
+
+  const class2PlayersByTeam = useMemo(() => {
+    const groups = {};
+    getClass2Players().forEach(p => {
+      const team = p.teamName || 'Unassigned';
+      if (!groups[team]) groups[team] = [];
+      groups[team].push(p);
+    });
+    return groups;
+  }, [formData, playerClasses, day]);
+
+  const class2Teams = useMemo(() => {
+    return Object.keys(class2PlayersByTeam).sort((a, b) => {
+      if (a === 'Unassigned') return 1;
+      if (b === 'Unassigned') return -1;
+      return a.localeCompare(b);
+    });
+  }, [class2PlayersByTeam]);
+
   return (
     <div>
       {sheetModal && (
@@ -1314,104 +1350,202 @@ export default function PlayerEntryPage() {
       )}
 
       {/* ── SECTION A: Kills ─────────────────────────────── */}
+      {/* ── SECTION A: Kills ─────────────────────────────── */}
       {section === 'kills' && (
-        <div className="data-table-container">
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className="col-slot" style={{ width: 50 }}>SLOT</th>
-                  <th>PLAYER NAME</th>
-                  <th>TEAM</th>
-                  <th>CLASS</th>
-                  <th style={{ background: 'var(--bg-header)' }}>L{lobby} KILLS</th>
-                  <th className="col-kills">KILLS (Lobby Total)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const active = isClass2ActiveToday(row);
-                  const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
-                  const killsVal = hasKills ? parseInt(row.kills) : 0;
-                  return (
-                    <tr key={row.playerId} style={{ opacity: active ? 1 : 0.45 }}>
-                      <td className="col-slot" style={{ textAlign: 'center', fontWeight: 700 }}>{row.slot}</td>
-                      <td style={{ fontWeight: 600 }}>{row.playerName}</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{row.teamName}</td>
-                      <td><ClassBadge playerClass={row.class} /></td>
-                      <td>
-                        {active ? (
-                          <input type="number" min={0} className="editable-input" style={{ width: 70 }}
-                            value={row.kills} placeholder="—"
-                            onChange={(e) => handleChange(row.playerId, 'kills', e.target.value)}
-                            onBlur={() => saveRow(row.playerId)}
-                          />
-                        ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                      </td>
-                      <td className="col-kills">{hasKills ? killsVal : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+          gap: '12px',
+          marginTop: '16px'
+        }}>
+          {teams.map(teamName => {
+            const teamPlayers = playersByTeam[teamName] || [];
+            if (teamPlayers.length === 0) return null;
+
+            return (
+              <div key={teamName} className="card" style={{
+                margin: 0,
+                padding: '14px 16px',
+                border: '1px solid var(--border-md)',
+                borderRadius: '8px',
+                background: 'var(--bg-card)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid var(--border)',
+                  paddingBottom: '6px',
+                  marginBottom: '4px'
+                }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', letterSpacing: '0.03em' }}>
+                    {teamName.toUpperCase()}
+                  </span>
+                  <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem' }}>
+                    {teamPlayers.length} PL
+                  </span>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {teamPlayers.map(row => {
+                    const active = isClass2ActiveToday(row);
+                    const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
+                    const killsVal = hasKills ? parseInt(row.kills) : 0;
+                    return (
+                      <div key={row.playerId} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        opacity: active ? 1 : 0.45,
+                        padding: '4px 0',
+                        borderBottom: '1px dashed var(--border)'
+                      }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>
+                          {row.slot}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                            {row.playerName}
+                          </span>
+                          {row.ign && row.ign !== row.playerName && (
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 400 }}>
+                              · {row.ign}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+                          <ClassBadge playerClass={row.class} />
+                        </div>
+                        <div style={{ width: '70px' }}>
+                          {active ? (
+                            <input type="number" min={0} className="editable-input" 
+                              style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', textAlign: 'center' }}
+                              value={row.kills} placeholder="—"
+                              onChange={(e) => handleChange(row.playerId, 'kills', e.target.value)}
+                              onBlur={() => saveRow(row.playerId)}
+                            />
+                          ) : <span style={{ color: 'var(--text-muted)', display: 'block', textAlign: 'center', fontSize: '0.8rem' }}>—</span>}
+                        </div>
+                        <div style={{ width: '50px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+                          {hasKills ? killsVal : '—'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* ── SECTION B: Damage & Accuracy ────────────────── */}
+      {/* ── SECTION B: Damage & Accuracy ────────────────── */}
       {section === 'damage' && (
-        <div className="data-table-container">
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>PLAYER NAME</th>
-                  <th>L{lobby} DMG</th>
-                  <th>L{lobby} ACC%</th>
-                  <th>TOTAL DMG (auto)</th>
-                  <th>TOTAL ACC (auto)</th>
-                  <th className="col-avg-red">AVG DMG</th>
-                  <th className="col-avg-red">AVG ACC%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const active = isClass2ActiveToday(row);
-                  const hasDmg = row.damage !== null && row.damage !== undefined && row.damage !== '';
-                  const hasAcc = row.accuracy !== null && row.accuracy !== undefined && row.accuracy !== '';
-                  const dmgVal = hasDmg ? parseFloat(row.damage) : 0;
-                  const accVal = hasAcc ? parseFloat(row.accuracy) : 0;
-                  return (
-                    <tr key={row.playerId} style={{ opacity: active ? 1 : 0.45 }}>
-                      <td style={{ fontWeight: 600 }}>{row.playerName}</td>
-                      <td>
-                        {active ? (
-                          <input type="number" min={0} className="editable-input" style={{ width: 80 }}
-                            value={row.damage} placeholder="—"
-                            onChange={(e) => handleChange(row.playerId, 'damage', e.target.value)}
-                            onBlur={() => saveRow(row.playerId)}
-                          />
-                        ) : '—'}
-                      </td>
-                      <td>
-                        {active ? (
-                          <input type="number" min={0} max={100} step={0.1} className="editable-input" style={{ width: 70 }}
-                            value={row.accuracy} placeholder="—"
-                            onChange={(e) => handleChange(row.playerId, 'accuracy', e.target.value)}
-                            onBlur={() => saveRow(row.playerId)}
-                          />
-                        ) : '—'}
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{hasDmg ? row.damage : '—'}</td>
-                      <td style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{hasAcc ? `${row.accuracy}%` : '—'}</td>
-                      <td className="col-avg-red">{hasDmg ? Math.round(dmgVal) : '—'}</td>
-                      <td className="col-avg-red">{hasAcc ? `${accVal.toFixed(1)}%` : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+          gap: '12px',
+          marginTop: '16px'
+        }}>
+          {teams.map(teamName => {
+            const teamPlayers = playersByTeam[teamName] || [];
+            if (teamPlayers.length === 0) return null;
+
+            return (
+              <div key={teamName} className="card" style={{
+                margin: 0,
+                padding: '14px 16px',
+                border: '1px solid var(--border-md)',
+                borderRadius: '8px',
+                background: 'var(--bg-card)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid var(--border)',
+                  paddingBottom: '6px',
+                  marginBottom: '4px'
+                }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', letterSpacing: '0.03em' }}>
+                    {teamName.toUpperCase()}
+                  </span>
+                  <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem' }}>
+                    {teamPlayers.length} PL
+                  </span>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {teamPlayers.map(row => {
+                    const active = isClass2ActiveToday(row);
+                    const hasDmg = row.damage !== null && row.damage !== undefined && row.damage !== '';
+                    const hasAcc = row.accuracy !== null && row.accuracy !== undefined && row.accuracy !== '';
+                    const dmgVal = hasDmg ? parseFloat(row.damage) : 0;
+                    const accVal = hasAcc ? parseFloat(row.accuracy) : 0;
+                    return (
+                      <div key={row.playerId} style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        opacity: active ? 1 : 0.45,
+                        padding: '6px 0',
+                        borderBottom: '1px dashed var(--border)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
+                            <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {row.playerName}
+                            </span>
+                            {row.ign && row.ign !== row.playerName && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                · {row.ign}
+                              </span>
+                            )}
+                          </div>
+                          <ClassBadge playerClass={row.class} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} DMG</span>
+                            {active ? (
+                              <input type="number" min={0} className="editable-input" 
+                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
+                                value={row.damage} placeholder="—"
+                                onChange={(e) => handleChange(row.playerId, 'damage', e.target.value)}
+                                onBlur={() => saveRow(row.playerId)}
+                              />
+                            ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} ACC%</span>
+                            {active ? (
+                              <input type="number" min={0} max={100} step={0.1} className="editable-input" 
+                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
+                                value={row.accuracy} placeholder="—"
+                                onChange={(e) => handleChange(row.playerId, 'accuracy', e.target.value)}
+                                onBlur={() => saveRow(row.playerId)}
+                              />
+                            ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
+                          </div>
+                          <div style={{ width: '90px', textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.2' }}>
+                            <div>Tot: {hasDmg ? Math.round(dmgVal) : '—'}</div>
+                            <div>Acc: {hasAcc ? `${accVal.toFixed(1)}%` : '—'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1424,57 +1558,109 @@ export default function PlayerEntryPage() {
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16 }}>
             Kills and damage/accuracy for Class 2 players on their active days (Days {ruDays.join(', ')}).
           </p>
-          <div className="data-table-container">
-            <div style={{ overflowX: 'auto' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>PRO NAME</th>
-                    <th>TEAM</th>
-                    <th style={{ color: 'var(--cyan)' }}>L{lobby} KILLS</th>
-                    <th style={{ color: 'var(--cyan)' }}>L{lobby} DMG</th>
-                    <th style={{ color: 'var(--cyan)' }}>L{lobby} ACC%</th>
-                    <th className="col-cyan">KILLS (auto)</th>
-                    <th className="col-cyan">EVENTS (auto)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {getClass2Players().map((row) => {
-                    const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
-                    const killsVal = hasKills ? parseInt(row.kills) : 0;
-                    return (
-                      <tr key={row.playerId}>
-                        <td style={{ fontWeight: 600 }}>{row.playerName}<br /><span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{row.ign}</span></td>
-                        <td style={{ color: 'var(--text-secondary)' }}>{row.teamName}</td>
-                        <td>
-                          <input type="number" min={0} className="editable-input" style={{ width: 70 }}
-                            value={row.kills} placeholder="—"
-                            onChange={(e) => handleChange(row.playerId, 'kills', e.target.value)}
-                            onBlur={() => saveRow(row.playerId)}
-                          />
-                        </td>
-                        <td>
-                          <input type="number" min={0} className="editable-input" style={{ width: 80 }}
-                            value={row.damage} placeholder="—"
-                            onChange={(e) => handleChange(row.playerId, 'damage', e.target.value)}
-                            onBlur={() => saveRow(row.playerId)}
-                          />
-                        </td>
-                        <td>
-                          <input type="number" min={0} max={100} step={0.1} className="editable-input" style={{ width: 70 }}
-                            value={row.accuracy} placeholder="—"
-                            onChange={(e) => handleChange(row.playerId, 'accuracy', e.target.value)}
-                            onBlur={() => saveRow(row.playerId)}
-                          />
-                        </td>
-                        <td className="col-cyan">{hasKills ? killsVal : '—'}</td>
-                        <td className="col-cyan">{hasKills ? 1 : '—'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+            gap: '12px',
+            marginTop: '16px'
+          }}>
+            {class2Teams.map(teamName => {
+              const teamPlayers = class2PlayersByTeam[teamName] || [];
+              if (teamPlayers.length === 0) return null;
+
+              return (
+                <div key={teamName} className="card" style={{
+                  margin: 0,
+                  padding: '14px 16px',
+                  border: '1px solid var(--cyan)',
+                  borderRadius: '8px',
+                  background: 'var(--bg-card)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottom: '1px solid var(--border)',
+                    paddingBottom: '6px',
+                    marginBottom: '4px'
+                  }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--cyan)', letterSpacing: '0.03em' }}>
+                      {teamName.toUpperCase()}
+                    </span>
+                    <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem', color: 'var(--cyan)', borderColor: 'var(--cyan)' }}>
+                      {teamPlayers.length} PL
+                    </span>
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {teamPlayers.map(row => {
+                      const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
+                      const killsVal = hasKills ? parseInt(row.kills) : 0;
+                      return (
+                        <div key={row.playerId} style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          padding: '6px 0',
+                          borderBottom: '1px dashed var(--border)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
+                              <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {row.playerName}
+                              </span>
+                              {row.ign && row.ign !== row.playerName && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  · {row.ign}
+                                </span>
+                              )}
+                            </div>
+                            <ClassBadge playerClass={row.class} />
+                          </div>
+                          
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} KILLS</span>
+                              <input type="number" min={0} className="editable-input" 
+                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
+                                value={row.kills} placeholder="—"
+                                onChange={(e) => handleChange(row.playerId, 'kills', e.target.value)}
+                                onBlur={() => saveRow(row.playerId)}
+                              />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} DMG</span>
+                              <input type="number" min={0} className="editable-input" 
+                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
+                                value={row.damage} placeholder="—"
+                                onChange={(e) => handleChange(row.playerId, 'damage', e.target.value)}
+                                onBlur={() => saveRow(row.playerId)}
+                              />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} ACC%</span>
+                              <input type="number" min={0} max={100} step={0.1} className="editable-input" 
+                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
+                                value={row.accuracy} placeholder="—"
+                                onChange={(e) => handleChange(row.playerId, 'accuracy', e.target.value)}
+                                onBlur={() => saveRow(row.playerId)}
+                              />
+                            </div>
+                            <div style={{ width: '60px', textAlign: 'right', fontSize: '0.72rem', color: 'var(--cyan)', lineHeight: '1.2' }}>
+                              <div>K: {hasKills ? killsVal : '—'}</div>
+                              <div>E: {hasKills ? 1 : '—'}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
