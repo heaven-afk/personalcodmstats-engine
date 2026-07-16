@@ -166,17 +166,21 @@ async function callGroqVisionAPIWithHistory(apiKey, systemPrompt, userText, base
   return JSON.parse(rawJsonText);
 }
 
-// Check if ranks are sequential from 1
+// Check if ranks have duplicates or are not sequential (allowing starting at any number)
 function isRankAnomaly(rows) {
-  if (!rows || rows.length === 0) return true;
+  if (!rows || rows.length <= 1) return false;
   const ranks = rows
     .map(r => parseInt(r.rank))
     .filter(r => !isNaN(r))
     .sort((a, b) => a - b);
 
-  if (ranks.length === 0) return true;
-  if (ranks[0] !== 1) return true;
+  if (ranks.length <= 1) return false;
 
+  // Check for duplicates
+  const hasDuplicates = new Set(ranks).size !== ranks.length;
+  if (hasDuplicates) return true;
+
+  // Check for sequential ordering (allowing starting at any positive integer)
   for (let i = 0; i < ranks.length - 1; i++) {
     if (ranks[i + 1] !== ranks[i] + 1) {
       return true;
