@@ -666,11 +666,30 @@ export default function TeamEntryPage() {
 
   // Compute live standings for right panel
   const standingsData = useMemo(() => {
-    const enriched = dayResults.map(r => ({
+    const enriched = [...dayResults.map(r => ({
       ...r,
       teamName: teamRegs.find(t => t.teamId === r.teamId)?.teamName || r.teamId,
       clanName: teamRegs.find(t => t.teamId === r.teamId)?.clanName || '',
-    }));
+    }))];
+
+    // For any registered team that doesn't have any results in enriched,
+    // inject a dummy result so they appear in computeDailyStandings
+    for (const reg of teamRegs) {
+      const hasResult = enriched.some(r => r.teamId === reg.teamId);
+      if (!hasResult) {
+        enriched.push({
+          teamId: reg.teamId,
+          teamName: reg.teamName,
+          clanName: reg.clanName || '',
+          day,
+          lobby: 1,
+          placement: 0,
+          kills: 0,
+          damage: 0,
+        });
+      }
+    }
+
     return computeDailyStandings(enriched, dayBonus, scoring, day);
   }, [dayResults, dayBonus, teamRegs, scoring, day]);
 
@@ -1311,10 +1330,18 @@ export default function TeamEntryPage() {
                             <CellInput
                               value={r.placement === null || r.placement === undefined || r.placement === '' ? '' : r.placement}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'placement', v)}
+                              style={{
+                                borderLeft: `2px solid ${lc(li + 1).border}`,
+                                background: `rgba(${li % 2 === 1 ? '255,255,255,0.01' : '0,0,0,0.01'})`
+                              }}
                             />
                             <CellInput
                               value={r.kills === null || r.kills === undefined || r.kills === '' ? '' : r.kills}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'kills', v)}
+                              style={{
+                                borderRight: `2px solid ${lc(li + 1).border}`,
+                                background: `rgba(${li % 2 === 1 ? '255,255,255,0.01' : '0,0,0,0.01'})`
+                              }}
                             />
                           </Fragment>
                         ))}
@@ -1347,11 +1374,17 @@ export default function TeamEntryPage() {
 
         {/* Auto-ranked sidebar */}
         <div style={{ width: 300 }}>
-          <div className="data-table-container" style={{ position: 'sticky', top: 20 }}>
-            <div className="data-table-toolbar">
+          <div className="data-table-container" style={{
+            position: 'sticky',
+            top: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            maxHeight: 'calc(100vh - 120px)'
+          }}>
+            <div className="data-table-toolbar" style={{ flexShrink: 0 }}>
               <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Live Rankings · Day {day}</span>
             </div>
-            <div className="data-table-scroll">
+            <div className="data-table-scroll" style={{ overflowY: 'auto', flex: 1 }}>
               <table className="data-table" style={{ fontSize: '0.8rem' }}>
                 <thead>
                   <tr>
@@ -1389,7 +1422,7 @@ export default function TeamEntryPage() {
 }
 
 // ─── Editable cell input ─────────────────────────────────────────────────────
-function CellInput({ value, onSave }) {
+function CellInput({ value, onSave, style = {} }) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value);
   const isCancelled = useRef(false);
@@ -1414,10 +1447,18 @@ function CellInput({ value, onSave }) {
 
   if (editing) {
     return (
-      <td>
+      <td style={{ ...style, padding: '3px 4px', textAlign: 'center' }}>
         <input
           className="editable-input"
-          style={{ width: 56 }}
+          style={{
+            width: 44,
+            padding: '2px 4px',
+            fontSize: '0.75rem',
+            height: '22px',
+            textAlign: 'center',
+            margin: '0 auto',
+            display: 'block'
+          }}
           type="number"
           value={local}
           autoFocus
@@ -1438,12 +1479,25 @@ function CellInput({ value, onSave }) {
     );
   }
   return (
-    <td>
+    <td style={{ ...style, padding: '3px 4px', textAlign: 'center' }}>
       <div
         className="editable-cell-display"
         tabIndex={0}
         onClick={handleStartEdit}
         onFocus={handleStartEdit}
+        style={{
+          padding: '2px 4px',
+          fontSize: '0.75rem',
+          height: '22px',
+          minWidth: '38px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          borderRadius: '4px',
+          transition: 'all 0.1s',
+          margin: '0 auto'
+        }}
       >
         {local !== '' && local !== undefined && local !== null ? <span style={{ fontFamily: 'var(--font-mono)' }}>{local}</span> : <span className="cell-empty">—</span>}
       </div>
