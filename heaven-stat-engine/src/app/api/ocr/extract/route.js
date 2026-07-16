@@ -17,7 +17,7 @@ Rules:
 - If a field is unreadable or genuinely ambiguous, return null for that field only — do not guess
 - rank values should be sequential integers starting at 1
 - If the image is not a CODM scoreboard return: { "error": "not a scoreboard" }
-- Deduplicate by team: Do not output multiple rows for the same team slot.
+- Deduplicate by team: If a team slot appears more than once in the scoreboard (due to overlaps or duplicates), pick exactly ONE row (the one with the correct/highest kills or most complete data) and discard the other duplicate row(s). Do NOT drop both rows; you MUST include exactly one row for that team slot.
 - Ensure the kills count matches the correct team row. Do not repeat or shift numbers between rows.
 
 Response schema:
@@ -44,7 +44,7 @@ Rules:
 - Return ONLY valid JSON, no explanation, no markdown, no preamble
 - If a field is unreadable or genuinely ambiguous, return null for that field only — do not guess
 - If the image is not a CODM scoreboard return: { "error": "not a scoreboard" }
-- Deduplicate by player name: Do not output multiple rows for the same player. If a player appears more than once, combine their data or return the most complete entry.
+- Deduplicate by player name: If a player appears more than once in the scoreboard (due to overlaps or duplicates), pick exactly ONE row (the one with more complete data or higher kills) and discard the other duplicate row(s). Do NOT drop both rows; you MUST include exactly one row for that player.
 - Ensure the kills count matches the correct player row. Do not repeat or shift numbers between rows. Do not confuse the Match Score or Damage with Kills.
 
 Response schema:
