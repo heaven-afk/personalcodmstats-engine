@@ -87,3 +87,31 @@ export function scanForDuplicates(globalTeams, threshold = 0.75) {
   }
   return pairs.sort((a, b) => b.similarity - a.similarity);
 }
+
+/**
+ * Filters a list of global players to find any that are similar to newPlayerName or newIGN.
+ */
+export function getSimilarPlayers(newPlayerName, newIGN, globalPlayers, threshold = 0.75) {
+  if ((!newPlayerName || !newPlayerName.trim()) && (!newIGN || !newIGN.trim())) return [];
+  const termName = newPlayerName?.trim().toLowerCase() || '';
+  const termIGN = newIGN?.trim().toLowerCase() || '';
+
+  return globalPlayers
+    .map(player => {
+      let sim = 0;
+      if (termName && player.professionalName) {
+        sim = Math.max(sim, stringSimilarity(termName, player.professionalName));
+      }
+      if (termIGN && player.ign) {
+        sim = Math.max(sim, stringSimilarity(termIGN, player.ign));
+      }
+      return { player, similarity: sim };
+    })
+    .filter(res => res.similarity >= threshold && 
+      (termName ? res.player.professionalName?.toLowerCase() !== termName : true) && 
+      (termIGN ? res.player.ign?.toLowerCase() !== termIGN : true)
+    )
+    .sort((a, b) => b.similarity - a.similarity)
+    .map(res => res.player);
+}
+

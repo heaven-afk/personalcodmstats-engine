@@ -10,7 +10,7 @@ import {
 import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
 import Modal from '@/components/ui/Modal';
-import { getSimilarTeams } from '@/lib/utils/similarity';
+import { getSimilarTeams, getSimilarPlayers } from '@/lib/utils/similarity';
 import {
   getAllSheetsAsCSV,
   parsePlayerRegistrationCSV,
@@ -189,52 +189,147 @@ function parsePastedTeams(text) {
 
 function parsePastedPlayers(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  const players = [];
-  lines.forEach((line, i) => {
-    if (line.includes('\t')) {
-      const parts = line.split('\t').map(p => p.trim());
-      players.push({
-        slot: parseInt(parts[0]) || (i + 1),
-        professionalName: parts[1] || '',
-        ign: parts[2] || '',
-        teamName: parts[3] || '',
-        class: parts[4] || 'Registered',
-        gender: parts[5] || '',
-        region: parts[6] || '',
-        country: parts[7] || '',
-        device: parts[8] || '',
-        deviceModel: parts[9] || ''
-      });
-    } else if (line.includes(',')) {
-      const parts = line.split(',').map(p => p.trim());
-      players.push({
-        slot: parseInt(parts[0]) || (i + 1),
-        professionalName: parts[1] || '',
-        ign: parts[2] || '',
-        teamName: parts[3] || '',
-        class: parts[4] || 'Registered',
-        gender: parts[5] || '',
-        region: parts[6] || '',
-        country: parts[7] || '',
-        device: parts[8] || '',
-        deviceModel: parts[9] || ''
-      });
-    } else {
-      players.push({
-        slot: i + 1,
-        professionalName: line,
-        ign: line,
-        teamName: '',
-        class: 'Registered',
-        gender: '',
-        region: '',
-        country: '',
-        device: '',
-        deviceModel: ''
-      });
-    }
+  if (lines.length === 0) return [];
+
+  // Determine delimiter
+  const firstLine = lines[0];
+  const delimiter = firstLine.includes('\t') ? '\t' : (firstLine.includes(',') ? ',' : null);
+
+  if (!delimiter) {
+    // If no delimiter, treat each line as a player name
+    return lines.map((line, i) => ({
+      slot: i + 1,
+      professionalName: line,
+      ign: line,
+      teamName: '',
+      class: 'Registered',
+      gender: '',
+      region: '',
+      country: '',
+      device: '',
+      deviceModel: ''
+    }));
+  }
+
+  // Parse all lines
+  const parsedRows = lines.map(line => line.split(delimiter).map(p => p.trim()));
+
+  // Check if the first row is a header row
+  const firstRow = parsedRows[0];
+  const isHeader = firstRow.some(cell => {
+    const c = cell.toLowerCase();
+    return c.includes('name') || c.includes('ign') || c.includes('team') || c.includes('gender') || c.includes('device') || c.includes('country') || c.includes('region') || c === '#';
   });
-  return players;
+
+  let headers = [];
+  let dataRows = parsedRows;
+
+  if (isHeader) {
+    headers = firstRow.map(h => h.toLowerCase());
+    dataRows = parsedRows.slice(1);
+  }
+
+  // Map columns based on headers
+  const getIndex = (keys) => {
+    return headers.findIndex(h => keys.some(key => h.includes(key)));
+  };
+
+  // Find column indices
+  let slotIdx = getIndex(['#', 'slot', 'no', 'index']);
+  let nameIdx = getIndex(['professionalname', 'proname', 'playername', 'fullname', 'pro name']);
+  if (nameIdx === -1) {
+    nameIdx = headers.findIndex(h => h === 'name' || h.includes('player name'));
+  }
+  let ignIdx = getIndex(['ign', 'ingame', 'in-game']);
+  let teamIdx = getIndex(['teamname', 'team', 'clan']);
+  let clanIdx = getIndex(['clanname', 'clan', 'originalorg', 'org']);
+  let classIdx = getIndex(['class', 'category', 'tier', 'group']);
+  let genderIdx = getIndex(['gender', 'sex']);
+  let regionIdx = getIndex(['region', 'zone']);
+  let countryIdx = getIndex(['country', 'nation']);
+  let deviceIdx = getIndex(['device', 'platform']);
+  let modelIdx = getIndex(['devicemodel', 'model', 'phone']);
+
+  const useFallback = headers.length === 0;
+
+  return dataRows.map((row, i) => {
+    if (useFallback) {
+      // Check if first cell is a number (slot)
+      const hasSlot = !isNaN(row[0]) && row[0] !== '';
+      if (hasSlot) {
+        return {
+          slot: parseInt(row[0]) || (i + 1),
+          professionalName: row[1] || '',
+          ign: row[2] || '',
+          teamName: row[3] || '',
+          class: row[4] || 'Registered',
+          gender: row[5] || '',
+          region: row[6] || '',
+          country: row[7] || '',
+          device: row[8] || '',
+          deviceModel: row[9] || ''
+        };
+      } else {
+        // Fallback for 8-column layout from screenshot
+        if (row.length >= 7) {
+          let dev = row[6] || '';
+          let model = '';
+          if (dev && !['iphone', 'ipad', 'tablet', 'phone'].includes(dev.toLowerCase())) {
+            model = dev;
+            dev = '';
+          }
+          return {
+            slot: i + 1,
+            professionalName: row[0] || '',
+            ign: row[1] || '',
+            teamName: row[2] || '',
+            class: 'Registered',
+            gender: row[7] || '',
+            region: row[5] || '',
+            country: row[4] || '',
+            device: dev,
+            deviceModel: model
+          };
+        }
+        // General fallback
+        return {
+          slot: i + 1,
+          professionalName: row[0] || '',
+          ign: row[1] || '',
+          teamName: row[2] || '',
+          class: 'Registered',
+          gender: row[3] || '',
+          region: row[4] || '',
+          country: row[5] || '',
+          device: row[6] || '',
+          deviceModel: row[7] || ''
+        };
+      }
+    }
+
+    // Header-based mapping
+    let dev = deviceIdx !== -1 ? row[deviceIdx] || '' : '';
+    let model = modelIdx !== -1 ? row[modelIdx] || '' : '';
+    if (dev && !model) {
+      if (!['iphone', 'ipad', 'tablet', 'phone'].includes(dev.toLowerCase())) {
+        model = dev;
+        dev = '';
+      }
+    }
+
+    return {
+      slot: slotIdx !== -1 ? (parseInt(row[slotIdx]) || (i + 1)) : (i + 1),
+      professionalName: nameIdx !== -1 ? row[nameIdx] || '' : '',
+      ign: ignIdx !== -1 ? row[ignIdx] || '' : '',
+      teamName: teamIdx !== -1 ? row[teamIdx] || '' : '',
+      class: classIdx !== -1 ? row[classIdx] || 'Registered' : 'Registered',
+      gender: genderIdx !== -1 ? row[genderIdx] || '' : '',
+      region: regionIdx !== -1 ? row[regionIdx] || '' : '',
+      country: countryIdx !== -1 ? row[countryIdx] || '' : '',
+      device: dev,
+      deviceModel: model
+    };
+  });
 }
 
 export default function RegisterPage() {
@@ -920,6 +1015,160 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   const [pasteText, setPasteText] = useState('');
   const [parsing, setParsing] = useState(false);
 
+  // Import Preview states
+  const [importQueue, setImportQueue] = useState([]);
+  const [showImportPreview, setShowImportPreview] = useState(false);
+
+  const prepareImport = (parsedRows) => {
+    const queue = parsedRows.map((row, index) => {
+      const proName = row.professionalName?.trim() || '';
+      const ign = row.ign?.trim() || '';
+      const teamName = row.teamName?.trim() || '';
+      const slot = Number(row.slot) || (registrations.length + index + 1);
+      const gender = row.gender?.trim() || '';
+      const country = row.country?.trim() || '';
+      const region = row.region?.trim() || deriveRegion(country);
+      const deviceModel = row.deviceModel?.trim() || '';
+      const device = row.device?.trim() || deriveDevice(deviceModel);
+      const category = row.class || 'Registered';
+
+      // Check duplicate
+      const proNameLower = proName.toLowerCase();
+      const ignLower = ign.toLowerCase();
+      const teamLower = teamName.toLowerCase();
+
+      const isDuplicate = registrations.some(r => {
+        const rProName = (r.professionalName || '').trim().toLowerCase();
+        const rIgn = (r.ign || '').trim().toLowerCase();
+        const rTeam = (r.teamName || '').trim().toLowerCase();
+        return (proNameLower && rProName === proNameLower && rTeam === teamLower) ||
+               (ignLower && rIgn === ignLower && rTeam === teamLower);
+      });
+
+      // Exact match
+      const exact = globalPlayers.find(p => {
+        const pProName = (p.professionalName || '').trim().toLowerCase();
+        const pIgn = (p.ign || '').trim().toLowerCase();
+        return (proNameLower && pProName === proNameLower) || (ignLower && pIgn === ignLower);
+      });
+
+      if (exact) {
+        return {
+          id: `imp_pl_${Date.now()}_${index}`,
+          slot,
+          professionalName: exact.professionalName || proName,
+          ign: exact.ign || ign,
+          teamName,
+          category,
+          gender: exact.gender || gender,
+          region: exact.region || region,
+          country: exact.country || country,
+          device: exact.device || device,
+          deviceModel: exact.deviceModel || deviceModel,
+          playerId: exact.id,
+          isLinked: true,
+          originalName: proName || ign,
+          conflict: null,
+          isDuplicate
+        };
+      }
+
+      // Similar match
+      const similar = getSimilarPlayers(proName, ign, globalPlayers, 0.75);
+
+      return {
+        id: `imp_pl_${Date.now()}_${index}`,
+        slot,
+        professionalName: proName,
+        ign,
+        teamName,
+        category,
+        gender,
+        region,
+        country,
+        device,
+        deviceModel,
+        playerId: '',
+        isLinked: false,
+        originalName: proName || ign,
+        conflict: similar.length > 0 ? similar[0] : null,
+        isDuplicate
+      };
+    });
+
+    setImportQueue(queue);
+    setShowImportPreview(true);
+  };
+
+  const executeRegistration = async (queue) => {
+    setSaving(true);
+    let added = 0;
+    let skipped = 0;
+    const total = queue.length;
+    if (setImportProgress) setImportProgress(0);
+    try {
+      for (let i = 0; i < total; i++) {
+        const item = queue[i];
+        if (item.isDuplicate) {
+          skipped++;
+          if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
+          continue;
+        }
+
+        let player;
+        if (item.isLinked && item.playerId) {
+          player = {
+            id: item.playerId,
+            professionalName: item.professionalName,
+            ign: item.ign,
+            gender: item.gender,
+            region: item.region,
+            country: item.country,
+            device: item.device,
+            deviceModel: item.deviceModel
+          };
+        } else {
+          player = await createPlayer({
+            professionalName: item.professionalName,
+            ign: item.ign,
+            gender: item.gender,
+            region: item.region,
+            country: item.country,
+            device: item.device,
+            deviceModel: item.deviceModel,
+            category: item.category,
+          });
+        }
+
+        const matchedTeam = teamRegistrations.find(
+          t => t.teamName?.toLowerCase() === item.teamName?.toLowerCase()
+        );
+
+        await addPlayerRegistration(tournamentId, {
+          playerId: player.id,
+          slot: item.slot,
+          class: item.category,
+          teamId: matchedTeam?.teamId || '',
+          teamName: item.teamName,
+          ign: player.ign,
+          professionalName: player.professionalName,
+        });
+
+        added++;
+        if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
+      }
+      toast.success(`Registered ${added} players successfully${skipped ? ` (skipped ${skipped} duplicates)` : ''}`);
+      setShowImportPreview(false);
+      setImportQueue([]);
+      await onRefresh();
+    } catch (e) {
+      toast.error('Failed to register players: ' + e.message);
+    } finally {
+      setSaving(false);
+      if (setImportProgress) setImportProgress(null);
+    }
+  };
+
   const matchedPlayer = nameSearch.length > 1
     ? globalPlayers.find(p => p.professionalName?.toLowerCase().includes(nameSearch.toLowerCase()) || p.ign?.toLowerCase().includes(nameSearch.toLowerCase()))
     : null;
@@ -1014,60 +1263,9 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         toast.error('No players parsed. Please check the copy format.');
         return;
       }
-      let added = 0;
-      let skipped = 0;
-      const newlyAdded = [];
-
-      for (const row of parsed) {
-        const teamName = row.teamName || '';
-        const proName = row.professionalName || '';
-
-        if (proName.trim()) {
-          const proNameLower = proName.trim().toLowerCase();
-          const teamLower = teamName.trim().toLowerCase();
-          const hasDuplicate = registrations.some(r => 
-            (r.teamName || '').toLowerCase() === teamLower &&
-            (r.professionalName || '').trim().toLowerCase() === proNameLower
-          ) || newlyAdded.some(r => 
-            r.teamName.toLowerCase() === teamLower &&
-            r.professionalName.toLowerCase() === proNameLower
-          );
-
-          if (hasDuplicate) {
-            skipped++;
-            continue;
-          }
-        }
-
-        const matchedTeam = teamRegistrations.find(
-          t => t.teamName?.toLowerCase() === teamName.toLowerCase()
-        );
-        const player = await createPlayer({
-          professionalName: proName,
-          ign: row.ign,
-          gender: row.gender,
-          region: row.region || deriveRegion(row.country || ''),
-          country: row.country,
-          device: row.device || deriveDevice(row.deviceModel || ''),
-          deviceModel: row.deviceModel,
-          category: row.class || 'Registered',
-        });
-        await addPlayerRegistration(tournamentId, {
-          playerId: player.id,
-          slot: row.slot || (registrations.length + added + 1),
-          class: row.class || 'Registered',
-          teamId: matchedTeam?.teamId || '',
-          teamName: teamName,
-          ign: player.ign,
-          professionalName: player.professionalName,
-        });
-        newlyAdded.push({ professionalName: player.professionalName, teamName });
-        added++;
-      }
-      toast.success(`Registered ${added} players from paste${skipped ? ` (skipped ${skipped} duplicates)` : ''}`);
+      prepareImport(parsed);
       setPasteText('');
       setShowPaste(false);
-      await onRefresh();
     } catch (err) {
       toast.error('Import failed: ' + err.message);
     } finally {
@@ -1100,66 +1298,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
       return;
     }
 
-    let added = 0, skipped = 0;
-    const total = validRows.length;
-    const newlyAdded = [];
-    if (setImportProgress) setImportProgress(0);
-    for (let i = 0; i < total; i++) {
-      const row = validRows[i];
-      try {
-        const teamName = row.teamName || '';
-        const proName = row.professionalName || '';
-
-        if (proName.trim()) {
-          const proNameLower = proName.trim().toLowerCase();
-          const teamLower = teamName.trim().toLowerCase();
-          const hasDuplicate = registrations.some(r => 
-            (r.teamName || '').toLowerCase() === teamLower &&
-            (r.professionalName || '').trim().toLowerCase() === proNameLower
-          ) || newlyAdded.some(r => 
-            r.teamName.toLowerCase() === teamLower &&
-            r.professionalName.toLowerCase() === proNameLower
-          );
-
-          if (hasDuplicate) {
-            skipped++;
-            if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
-            continue;
-          }
-        }
-
-        const matchedTeam = teamRegistrations.find(
-          t => t.teamName?.toLowerCase() === teamName.toLowerCase()
-        );
-        const player = await createPlayer({
-          professionalName: proName || '',
-          ign: row.ign || '',
-          gender: row.gender || '',
-          region: row.region || deriveRegion(row.country || ''),
-          country: row.country || '',
-          device: row.device || deriveDevice(row.deviceModel || ''),
-          deviceModel: row.deviceModel || '',
-          category: row.class || 'Registered',
-        });
-        await addPlayerRegistration(tournamentId, {
-          playerId: player.id,
-          slot: row.slot || (registrations.length + added + 1),
-          class: row.class || 'Registered',
-          teamId: matchedTeam?.teamId || '',
-          teamName: teamName,
-          ign: player.ign,
-          professionalName: player.professionalName,
-        });
-        newlyAdded.push({ professionalName: player.professionalName, teamName });
-        added++;
-      } catch {
-        skipped++;
-      }
-      if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
-    }
-    if (setImportProgress) setImportProgress(null);
-    toast.success(`Imported ${added} player${added !== 1 ? 's' : ''} from "${sheetLabel}"${skipped ? ` (${skipped} skipped)` : ''}`);
-    await onRefresh();
+    prepareImport(validRows);
   };
 
   const { trigger, modal, input, importing } = useSheetUpload(handlePlayerImport);
@@ -1394,6 +1533,131 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           </tbody>
         </table>
       </div>
+      {showImportPreview && (
+        <Modal title="Sync & Register Players Preview" onClose={() => setShowImportPreview(false)} size="lg">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Review the players parsed from your import. You can link them to existing registry profiles or register them as new.
+            </p>
+            <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 50 }}>Slot</th>
+                    <th>Entered Player</th>
+                    <th>Team</th>
+                    <th>Details</th>
+                    <th>Similarity Match Resolution</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importQueue.map((item, idx) => (
+                    <tr key={item.id} style={{ 
+                      background: item.isDuplicate 
+                        ? 'rgba(239, 68, 68, 0.05)' 
+                        : item.conflict 
+                        ? 'rgba(201,168,76,0.02)' 
+                        : 'transparent',
+                      opacity: item.isDuplicate ? 0.7 : 1
+                    }}>
+                      <td>{item.slot}</td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {item.professionalName || '—'}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          IGN: {item.ign || '—'}
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 500 }}>{item.teamName || 'Unassigned'}</span>
+                        {item.teamName && !teamRegistrations.some(t => t.teamName?.toLowerCase() === item.teamName?.toLowerCase()) && (
+                          <div style={{ fontSize: '0.68rem', color: 'var(--gold)', marginTop: 2 }}>
+                            ⚠️ Team not registered in tournament
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {item.gender ? `Gender: ${item.gender} | ` : ''}
+                          {item.country ? `Country: ${item.country} | ` : ''}
+                          {item.deviceModel || item.device ? `Device: ${item.deviceModel || item.device}` : ''}
+                        </div>
+                      </td>
+                      <td>
+                        {item.isDuplicate ? (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--red)', fontWeight: 600 }}>
+                            ⚠️ Already Registered (Will be skipped)
+                          </span>
+                        ) : item.conflict ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span>⚠️ Similar: <strong>{item.conflict.professionalName}</strong> (IGN: {item.conflict.ign})</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                type="button"
+                                className={`btn btn-xs ${item.isLinked ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => {
+                                  const newQueue = [...importQueue];
+                                  newQueue[idx] = {
+                                    ...item,
+                                    isLinked: true,
+                                    playerId: item.conflict.id,
+                                    professionalName: item.conflict.professionalName || item.professionalName,
+                                    ign: item.conflict.ign || item.ign,
+                                    gender: item.conflict.gender || item.gender,
+                                    region: item.conflict.region || item.region,
+                                    country: item.conflict.country || item.country,
+                                    device: item.conflict.device || item.device,
+                                    deviceModel: item.conflict.deviceModel || item.deviceModel
+                                  };
+                                  setImportQueue(newQueue);
+                                }}
+                              >
+                                Link to Existing
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn-xs ${!item.isLinked ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => {
+                                  const newQueue = [...importQueue];
+                                  newQueue[idx] = {
+                                    ...item,
+                                    isLinked: false,
+                                    playerId: '',
+                                    professionalName: item.originalName === item.ign ? '' : item.professionalName,
+                                    ign: item.ign
+                                  };
+                                  setImportQueue(newQueue);
+                                }}
+                              >
+                                Register as New
+                              </button>
+                            </div>
+                          </div>
+                        ) : item.isLinked ? (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--cyan)' }}>✓ Auto-linked to exact match</span>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Will register as new player</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowImportPreview(false)} disabled={saving}>
+                Cancel
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => executeRegistration(importQueue)} disabled={saving}>
+                {saving ? 'Registering...' : `Confirm & Register ${importQueue.filter(x => !x.isDuplicate).length} Players`}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

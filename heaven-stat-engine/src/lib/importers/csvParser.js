@@ -46,19 +46,33 @@ function str(val) { return String(val || '').trim(); }
 export function parsePlayerRegistrationCSV(text) {
   const { data, errors } = parseCSV(text);
   return {
-    rows: data.map((row, i) => ({
-      rowIndex: i,
-      professionalName: str(row.professionalname || row.proname || row.playername || row.name || row.fullname || ''),
-      ign: str(row.ign || row.ingamename || row.playerign || row.ingame || ''),
-      teamName: str(row.teamname || row.team || row.clan || ''),
-      clanName: str(row.clanname || row.clan || ''),
-      class: str(row.class || row.playerclass || row.category || row.tier || row.group || 'Class 1'),
-      gender: str(row.gender || row.sex || ''),
-      region: str(row.region || row.zone || row.reg || ''),
-      country: str(row.country || row.nation || row.cntry || ''),
-      device: str(row.device || row.platform || row.dev || ''),
-      deviceModel: str(row.devicemodel || row.model || row.phone || ''),
-    })),
+    rows: data.map((row, i) => {
+      let rawDevice = str(row.device || row.platform || row.dev || '');
+      let rawModel = str(row.devicemodel || row.model || row.phone || '');
+
+      // Normalize device vs deviceModel if one is provided
+      if (rawDevice && !rawModel) {
+        const lowerDev = rawDevice.toLowerCase();
+        if (!['iphone', 'ipad', 'tablet', 'phone'].includes(lowerDev)) {
+          rawModel = rawDevice;
+          rawDevice = '';
+        }
+      }
+
+      return {
+        rowIndex: i,
+        professionalName: str(row.professionalname || row.proname || row.playername || row.name || row.fullname || ''),
+        ign: str(row.ign || row.ingamename || row.playerign || row.ingame || row.igningamename || ''),
+        teamName: str(row.teamname || row.team || row.clan || ''),
+        clanName: str(row.clanname || row.clan || row.originalorg || row.org || ''),
+        class: str(row.class || row.playerclass || row.category || row.tier || row.group || 'Class 1'),
+        gender: str(row.gender || row.sex || ''),
+        region: str(row.region || row.zone || row.reg || ''),
+        country: str(row.country || row.nation || row.cntry || ''),
+        device: rawDevice,
+        deviceModel: rawModel,
+      };
+    }),
     errors,
   };
 }
