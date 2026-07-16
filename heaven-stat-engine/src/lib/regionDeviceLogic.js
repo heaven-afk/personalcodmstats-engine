@@ -4,6 +4,8 @@
  * Used across the Heaven Stat Engine for consistent classification.
  */
 
+import { stringSimilarity } from './utils/similarity';
+
 // ─── Region Mapping ────────────────────────────────────────────────────────────
 const AFRICA_COUNTRIES = [
   'south africa','nigeria','kenya','ghana','ethiopia','tanzania','uganda',
@@ -68,6 +70,27 @@ export function deriveRegion(country) {
   if (ASIA_COUNTRIES.some(x => c.includes(x) || x.includes(c))) return 'Asia';
   if (AMERICA_COUNTRIES.some(x => c.includes(x) || x.includes(c))) return 'America';
   if (OCEANIA_COUNTRIES.some(x => c.includes(x) || x.includes(c))) return 'Oceania';
+
+  // Similarity-boosted check for spelling errors
+  let bestMatch = { region: '', score: 0 };
+  const checkList = (list, regionName) => {
+    for (const x of list) {
+      const score = stringSimilarity(c, x);
+      if (score > bestMatch.score) {
+        bestMatch = { region: regionName, score };
+      }
+    }
+  };
+
+  checkList(AFRICA_COUNTRIES, 'Africa');
+  checkList(EUROPE_COUNTRIES, 'Europe');
+  checkList(ASIA_COUNTRIES, 'Asia');
+  checkList(AMERICA_COUNTRIES, 'America');
+  checkList(OCEANIA_COUNTRIES, 'Oceania');
+
+  if (bestMatch.score >= 0.70) {
+    return bestMatch.region;
+  }
   return '';
 }
 
@@ -93,6 +116,15 @@ export function deriveDevice(model) {
   if (IPHONE_KEYWORDS.some(kw => m.includes(kw))) return 'iPhone';
   if (IPAD_KEYWORDS.some(kw => m.includes(kw))) return 'iPad';
   if (TABLET_KEYWORDS.some(kw => m.includes(kw))) return 'Tablet';
+
+  // Word-level similarity boost for spelling errors (e.g. 'ippad', 'iphad', 'iphonee')
+  const words = m.split(/[^a-z0-9]/).filter(w => w.length > 0);
+  for (const w of words) {
+    if (IPHONE_KEYWORDS.some(kw => stringSimilarity(w, kw) >= 0.80)) return 'iPhone';
+    if (IPAD_KEYWORDS.some(kw => stringSimilarity(w, kw) >= 0.80)) return 'iPad';
+    if (TABLET_KEYWORDS.some(kw => stringSimilarity(w, kw) >= 0.80)) return 'Tablet';
+  }
+
   if (m.length > 0) return 'Phone';
   return '';
 }

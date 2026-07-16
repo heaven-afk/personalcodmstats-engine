@@ -1152,6 +1152,11 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           teamName: item.teamName,
           ign: player.ign,
           professionalName: player.professionalName,
+          gender: item.gender || player.gender || '',
+          region: item.region || player.region || '',
+          country: item.country || player.country || '',
+          device: item.device || player.device || '',
+          deviceModel: item.deviceModel || player.deviceModel || '',
         });
 
         added++;
@@ -1211,6 +1216,11 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         teamName: newPlayer.teamName,
         ign: player.ign,
         professionalName: player.professionalName,
+        gender: player.gender || '',
+        region: player.region || '',
+        country: player.country || '',
+        device: player.device || '',
+        deviceModel: player.deviceModel || '',
       });
       toast.success(`${player.professionalName || player.ign} registered`);
       setNewPlayer(p => ({ ...p, slot: '', professionalName: '', ign: '' }));
