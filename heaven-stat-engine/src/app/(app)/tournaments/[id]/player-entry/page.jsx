@@ -701,17 +701,9 @@ export default function PlayerEntryPage() {
   const ruDays = getRUDays();
   const showRU = ruDays.includes(day);
 
-  // Helpers
-  const getClass2Players = () => Object.values(formData).filter((p) => p.class?.includes('2')).sort((a, b) => a.slot - b.slot);
-  const getAllPlayers = () => Object.values(formData).sort((a, b) => a.slot - b.slot);
-  const isClass2ActiveToday = (p) => {
-    const cls = playerClasses.find((c) => c.className === p.class);
-    return cls ? cls.activeDays.includes(day) : true;
-  };
-
-  if (loading) return <LoadingSpinner size="lg" />;
-
-  const rows = getAllPlayers();
+  const rows = useMemo(() => {
+    return Object.values(formData).sort((a, b) => a.slot - b.slot);
+  }, [formData]);
 
   const playersByTeam = useMemo(() => {
     const groups = {};
@@ -733,13 +725,14 @@ export default function PlayerEntryPage() {
 
   const class2PlayersByTeam = useMemo(() => {
     const groups = {};
-    getClass2Players().forEach(p => {
+    const class2 = Object.values(formData).filter((p) => p.class?.includes('2')).sort((a, b) => a.slot - b.slot);
+    class2.forEach(p => {
       const team = p.teamName || 'Unassigned';
       if (!groups[team]) groups[team] = [];
       groups[team].push(p);
     });
     return groups;
-  }, [formData, playerClasses, day]);
+  }, [formData]);
 
   const class2Teams = useMemo(() => {
     return Object.keys(class2PlayersByTeam).sort((a, b) => {
@@ -748,6 +741,16 @@ export default function PlayerEntryPage() {
       return a.localeCompare(b);
     });
   }, [class2PlayersByTeam]);
+
+  // Helpers
+  const getClass2Players = () => Object.values(formData).filter((p) => p.class?.includes('2')).sort((a, b) => a.slot - b.slot);
+  const getAllPlayers = () => Object.values(formData).sort((a, b) => a.slot - b.slot);
+  const isClass2ActiveToday = (p) => {
+    const cls = playerClasses.find((c) => c.className === p.class);
+    return cls ? cls.activeDays.includes(day) : true;
+  };
+
+  if (loading) return <LoadingSpinner size="lg" />;
 
   return (
     <div>

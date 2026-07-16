@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getPlayerMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
-import { computeTeamRanking, computeClanRanking } from '@/lib/engine/standings';
+import { computeTeamRanking, computeClanRanking, computeDailyStandings } from '@/lib/engine/standings';
 import { computePlayerStats } from '@/lib/engine/playerStats';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
 import DataTable from '@/components/ui/DataTable';
@@ -27,10 +27,12 @@ const PRESETS = [
 export default function ExtractionPage() {
   const { id: tournamentId } = useParams();
   const { tournament } = useTournament();
+  const { structure = {}, scoring = {} } = tournament || {};
 
   const [activePreset, setActivePreset] = useState('top-players-set1');
   const [limit, setLimit] = useState(10);
   const [loading, setLoading] = useState(true);
+  const [selectedDay, setSelectedDay] = useState('all');
 
   // Raw database tables
   const [teamRegs, setTeamRegs] = useState([]);
@@ -68,11 +70,14 @@ export default function ExtractionPage() {
   // ─── Data Extract Selectors ──────────────────────────────────────────────────
   const getExtractData = () => {
     if (!tournament) return { rows: [], columns: [] };
-    const { structure = {}, scoring = {} } = tournament;
+
 
     switch (activePreset) {
       case 'top-players-set1': {
-        const stats = computePlayerStats(playerResults, playerRegs, tournament);
+        const filteredResults = selectedDay === 'all' 
+          ? playerResults 
+          : playerResults.filter(r => r.day === Number(selectedDay));
+        const stats = computePlayerStats(filteredResults, playerRegs, tournament);
         const filtered = stats
           .filter(p => p.class && p.class.toLowerCase().includes('1'))
           .sort((a, b) => b.totalKills - a.totalKills);
@@ -110,7 +115,10 @@ export default function ExtractionPage() {
       }
 
       case 'top-players-set2': {
-        const stats = computePlayerStats(playerResults, playerRegs, tournament);
+        const filteredResults = selectedDay === 'all' 
+          ? playerResults 
+          : playerResults.filter(r => r.day === Number(selectedDay));
+        const stats = computePlayerStats(filteredResults, playerRegs, tournament);
         const filtered = stats
           .filter(p => p.class && p.class.toLowerCase().includes('2'))
           .sort((a, b) => b.totalKills - a.totalKills);
@@ -148,7 +156,9 @@ export default function ExtractionPage() {
       }
 
       case 'top-teams-pts': {
-        const ranking = computeTeamRanking(teamResults, bonusPoints, scoring);
+        const ranking = selectedDay === 'all'
+          ? computeTeamRanking(teamResults, bonusPoints, scoring)
+          : computeDailyStandings(teamResults, bonusPoints, scoring, Number(selectedDay));
         const sliced = limit > 0 ? ranking.slice(0, limit) : ranking;
         const mapped = sliced.map((t, i) => ({
           Rank: t.rank || i + 1,
@@ -181,7 +191,9 @@ export default function ExtractionPage() {
       }
 
       case 'clan-rankings': {
-        const ranking = computeTeamRanking(teamResults, bonusPoints, scoring);
+        const ranking = selectedDay === 'all'
+          ? computeTeamRanking(teamResults, bonusPoints, scoring)
+          : computeDailyStandings(teamResults, bonusPoints, scoring, Number(selectedDay));
         const clans = computeClanRanking(ranking);
         const sliced = limit > 0 ? clans.slice(0, limit) : clans;
         const mapped = sliced.map((c, i) => ({
@@ -256,7 +268,13 @@ export default function ExtractionPage() {
       }
 
       case 'team-analytics': {
-        const analytics = computeTeamAnalytics(teamResults, bonusPoints, scoring);
+        const filteredResults = selectedDay === 'all'
+          ? teamResults
+          : teamResults.filter(r => r.day === Number(selectedDay));
+        const filteredBonuses = selectedDay === 'all'
+          ? bonusPoints
+          : bonusPoints.filter(b => b.day === Number(selectedDay));
+        const analytics = computeTeamAnalytics(filteredResults, filteredBonuses, scoring);
         const sliced = limit > 0 ? analytics.slice(0, limit) : analytics;
         const mapped = sliced.map(t => ({
           Rank: t.analyticsRank,
@@ -346,7 +364,8 @@ export default function ExtractionPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${activePreset}_export.csv`);
+      const fileSuffix = selectedDay === 'all' ? '' : `_day_${selectedDay}`;
+      link.setAttribute('download', `${activePreset}${fileSuffix}_export.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -362,7 +381,8 @@ export default function ExtractionPage() {
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Data Extract');
-      XLSX.writeFile(wb, `${activePreset}_export.xlsx`);
+      const fileSuffix = selectedDay === 'all' ? '' : `_day_${selectedDay}`;
+      XLSX.writeFile(wb, `${activePreset}${fileSuffix}_export.xlsx`);
       toast.success('Excel file downloaded!');
     } catch (e) {
       toast.error('Failed to download Excel file: ' + e.message);
@@ -431,6 +451,22 @@ export default function ExtractionPage() {
                       <option value={20}>Top 20</option>
                       <option value={50}>Top 50</option>
                       <option value={0}>All Rows</option>
+                    </select>
+                  </div>
+                )}
+                {['top-players-set1', 'top-players-set2', 'top-teams-pts', 'clan-rankings', 'team-analytics'].includes(activePreset) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-text-muted">Day:</span>
+                    <select
+                      value={selectedDay}
+                      onChange={(e) => setSelectedDay(e.target.value)}
+                      className="form-input py-1 px-2 text-xs"
+                      style={{ width: 100 }}
+                    >
+                      <option value="all">All Days</option>
+                      {Array.from({ length: structure.totalDays || 6 }, (_, i) => i + 1).map(d => (
+                        <option key={d} value={d}>Day {d}</option>
+                      ))}
                     </select>
                   </div>
                 )}
