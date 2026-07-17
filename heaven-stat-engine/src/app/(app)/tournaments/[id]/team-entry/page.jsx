@@ -1122,8 +1122,9 @@ export default function TeamEntryPage() {
                                   <button
                                     className="btn btn-primary btn-sm"
                                     onClick={() => handleConfirmAndSaveLobby(lobbyData.lobby)}
+                                    disabled={parsing}
                                   >
-                                    Confirm & Save
+                                    {parsing ? 'Saving...' : 'Confirm & Save'}
                                   </button>
                                 </>
                               )}
