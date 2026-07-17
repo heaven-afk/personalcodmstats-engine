@@ -476,14 +476,52 @@ export default function PlayerEntryPage() {
   // Live preview parse effect
   useEffect(() => {
     if (!pasteText.trim()) {
+      if (smartImportFileName === 'Pasted Data') {
+        handleCancelSmartImport();
+      }
       setParsedPreview([]);
       setPasteErrors([]);
       return;
     }
-    const { results, errors } = parsePlayerEntryPaste(pasteText, playerRegs);
-    setParsedPreview(results);
-    setPasteErrors(errors);
-  }, [pasteText, playerRegs]);
+
+    // Attempt to parse automatically using smart spreadsheet importer
+    const delimiter = pasteText.includes('\t') ? '\t' : (pasteText.includes(',') ? ',' : (pasteText.includes(';') ? ';' : ' '));
+    const grid = pasteText.split('\n').map(l => l.trim()).filter(Boolean).map(r => r.split(delimiter).map(cell => cell.trim()));
+
+    try {
+      const { lobbies, rows } = parseSmartSpreadsheet(grid);
+      if (rows.length > 0) {
+        const previewRows = rows.map((row, idx) => {
+          const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
+          return {
+            id: idx,
+            parsedName: row.parsedName,
+            parsedTeam: row.parsedTeam,
+            parsedSlot: row.parsedSlot,
+            matchedPlayerId: match ? match.matchedPlayerId || match.playerId : null,
+            confidence: match ? match.confidence : 'none',
+            stats: row.stats
+          };
+        });
+
+        setSmartImportLobbies(lobbies);
+        setSmartImportSelectedLobbies(lobbies);
+        setSmartImportRows(previewRows);
+        setSmartImportFileName('Pasted Data');
+      } else {
+        // Fallback to legacy single-lobby paste preview if smart headers are not present
+        const { results, errors } = parsePlayerEntryPaste(pasteText, playerRegs);
+        setParsedPreview(results);
+        setPasteErrors(errors);
+      }
+    } catch (err) {
+      console.error("Auto smart import parse error:", err);
+      // Fallback
+      const { results, errors } = parsePlayerEntryPaste(pasteText, playerRegs);
+      setParsedPreview(results);
+      setPasteErrors(errors);
+    }
+  }, [pasteText, playerRegs, players, smartImportFileName]);
 
   const { structure = {}, scoring = {} } = tournament;
   const totalDays = structure.totalDays || 6;
@@ -1686,28 +1724,14 @@ export default function PlayerEntryPage() {
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            {!isOcrMode && (
-              <>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handlePasteImport}
-                  disabled={parsedPreview.length === 0 || parsing}
-                >
-                  {parsing ? 'Saving stats...' : `Save stats to Lobby ${lobby}`}
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    const delimiter = pasteText.includes('\t') ? '\t' : (pasteText.includes(',') ? ',' : (pasteText.includes(';') ? ';' : ' '));
-                    const grid = pasteText.split('\n').map(l => l.trim()).filter(Boolean).map(r => r.split(delimiter).map(cell => cell.trim()));
-                    handleProcessGrid(grid, 'Pasted Data');
-                  }}
-                  disabled={!pasteText.trim()}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                >
-                  <FileSpreadsheet size={12} /> Preview in Smart Importer
-                </button>
-              </>
+            {!isOcrMode && parsedPreview.length > 0 && smartImportRows.length === 0 && (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handlePasteImport}
+                disabled={parsing}
+              >
+                {parsing ? 'Saving stats...' : `Save stats to Lobby ${lobby}`}
+              </button>
             )}
             <button
               className="btn btn-secondary btn-sm"
