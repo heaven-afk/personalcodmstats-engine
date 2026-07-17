@@ -191,3 +191,21 @@ export async function exportToExcel(data, filename, sheetName = 'Sheet1') {
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, filename);
 }
+
+// ─── Smart Grid Parsers ───────────────────────────────────────────────────────
+export async function readExcelAsGrid(file, sheetName = null) {
+  const XLSX = await import('xlsx');
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const name = sheetName && workbook.Sheets[sheetName] ? sheetName : workbook.SheetNames[0];
+  const sheet = workbook.Sheets[name];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+}
+
+export function parseCSVToGrid(text) {
+  const result = Papa.parse(text.trim(), {
+    header: false,
+    skipEmptyLines: true
+  });
+  return result.data;
+}

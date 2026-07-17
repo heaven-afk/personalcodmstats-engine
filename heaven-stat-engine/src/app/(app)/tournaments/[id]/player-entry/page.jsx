@@ -10,8 +10,179 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge } from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
 import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
-import { getAllSheetsAsCSV } from '@/lib/importers/csvParser';
+import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
+
+// ─── Smart Spreadsheet Parser ────────────────────────────────────────────────
+function parseSmartSpreadsheet(grid) {
+  let headerRowIndex = -1;
+  let subheaderRowIndex = -1;
+
+  for (let r = 0; r < Math.min(grid.length, 10); r++) {
+    const row = grid[r] || [];
+    const containsPlayerName = row.some(cell => String(cell || '').toLowerCase().includes('player name') || String(cell || '').toLowerCase() === 'player');
+    const containsLobby = row.some(cell => String(cell || '').toLowerCase().includes('lobby 1') || String(cell || '').toLowerCase() === 'lobby 1');
+    if (containsPlayerName || containsLobby) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    headerRowIndex = 0;
+  }
+
+  const nextRow = grid[headerRowIndex + 1] || [];
+  const hasSubheaders = nextRow.some(cell => {
+    const s = String(cell || '').toLowerCase();
+    return s.includes('damage') || s.includes('dmg') || s.includes('ccurc') || s.includes('acc') || s.includes('accuracy') || s.includes('kills');
+  });
+  if (hasSubheaders) {
+    subheaderRowIndex = headerRowIndex + 1;
+  }
+
+  const headerRow = grid[headerRowIndex] || [];
+  const subheaderRow = subheaderRowIndex !== -1 ? grid[subheaderRowIndex] : [];
+
+  let playerCol = -1;
+  let teamCol = -1;
+  let slotCol = -1;
+  const lobbies = {};
+
+  for (let c = 0; c < headerRow.length; c++) {
+    const cellVal = String(headerRow[c] || '').trim().toLowerCase();
+    const subCellVal = subheaderRowIndex !== -1 ? String(subheaderRow[c] || '').trim().toLowerCase() : '';
+
+    if (cellVal.includes('player name') || cellVal === 'player' || (cellVal === 'name' && playerCol === -1)) {
+      if (playerCol === -1) {
+        playerCol = c;
+      }
+    } else if (cellVal.includes('team name') || cellVal === 'team' || cellVal === 'clan') {
+      if (teamCol === -1) {
+        teamCol = c;
+      }
+    } else if (cellVal === 'slot' || cellVal === '#') {
+      if (slotCol === -1) {
+        slotCol = c;
+      }
+    }
+
+    const lobbyMatch = cellVal.match(/lobby\s*(\d+)/i) || cellVal.match(/l\s*(\d+)/i) || cellVal.match(/game\s*(\d+)/i) || cellVal.match(/match\s*(\d+)/i);
+    if (lobbyMatch) {
+      const lobbyNum = parseInt(lobbyMatch[1]);
+      if (!lobbies[lobbyNum]) {
+        lobbies[lobbyNum] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
+      }
+
+      if (subCellVal.includes('damage') || subCellVal.includes('dmg')) {
+        lobbies[lobbyNum].damageCol = c;
+      } else if (subCellVal.includes('ccurc') || subCellVal.includes('acc') || subCellVal.includes('accuracy') || subCellVal.includes('pct') || subCellVal.includes('percent')) {
+        lobbies[lobbyNum].accuracyCol = c;
+      } else {
+        lobbies[lobbyNum].killsCol = c;
+      }
+    }
+  }
+
+  if (playerCol === -1) playerCol = 0;
+
+  const parsedRows = [];
+  const startRowIndex = Math.max(headerRowIndex, subheaderRowIndex) + 1;
+
+  for (let r = startRowIndex; r < grid.length; r++) {
+    const rowData = grid[r];
+    if (!rowData || rowData.length === 0) continue;
+
+    const playerName = String(rowData[playerCol] || '').trim();
+    if (!playerName || playerName === '0') continue;
+
+    const teamName = teamCol !== -1 ? String(rowData[teamCol] || '').trim() : '';
+    const slot = slotCol !== -1 ? String(rowData[slotCol] || '').trim() : '';
+
+    const stats = {};
+    Object.entries(lobbies).forEach(([lobbyNum, cols]) => {
+      const killsVal = cols.killsCol !== -1 ? rowData[cols.killsCol] : '';
+      const damageVal = cols.damageCol !== -1 ? rowData[cols.damageCol] : '';
+      const accuracyVal = cols.accuracyCol !== -1 ? rowData[cols.accuracyCol] : '';
+
+      const kills = killsVal !== '' && !isNaN(killsVal) ? parseInt(killsVal) : null;
+      const damage = damageVal !== '' && !isNaN(damageVal) ? parseFloat(damageVal) : null;
+      const accuracy = accuracyVal !== '' && !isNaN(accuracyVal) ? parseFloat(accuracyVal) : null;
+
+      stats[lobbyNum] = { kills, damage, accuracy };
+    });
+
+    parsedRows.push({
+      parsedName: playerName,
+      parsedTeam: teamName,
+      parsedSlot: slot,
+      stats,
+    });
+  }
+
+  return {
+    lobbies: Object.keys(lobbies).map(Number).sort((a, b) => a - b),
+    rows: parsedRows
+  };
+}
+
+// ─── Smart Matcher Utility ──────────────────────────────────────────────────
+function findBestMatch(parsedName, parsedTeam, regs, allPlayers) {
+  if (!parsedName) return null;
+  
+  const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const pNameClean = cleanStr(parsedName);
+  const pTeamClean = cleanStr(parsedTeam);
+
+  let bestReg = null;
+  let maxScore = -1;
+
+  for (const reg of regs) {
+    const globalPlayer = allPlayers.find(p => p.id === reg.playerId);
+    const ign = cleanStr(reg.ign || globalPlayer?.ign || '');
+    const profName = cleanStr(reg.professionalName || globalPlayer?.professionalName || '');
+    const regTeam = cleanStr(reg.teamName || '');
+
+    let score = 0;
+    if (ign === pNameClean) {
+      score = 100;
+    } else if (profName === pNameClean) {
+      score = 90;
+    } else if (pNameClean.length >= 3 && (pNameClean.includes(ign) || ign.includes(pNameClean))) {
+      score = 50;
+    } else if (pNameClean.length >= 3 && (pNameClean.includes(profName) || profName.includes(pNameClean))) {
+      score = 40;
+    }
+
+    if (score > 0) {
+      if (pTeamClean && regTeam === pTeamClean) {
+        score += 50;
+      } else if (pTeamClean && (regTeam.includes(pTeamClean) || pTeamClean.includes(regTeam))) {
+        score += 20;
+      }
+      
+      if (score > maxScore) {
+        maxScore = score;
+        bestReg = reg;
+      }
+    }
+  }
+
+  if (bestReg) {
+    const globalPlayer = allPlayers.find(p => p.id === bestReg.playerId);
+    let confidence = 'low';
+    if (maxScore >= 140) confidence = 'high';
+    else if (maxScore >= 80) confidence = 'medium';
+
+    return {
+      playerId: bestReg.playerId,
+      playerName: globalPlayer?.professionalName || bestReg.professionalName || bestReg.ign || bestReg.playerId,
+      confidence
+    };
+  }
+
+  return null;
+}
 
 // ─── Player Paste Parser ──────────────────────────────────────────────────────
 function parsePlayerEntryPaste(text, playerRegs) {
@@ -125,6 +296,136 @@ export default function PlayerEntryPage() {
   const fileRef = useRef(null);
   const [sheetModal, setSheetModal] = useState(null);
   const [importingFile, setImportingFile] = useState(false);
+
+  // Smart Spreadsheet Import States
+  const [smartImportRows, setSmartImportRows] = useState([]);
+  const [smartImportLobbies, setSmartImportLobbies] = useState([]);
+  const [smartImportSelectedLobbies, setSmartImportSelectedLobbies] = useState([]);
+  const [smartImportFileName, setSmartImportFileName] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
+
+  const handleProcessGrid = useCallback((grid, fileName) => {
+    if (!grid || grid.length === 0) {
+      toast.error("Failed to parse sheet data.");
+      return;
+    }
+
+    const { lobbies, rows } = parseSmartSpreadsheet(grid);
+    if (rows.length === 0) {
+      toast.error("No player stats could be parsed from the data.");
+      return;
+    }
+
+    const previewRows = rows.map((row, idx) => {
+      const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
+      return {
+        id: idx,
+        parsedName: row.parsedName,
+        parsedTeam: row.parsedTeam,
+        parsedSlot: row.parsedSlot,
+        matchedPlayerId: match ? match.matchedPlayerId || match.playerId : null,
+        confidence: match ? match.confidence : 'none',
+        stats: row.stats
+      };
+    });
+
+    setSmartImportLobbies(lobbies);
+    setSmartImportSelectedLobbies(lobbies);
+    setSmartImportRows(previewRows);
+    setSmartImportFileName(fileName || 'Pasted Data');
+    setShowPaste(false);
+    handleOcrClear();
+  }, [playerRegs, players]);
+
+  const handleUpdateMatch = (rowId, newPlayerId) => {
+    setSmartImportRows(prev => prev.map(row => {
+      if (row.id !== rowId) return row;
+      if (!newPlayerId) {
+        return { ...row, matchedPlayerId: null, confidence: 'none' };
+      }
+      return { ...row, matchedPlayerId: newPlayerId, confidence: 'high' };
+    }));
+  };
+
+  const handleCancelSmartImport = () => {
+    setSmartImportRows([]);
+    setSmartImportLobbies([]);
+    setSmartImportSelectedLobbies([]);
+    setSmartImportFileName('');
+    setPendingFile(null);
+  };
+
+  const handleConfirmSmartImport = async () => {
+    if (smartImportRows.length === 0) return;
+    if (smartImportSelectedLobbies.length === 0) {
+      toast.error("Please select at least one lobby to import.");
+      return;
+    }
+
+    setImporting(true);
+    try {
+      let addedCount = 0;
+      let updatedCount = 0;
+
+      const resultsByLobby = {};
+      for (const lobbyNum of smartImportSelectedLobbies) {
+        resultsByLobby[lobbyNum] = await getPlayerMatchResultsByDayLobby(tournament.id, day, lobbyNum);
+      }
+
+      for (const row of smartImportRows) {
+        if (!row.matchedPlayerId) continue;
+
+        const registeredPlayer = playerRegs.find(p => p.playerId === row.matchedPlayerId);
+        if (!registeredPlayer) continue;
+
+        const globalPlayer = players.find(p => p.id === row.matchedPlayerId);
+        const playerName = globalPlayer?.professionalName || registeredPlayer.professionalName || registeredPlayer.ign;
+
+        for (const lobbyNum of smartImportSelectedLobbies) {
+          const stats = row.stats[lobbyNum];
+          if (!stats) continue;
+
+          if (stats.kills === null && stats.damage === null && stats.accuracy === null) continue;
+
+          const existingResults = resultsByLobby[lobbyNum].filter(r => r.playerId === row.matchedPlayerId);
+          
+          const payload = {
+            playerId: row.matchedPlayerId,
+            playerName,
+            teamName: registeredPlayer.teamName || '',
+            day,
+            lobby: lobbyNum,
+            kills: stats.kills === null ? 0 : stats.kills,
+            damage: stats.damage === null ? 0 : stats.damage,
+            accuracy: stats.accuracy === null ? 0 : stats.accuracy,
+            inputMethod: 'smart_import'
+          };
+
+          if (existingResults.length > 0) {
+            const firstExisting = existingResults[0];
+            await updatePlayerMatchResult(tournament.id, firstExisting.id, payload);
+            updatedCount++;
+
+            for (let i = 1; i < existingResults.length; i++) {
+              await deletePlayerMatchResult(tournament.id, existingResults[i].id);
+            }
+          } else {
+            await savePlayerMatchResult(tournament.id, payload);
+            addedCount++;
+          }
+        }
+      }
+
+      toast.success(`Successfully imported stats! Added ${addedCount}, updated ${updatedCount} records.`);
+      handleCancelSmartImport();
+      await loadData();
+    } catch (err) {
+      toast.error('Import failed: ' + err.message);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   // OCR States
   const [ocrQueue, setOcrQueue] = useState([]);
@@ -301,15 +602,20 @@ export default function PlayerEntryPage() {
 
     setImportingFile(true);
     try {
-      const allSheets = await getAllSheetsAsCSV(file);
-      const names = Object.keys(allSheets);
-
-      if (names.length === 1) {
-        setPasteText(allSheets[names[0]]);
-        handleOcrClear();
-        toast.success(`Loaded "${names[0]}" sheet from spreadsheet`);
+      const isCSV = /\.csv$/i.test(file.name);
+      if (isCSV) {
+        const text = await file.text();
+        const grid = parseCSVToGrid(text);
+        handleProcessGrid(grid, file.name);
       } else {
-        setSheetModal({ sheets: names, allSheets });
+        const names = await getSheetNames(file);
+        if (names.length === 1) {
+          const grid = await readExcelAsGrid(file, names[0]);
+          handleProcessGrid(grid, file.name);
+        } else {
+          setPendingFile(file);
+          setSheetModal({ sheets: names });
+        }
       }
     } catch (err) {
       toast.error('Failed to read file: ' + err.message);
@@ -318,12 +624,19 @@ export default function PlayerEntryPage() {
     }
   };
 
-  const handleSheetSelect = (sheetName) => {
-    if (!sheetModal) return;
-    setPasteText(sheetModal.allSheets[sheetName]);
-    handleOcrClear();
-    toast.success(`Loaded "${sheetName}" sheet from spreadsheet`);
-    setSheetModal(null);
+  const handleSheetSelect = async (sheetName) => {
+    if (!sheetModal || !pendingFile) return;
+    setImportingFile(true);
+    try {
+      const grid = await readExcelAsGrid(pendingFile, sheetName);
+      handleProcessGrid(grid, pendingFile.name);
+      setSheetModal(null);
+      setPendingFile(null);
+    } catch (err) {
+      toast.error('Failed to parse sheet: ' + err.message);
+    } finally {
+      setImportingFile(false);
+    }
   };
 
   const handleOcrFileChange = (e) => {
@@ -1334,13 +1647,27 @@ export default function PlayerEntryPage() {
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             {!isOcrMode && (
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handlePasteImport}
-                disabled={parsedPreview.length === 0 || parsing}
-              >
-                {parsing ? 'Saving stats...' : `Save stats to Lobby ${lobby}`}
-              </button>
+              <>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handlePasteImport}
+                  disabled={parsedPreview.length === 0 || parsing}
+                >
+                  {parsing ? 'Saving stats...' : `Save stats to Lobby ${lobby}`}
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    const delimiter = pasteText.includes('\t') ? '\t' : (pasteText.includes(',') ? ',' : (pasteText.includes(';') ? ';' : ' '));
+                    const grid = pasteText.split('\n').map(l => l.trim()).filter(Boolean).map(r => r.split(delimiter).map(cell => cell.trim()));
+                    handleProcessGrid(grid, 'Pasted Data');
+                  }}
+                  disabled={!pasteText.trim()}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <FileSpreadsheet size={12} /> Preview in Smart Importer
+                </button>
+              </>
             )}
             <button
               className="btn btn-secondary btn-sm"
@@ -1352,9 +1679,188 @@ export default function PlayerEntryPage() {
         </div>
       )}
 
+      {/* Smart Spreadsheet Import Preview */}
+      {smartImportRows.length > 0 && (
+        <div className="card" style={{ marginBottom: 24, border: '2px solid var(--border-gold)', background: 'var(--bg-card)', padding: 20 }}>
+          <div className="flex-between" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 16 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <FileSpreadsheet size={24} style={{ color: 'var(--gold)' }} />
+                <h3 style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)', margin: 0 }}>
+                  Smart Spreadsheet Import Preview ({smartImportFileName})
+                </h3>
+              </div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
+                Review matched players and stats. You can manually adjust matches that the system missed using the dropdown.
+              </p>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={handleCancelSmartImport} disabled={importing}>
+              Cancel Import
+            </button>
+          </div>
+
+          {/* Lobby Selection checklist */}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '10px 14px', background: 'var(--bg-alt-row)', borderRadius: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Lobbies to Import:</span>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              {smartImportLobbies.map(l => (
+                <label key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={smartImportSelectedLobbies.includes(l)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b)=>a-b));
+                      } else {
+                        setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
+                      }
+                    }}
+                  />
+                  Lobby {l}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Table Container */}
+          <div style={{ overflowX: 'auto', maxHeight: 480, border: '1px solid var(--border-md)', borderRadius: 8, marginBottom: 18 }}>
+            <table className="data-table" style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-header)', borderBottom: '1px solid var(--border-md)' }}>
+                  <th style={{ width: 110, textAlign: 'center', padding: '10px 8px' }}>Match Status</th>
+                  <th style={{ textAlign: 'left', padding: '10px 8px' }}>Sheet Row (Name / Team)</th>
+                  <th style={{ textAlign: 'left', padding: '10px 8px' }}>Matched Registered Player</th>
+                  {smartImportSelectedLobbies.map(l => (
+                    <th key={l} style={{ textAlign: 'center', padding: '10px 8px', width: 140 }}>L{l} Stats</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {smartImportRows.map((row) => {
+                  const reg = playerRegs.find(p => p.playerId === row.matchedPlayerId);
+                  
+                  let rowBg = undefined;
+                  if (row.confidence === 'none') {
+                    rowBg = 'rgba(239, 68, 68, 0.04)';
+                  } else if (row.confidence === 'low') {
+                    rowBg = 'rgba(245, 158, 11, 0.04)';
+                  }
+
+                  return (
+                    <tr key={row.id} style={{
+                      background: rowBg,
+                      borderBottom: '1px solid var(--border-md)'
+                    }}>
+                      <td style={{ textAlign: 'center', padding: '8px' }}>
+                        {row.confidence === 'high' && (
+                          <span style={{ color: '#10B981', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Check size={14} /> High
+                          </span>
+                        )}
+                        {row.confidence === 'medium' && (
+                          <span style={{ color: 'var(--gold)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Check size={14} /> Med
+                          </span>
+                        )}
+                        {row.confidence === 'low' && (
+                          <span style={{ color: '#F59E0B', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <AlertTriangle size={14} /> Low
+                          </span>
+                        )}
+                        {row.confidence === 'none' && (
+                          <span style={{ color: '#EF4444', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <X size={14} /> None
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{row.parsedName}</div>
+                        {row.parsedTeam && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {row.parsedTeam} {row.parsedSlot ? `(Slot ${row.parsedSlot})` : ''}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px' }}>
+                        <select
+                          className="form-input"
+                          style={{
+                            fontSize: '0.78rem',
+                            padding: '4px 8px',
+                            width: '100%',
+                            maxWidth: 320,
+                            borderColor: row.confidence === 'none' ? '#EF4444' : undefined,
+                            background: 'var(--bg-card)'
+                          }}
+                          value={row.matchedPlayerId || ''}
+                          onChange={(e) => handleUpdateMatch(row.id, e.target.value)}
+                        >
+                          <option value="">[ Skip Row / Do Not Import ]</option>
+                          {playerRegs.map(p => {
+                            const globalPlayer = players.find(gp => gp.id === p.playerId);
+                            const dispName = globalPlayer?.professionalName || p.professionalName || p.ign;
+                            return (
+                              <option key={p.playerId} value={p.playerId}>
+                                Slot {p.slot}: {dispName} ({p.ign}) - {p.teamName || 'No Team'}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </td>
+                      {smartImportSelectedLobbies.map(l => {
+                        const stat = row.stats[l] || {};
+                        const hasKills = stat.kills !== null;
+                        const hasDmg = stat.damage !== null;
+                        const hasAcc = stat.accuracy !== null;
+                        
+                        return (
+                          <td key={l} style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', padding: '8px' }}>
+                            {hasKills || hasDmg || hasAcc ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+                                <span style={{ fontWeight: 600 }}>{hasKills ? `${stat.kills} K` : '—'}</span>
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                  {hasDmg ? `${Math.round(stat.damage)} D` : '—'} · {hasAcc ? `${stat.accuracy}%` : '—'}
+                                </span>
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Action Row */}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button className="btn btn-secondary" onClick={handleCancelSmartImport} disabled={importing}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleConfirmSmartImport}
+              disabled={smartImportSelectedLobbies.length === 0 || importing}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              {importing ? (
+                <>Importing...</>
+              ) : (
+                <>
+                  <Check size={14} /> Confirm and Import to Day {day}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── SECTION A: Kills ─────────────────────────────── */}
       {/* ── SECTION A: Kills ─────────────────────────────── */}
-      {section === 'kills' && (
+      {section === 'kills' && smartImportRows.length === 0 && (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
@@ -1447,7 +1953,7 @@ export default function PlayerEntryPage() {
 
       {/* ── SECTION B: Damage & Accuracy ────────────────── */}
       {/* ── SECTION B: Damage & Accuracy ────────────────── */}
-      {section === 'damage' && (
+      {section === 'damage' && smartImportRows.length === 0 && (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
@@ -1553,7 +2059,7 @@ export default function PlayerEntryPage() {
       )}
 
       {/* ── ROSTER UPDATE (Class 2, Days 3-5) ───────────── */}
-      {section === 'rosterUpdate' && showRU && (
+      {section === 'rosterUpdate' && showRU && smartImportRows.length === 0 && (
         <div className="card">
           <h3 className="card-title" style={{ marginBottom: 16, color: 'var(--cyan)' }}>
             ROSTER UPDATE — Day {day} (Class 2 Players)

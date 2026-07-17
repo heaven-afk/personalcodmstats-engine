@@ -12,6 +12,7 @@ const TABS = [
   { key: 'analytics',   label: 'Analytics',     href: '/analytics' },
   { key: 'extraction',  label: 'Extraction',    href: '/extraction' },
   { key: 'import',      label: 'Import',        href: '/import' },
+  { key: 'clean-duplicates', label: 'Clean Duplicates', href: '/clean-duplicates' },
 ];
 
 export default function TournamentSubNav({ tournamentId }) {
