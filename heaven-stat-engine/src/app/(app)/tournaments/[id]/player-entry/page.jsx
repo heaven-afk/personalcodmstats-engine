@@ -18,11 +18,21 @@ function parseSmartSpreadsheet(grid) {
   let headerRowIndex = -1;
   let subheaderRowIndex = -1;
 
-  for (let r = 0; r < Math.min(grid.length, 10); r++) {
+  for (let r = 0; r < Math.min(grid.length, 15); r++) {
     const row = grid[r] || [];
-    const containsPlayerName = row.some(cell => String(cell || '').toLowerCase().includes('player name') || String(cell || '').toLowerCase() === 'player');
-    const containsLobby = row.some(cell => String(cell || '').toLowerCase().includes('lobby 1') || String(cell || '').toLowerCase() === 'lobby 1');
-    if (containsPlayerName || containsLobby) {
+    const hasHeaderCell = row.some(cell => {
+      const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (
+        clean === 'playername' || 
+        clean === 'player' || 
+        clean === 'teamname' || 
+        clean === 'slot' ||
+        clean.startsWith('lobby') || 
+        clean.startsWith('game') ||
+        (clean.startsWith('l') && /^\d+$/.test(clean.substring(1)))
+      );
+    });
+    if (hasHeaderCell) {
       headerRowIndex = r;
       break;
     }
@@ -34,8 +44,16 @@ function parseSmartSpreadsheet(grid) {
 
   const nextRow = grid[headerRowIndex + 1] || [];
   const hasSubheaders = nextRow.some(cell => {
-    const s = String(cell || '').toLowerCase();
-    return s.includes('damage') || s.includes('dmg') || s.includes('ccurc') || s.includes('acc') || s.includes('accuracy') || s.includes('kills');
+    const cleanSub = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return (
+      cleanSub.includes('damage') || 
+      cleanSub.includes('dmg') || 
+      cleanSub.includes('ccurc') || 
+      cleanSub.includes('acc') || 
+      cleanSub.includes('accuracy') || 
+      cleanSub.includes('kills') ||
+      cleanSub.includes('kill')
+    );
   });
   if (hasSubheaders) {
     subheaderRowIndex = headerRowIndex + 1;
@@ -50,33 +68,54 @@ function parseSmartSpreadsheet(grid) {
   const lobbies = {};
 
   for (let c = 0; c < headerRow.length; c++) {
-    const cellVal = String(headerRow[c] || '').trim().toLowerCase();
-    const subCellVal = subheaderRowIndex !== -1 ? String(subheaderRow[c] || '').trim().toLowerCase() : '';
+    const cellVal = String(headerRow[c] || '').trim();
+    const cleanVal = cellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const subCellVal = subheaderRowIndex !== -1 ? String(subheaderRow[c] || '').trim() : '';
+    const cleanSubVal = subCellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    if (cellVal.includes('player name') || cellVal === 'player' || (cellVal === 'name' && playerCol === -1)) {
+    if (cleanVal === 'playername' || cleanVal === 'player' || (cleanVal === 'name' && playerCol === -1)) {
       if (playerCol === -1) {
         playerCol = c;
       }
-    } else if (cellVal.includes('team name') || cellVal === 'team' || cellVal === 'clan') {
+    } else if (cleanVal === 'teamname' || cleanVal === 'team' || cleanVal === 'clan') {
       if (teamCol === -1) {
         teamCol = c;
       }
-    } else if (cellVal === 'slot' || cellVal === '#') {
+    } else if (cleanVal === 'slot' || cleanVal === 'id' || cleanVal === 'no' || cleanVal === 'index' || cellVal === '#') {
       if (slotCol === -1) {
         slotCol = c;
       }
     }
 
-    const lobbyMatch = cellVal.match(/lobby\s*(\d+)/i) || cellVal.match(/l\s*(\d+)/i) || cellVal.match(/game\s*(\d+)/i) || cellVal.match(/match\s*(\d+)/i);
-    if (lobbyMatch) {
-      const lobbyNum = parseInt(lobbyMatch[1]);
+    const matchVal = (val) => {
+      const match = val.match(/lobby\s*(\d+)/i) || 
+                    val.match(/game\s*(\d+)/i) || 
+                    val.match(/match\s*(\d+)/i) || 
+                    val.match(/^l\s*(\d+)$/i);
+      return match ? parseInt(match[1]) : null;
+    };
+
+    let lobbyNum = matchVal(cellVal);
+    if (lobbyNum === null && subheaderRowIndex !== -1) {
+      lobbyNum = matchVal(subCellVal);
+    }
+
+    if (lobbyNum !== null) {
       if (!lobbies[lobbyNum]) {
         lobbies[lobbyNum] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
       }
 
-      if (subCellVal.includes('damage') || subCellVal.includes('dmg')) {
+      const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
+
+      if (checkVal.includes('damage') || checkVal.includes('dmg')) {
         lobbies[lobbyNum].damageCol = c;
-      } else if (subCellVal.includes('ccurc') || subCellVal.includes('acc') || subCellVal.includes('accuracy') || subCellVal.includes('pct') || subCellVal.includes('percent')) {
+      } else if (
+        checkVal.includes('ccurc') || 
+        checkVal.includes('acc') || 
+        checkVal.includes('accuracy') || 
+        checkVal.includes('pct') || 
+        checkVal.includes('percent')
+      ) {
         lobbies[lobbyNum].accuracyCol = c;
       } else {
         lobbies[lobbyNum].killsCol = c;
@@ -94,7 +133,7 @@ function parseSmartSpreadsheet(grid) {
     if (!rowData || rowData.length === 0) continue;
 
     const playerName = String(rowData[playerCol] || '').trim();
-    if (!playerName || playerName === '0') continue;
+    if (!playerName || playerName === '0' || playerName.toLowerCase() === 'player name' || playerName.toLowerCase() === 'player') continue;
 
     const teamName = teamCol !== -1 ? String(rowData[teamCol] || '').trim() : '';
     const slot = slotCol !== -1 ? String(rowData[slotCol] || '').trim() : '';
