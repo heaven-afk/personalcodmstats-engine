@@ -4,7 +4,7 @@ import { useTournament } from '../layout';
 import {
   getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
 } from '@/lib/firestore/matchData';
-import { getPlayerRegistrations } from '@/lib/firestore/tournaments';
+import { getPlayerRegistrations, getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge } from '@/components/ui/Badge';
@@ -546,16 +546,26 @@ export default function PlayerEntryPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [regs, allPlayers, results] = await Promise.all([
+      const [regs, allPlayers, results, teamRegs] = await Promise.all([
         getPlayerRegistrations(tournament.id),
         getPlayers(),
         getPlayerMatchResultsByDayLobby(tournament.id, day, lobby),
+        getTeamRegistrations(tournament.id),
       ]);
-      setPlayerRegs(regs);
+
+      const enrichedRegs = regs.map(reg => {
+        const teamReg = teamRegs.find(t => t.teamId === reg.teamId || (reg.teamName && t.teamName?.toLowerCase() === reg.teamName.toLowerCase()));
+        return {
+          ...reg,
+          slot: teamReg ? teamReg.slot : reg.slot
+        };
+      });
+
+      setPlayerRegs(enrichedRegs);
       setPlayers(allPlayers);
 
       const fd = {};
-      for (const reg of regs) {
+      for (const reg of enrichedRegs) {
         const globalPlayer = allPlayers.find((p) => p.id === reg.playerId);
         const existing = results.find((r) => r.playerId === reg.playerId);
         fd[reg.playerId] = {
