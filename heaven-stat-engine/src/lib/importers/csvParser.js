@@ -42,7 +42,7 @@ function int(val) { return parseInt(val) || 0; }
 function str(val) { return String(val || '').trim(); }
 
 // ─── Player Registration CSV ──────────────────────────────────────────────────
-// Columns: professionalName, ign, teamName, clanName, class, gender, region, country, device, deviceModel
+// Columns: slot, professionalName, ign, teamName, clanName, class, gender, region, country, device, deviceModel
 export function parsePlayerRegistrationCSV(text) {
   const { data, errors } = parseCSV(text);
   return {
@@ -61,6 +61,7 @@ export function parsePlayerRegistrationCSV(text) {
 
       return {
         rowIndex: i,
+        slot: int(row.slot || row.id || row.no || row.index || i + 1),
         professionalName: str(row.professionalname || row.proname || row.playername || row.name || row.fullname || ''),
         ign: str(row.ign || row.ingamename || row.playerign || row.ingame || row.igningamename || ''),
         teamName: str(row.teamname || row.team || row.clan || ''),
