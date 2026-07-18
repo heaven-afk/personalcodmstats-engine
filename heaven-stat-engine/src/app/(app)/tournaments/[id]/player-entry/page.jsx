@@ -9,7 +9,7 @@ import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge } from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
-import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock } from 'lucide-react';
 import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 
@@ -416,6 +416,32 @@ export default function PlayerEntryPage() {
   const [saving, setSaving] = useState(false);
   const [playerRegs, setPlayerRegs] = useState([]);
   const [players, setPlayers] = useState([]);
+
+  // Lock state — persisted per tournament + day + lobby in localStorage
+  const lockKey = tournament?.id ? `lock_player_${tournament.id}_day${day}_lobby${lobby}` : null;
+  const [isLocked, setIsLocked] = useState(false);
+
+  useEffect(() => {
+    if (!lockKey) return;
+    try { setIsLocked(localStorage.getItem(lockKey) === 'true'); } catch {}
+  }, [lockKey]);
+
+  const handleLock = async () => {
+    setSaving(true);
+    try {
+      for (const pid of Object.keys(formData)) await saveRow(pid);
+    } catch {}
+    setSaving(false);
+    try { localStorage.setItem(lockKey, 'true'); } catch {}
+    setIsLocked(true);
+    toast.success(`Day ${day} · Lobby ${lobby} locked 🔒`);
+  };
+
+  const handleUnlock = () => {
+    try { localStorage.removeItem(lockKey); } catch {}
+    setIsLocked(false);
+    toast.success(`Day ${day} · Lobby ${lobby} unlocked 🔓`);
+  };
   const [section, setSection] = useState('kills'); // 'kills' | 'damage' | 'rosterUpdate'
 
   // Paste / File Upload States
@@ -620,7 +646,8 @@ export default function PlayerEntryPage() {
       setParsedPreview(results);
       setPasteErrors(errors);
     }
-  }, [pasteText, playerRegs, players, smartImportFileName]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasteText, playerRegs, players]);
 
   const { structure = {}, scoring = {} } = tournament;
   const totalDays = structure.totalDays || 6;
@@ -1346,22 +1373,54 @@ export default function PlayerEntryPage() {
           <button className={`btn btn-sm ${section === 'damage' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSection('damage')}>Section B · Damage/Acc</button>
           {showRU && <button className={`btn btn-sm ${section === 'rosterUpdate' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSection('rosterUpdate')}>Roster Update</button>}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="btn btn-secondary"
-            onClick={() => setShowPaste(v => !v)}
-            title="Paste player stats from spreadsheet"
-          >
-            <ClipboardPaste size={14} style={{ marginRight: 6 }} /> Paste or Upload Stats
-          </button>
-          <button className="btn btn-primary" onClick={handleBulkSave} disabled={saving}>
-            <Save size={14} /> {saving ? 'Saving...' : 'Save All'}
-          </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isLocked && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              fontSize: '0.72rem', fontWeight: 700, color: '#ef4444',
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: 6, padding: '2px 8px'
+            }}>
+              <Lock size={11} /> Locked
+            </span>
+          )}
+          {!isLocked && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowPaste(v => !v)}
+              title="Paste player stats from spreadsheet"
+            >
+              <ClipboardPaste size={14} style={{ marginRight: 6 }} /> Paste or Upload Stats
+            </button>
+          )}
+          {!isLocked && (
+            <button className="btn btn-secondary" onClick={handleBulkSave} disabled={saving}>
+              <Save size={14} /> {saving ? 'Saving...' : 'Save All'}
+            </button>
+          )}
+          {isLocked ? (
+            <button
+              className="btn btn-secondary"
+              onClick={handleUnlock}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Unlock size={13} /> Unlock
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              onClick={handleLock}
+              disabled={saving}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Lock size={13} /> {saving ? 'Saving...' : 'Save & Lock'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Paste Data Panel */}
-      {showPaste && (
+      {/* Paste Data Panel — hidden when locked */}
+      {showPaste && !isLocked && (
         <div className="card" style={{ marginBottom: 24, border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)' }}>
           <div className="flex-between" style={{ marginBottom: 10 }}>
             <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>
@@ -2109,12 +2168,17 @@ export default function PlayerEntryPage() {
                         </div>
                         <div style={{ width: '70px' }}>
                           {active ? (
-                            <input type="number" min={0} className="editable-input" 
-                              style={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', textAlign: 'center' }}
-                              value={row.kills} placeholder="—"
-                              onChange={(e) => handleChange(row.playerId, 'kills', e.target.value)}
-                              onBlur={() => saveRow(row.playerId)}
-                            />
+                            isLocked ? (
+                              <span style={{ display: 'block', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                {hasKills ? killsVal : '—'}
+                              </span>
+                            ) : (
+                              <PlayerStatInput
+                                value={row.kills}
+                                onSave={(v) => { handleChange(row.playerId, 'kills', v); saveRow(row.playerId); }}
+                                inputStyle={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', textAlign: 'center' }}
+                              />
+                            )
                           ) : <span style={{ color: 'var(--text-muted)', display: 'block', textAlign: 'center', fontSize: '0.8rem' }}>—</span>}
                         </div>
                         <div style={{ width: '50px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
@@ -2203,23 +2267,36 @@ export default function PlayerEntryPage() {
                           <div style={{ flex: 1 }}>
                             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} DMG</span>
                             {active ? (
-                              <input type="number" min={0} className="editable-input" 
-                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
-                                value={row.damage} placeholder="—"
-                                onChange={(e) => handleChange(row.playerId, 'damage', e.target.value)}
-                                onBlur={() => saveRow(row.playerId)}
-                              />
+                              isLocked ? (
+                                <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                  {hasDmg ? Math.round(dmgVal) : '—'}
+                                </span>
+                              ) : (
+                                <PlayerStatInput
+                                  value={row.damage}
+                                  step={1}
+                                  onSave={(v) => { handleChange(row.playerId, 'damage', v); saveRow(row.playerId); }}
+                                  inputStyle={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
+                                />
+                              )
                             ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
                           </div>
                           <div style={{ flex: 1 }}>
                             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} ACC%</span>
                             {active ? (
-                              <input type="number" min={0} max={100} step={0.1} className="editable-input" 
-                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
-                                value={row.accuracy} placeholder="—"
-                                onChange={(e) => handleChange(row.playerId, 'accuracy', e.target.value)}
-                                onBlur={() => saveRow(row.playerId)}
-                              />
+                              isLocked ? (
+                                <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                  {hasAcc ? `${accVal.toFixed(1)}%` : '—'}
+                                </span>
+                              ) : (
+                                <PlayerStatInput
+                                  value={row.accuracy}
+                                  step={0.1}
+                                  max={100}
+                                  onSave={(v) => { handleChange(row.playerId, 'accuracy', v); saveRow(row.playerId); }}
+                                  inputStyle={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
+                                />
+                              )
                             ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
                           </div>
                           <div style={{ width: '90px', textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.2' }}>
@@ -2353,5 +2430,46 @@ export default function PlayerEntryPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Isolated per-cell stat input ─────────────────────────────────────────────
+// Uses local state to avoid re-rendering the entire player list on each keystroke.
+function PlayerStatInput({ value, onSave, step = 1, min = 0, max, inputStyle = {} }) {
+  const [local, setLocal] = useState(value === null || value === undefined || value === '' ? '' : String(value));
+  const prevProp = useRef(value);
+
+  // Sync from parent only when it genuinely changed (e.g. after loadData)
+  useEffect(() => {
+    const normalized = value === null || value === undefined || value === '' ? '' : String(value);
+    if (normalized !== String(prevProp.current ?? '')) {
+      setLocal(normalized);
+      prevProp.current = value;
+    }
+  }, [value]);
+
+  const handleBlur = () => {
+    const normalized = value === null || value === undefined || value === '' ? '' : String(value);
+    if (local !== normalized) {
+      onSave(local);
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      className="editable-input"
+      style={inputStyle}
+      value={local}
+      placeholder="—"
+      onChange={e => setLocal(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={e => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+    />
   );
 }

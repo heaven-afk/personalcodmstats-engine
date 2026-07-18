@@ -8,7 +8,7 @@ import { computeDailyStandings } from '@/lib/engine/standings';
 import { getPlacementPoints } from '@/lib/engine/scoring';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
-import { Save, Plus, Trash2, ChevronDown, ChevronUp, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Save, Plus, Trash2, ChevronDown, ChevronUp, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Lock, Unlock } from 'lucide-react';
 import { getAllSheetsAsCSV } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 
@@ -132,6 +132,32 @@ export default function TeamEntryPage() {
   const [showRef, setShowRef] = useState(false);
   const [saving, setSaving] = useState({});
 
+  // Lock state — persisted per tournament + day in localStorage
+  const lockKey = id ? `lock_team_${id}_day${day}` : null;
+  const [isLocked, setIsLocked] = useState(false);
+
+  // Read lock from localStorage whenever day changes
+  useEffect(() => {
+    if (!lockKey) return;
+    try { setIsLocked(localStorage.getItem(lockKey) === 'true'); } catch {}
+  }, [lockKey]);
+
+  const handleLock = async () => {
+    // Save all pending cell data before locking
+    toast.loading('Saving before lock...');
+    try { await refresh(); } catch {}
+    toast.dismiss();
+    try { localStorage.setItem(lockKey, 'true'); } catch {}
+    setIsLocked(true);
+    toast.success('Day ' + day + ' data locked 🔒');
+  };
+
+  const handleUnlock = () => {
+    try { localStorage.removeItem(lockKey); } catch {}
+    setIsLocked(false);
+    toast.success('Day ' + day + ' unlocked 🔓');
+  };
+
   // Paste / File Upload States
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState('');
@@ -187,6 +213,7 @@ export default function TeamEntryPage() {
   const getResult = (teamId, lobby) => dayResults.find(r => r.teamId === teamId && r.lobby === lobby);
 
   const handleCellSave = async (teamId, lobby, field, value) => {
+    if (isLocked) return;
     const key = `${teamId}-${lobby}-${field}`;
     setSaving(s => ({ ...s, [key]: true }));
     try {
@@ -194,11 +221,15 @@ export default function TeamEntryPage() {
       const numVal = Number(value) || 0;
       if (existing) {
         await updateTeamMatchResult(id, existing.id, { [field]: numVal });
+        // Optimistic local update — avoid full refresh on every cell blur
+        setAllResults(prev => prev.map(r =>
+          r.id === existing.id ? { ...r, [field]: numVal } : r
+        ));
       } else {
-        await saveTeamMatchResult(id, { teamId, teamName: teamRegs.find(t => t.teamId === teamId)?.teamName || teamId, day, lobby, placement: 0, kills: 0, [field]: numVal });
+        const saved = await saveTeamMatchResult(id, { teamId, teamName: teamRegs.find(t => t.teamId === teamId)?.teamName || teamId, day, lobby, placement: 0, kills: 0, [field]: numVal });
+        setAllResults(prev => [...prev, saved]);
       }
-      await refresh();
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(e.message); await refresh(); }
     finally { setSaving(s => ({ ...s, [key]: false })); }
   };
 
@@ -810,19 +841,48 @@ export default function TeamEntryPage() {
             <div className="data-table-toolbar">
               <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Day {day} — Match Entry</span>
               <span className="data-table-count">{teamRegs.length} teams</span>
+              {isLocked && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontSize: '0.72rem', fontWeight: 700, color: '#ef4444',
+                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: 6, padding: '2px 8px'
+                }}>
+                  <Lock size={11} /> Locked
+                </span>
+              )}
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setShowPaste(v => !v)}
-                  title="Copy and paste results from Excel / Google Sheets"
-                >
-                  <ClipboardPaste size={13} style={{ marginRight: 6 }} /> Paste or Upload Day Results
-                </button>
+                {!isLocked && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowPaste(v => !v)}
+                    title="Copy and paste results from Excel / Google Sheets"
+                  >
+                    <ClipboardPaste size={13} style={{ marginRight: 6 }} /> Paste or Upload Day Results
+                  </button>
+                )}
+                {isLocked ? (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleUnlock}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Unlock size={13} /> Unlock Day {day}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleLock}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Lock size={13} /> Save & Lock Day {day}
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Paste Data Panel */}
-            {showPaste && (
+            {/* Paste Data Panel — hidden when locked */}
+            {showPaste && !isLocked && (
               <div className="card" style={{ margin: '12px 16px', border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)' }}>
                 <div className="flex-between" style={{ marginBottom: 10 }}>
                   <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>
@@ -1331,6 +1391,7 @@ export default function TeamEntryPage() {
                             <CellInput
                               value={r.placement === null || r.placement === undefined || r.placement === '' ? '' : r.placement}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'placement', v)}
+                              locked={isLocked}
                               style={{
                                 borderLeft: `2px solid ${lc(li + 1).border}`,
                                 background: `rgba(${li % 2 === 1 ? '255,255,255,0.01' : '0,0,0,0.01'})`
@@ -1339,6 +1400,7 @@ export default function TeamEntryPage() {
                             <CellInput
                               value={r.kills === null || r.kills === undefined || r.kills === '' ? '' : r.kills}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'kills', v)}
+                              locked={isLocked}
                               style={{
                                 borderRight: `2px solid ${lc(li + 1).border}`,
                                 background: `rgba(${li % 2 === 1 ? '255,255,255,0.01' : '0,0,0,0.01'})`
@@ -1423,30 +1485,34 @@ export default function TeamEntryPage() {
 }
 
 // ─── Editable cell input ─────────────────────────────────────────────────────
-function CellInput({ value, onSave, style = {} }) {
+function CellInput({ value, onSave, locked = false, style = {} }) {
   const [editing, setEditing] = useState(false);
-  const [local, setLocal] = useState(value);
+  const [local, setLocal] = useState(String(value ?? ''));
   const isCancelled = useRef(false);
+  const prevValue = useRef(value);
 
+  // Only sync from parent when NOT actively editing AND the value actually changed
   useEffect(() => {
-    if (!editing) {
-      setLocal(value);
+    if (!editing && value !== prevValue.current) {
+      setLocal(String(value ?? ''));
+      prevValue.current = value;
     }
   }, [value, editing]);
 
   const handleBlur = () => {
     setEditing(false);
-    if (!isCancelled.current && local !== value) {
+    if (!isCancelled.current && local !== String(value ?? '')) {
       onSave(local);
     }
   };
 
   const handleStartEdit = () => {
+    if (locked) return;
     isCancelled.current = false;
     setEditing(true);
   };
 
-  if (editing) {
+  if (editing && !locked) {
     return (
       <td style={{ ...style, padding: '3px 4px', textAlign: 'center' }}>
         <input
@@ -1471,7 +1537,7 @@ function CellInput({ value, onSave, style = {} }) {
             }
             if (e.key === 'Escape') {
               isCancelled.current = true;
-              setLocal(value);
+              setLocal(String(value ?? ''));
               setEditing(false);
             }
           }}
@@ -1482,8 +1548,8 @@ function CellInput({ value, onSave, style = {} }) {
   return (
     <td style={{ ...style, padding: '3px 4px', textAlign: 'center' }}>
       <div
-        className="editable-cell-display"
-        tabIndex={0}
+        className={locked ? undefined : 'editable-cell-display'}
+        tabIndex={locked ? undefined : 0}
         onClick={handleStartEdit}
         onFocus={handleStartEdit}
         style={{
@@ -1494,10 +1560,11 @@ function CellInput({ value, onSave, style = {} }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          cursor: 'pointer',
+          cursor: locked ? 'default' : 'pointer',
           borderRadius: '4px',
           transition: 'all 0.1s',
-          margin: '0 auto'
+          margin: '0 auto',
+          color: locked ? 'var(--text-secondary)' : undefined,
         }}
       >
         {local !== '' && local !== undefined && local !== null ? <span style={{ fontFamily: 'var(--font-mono)' }}>{local}</span> : <span className="cell-empty">—</span>}
