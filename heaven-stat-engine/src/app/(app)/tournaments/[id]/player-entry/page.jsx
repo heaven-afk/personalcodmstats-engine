@@ -66,6 +66,25 @@ function parseSmartSpreadsheet(grid) {
     subheaderRowIndex = headerRowIndex + 1;
   }
 
+  let superHeaderRowIndex = -1;
+  if (headerRowIndex > 0) {
+    const prevRow = grid[headerRowIndex - 1] || [];
+    const hasCategoryLabels = prevRow.some(cell => {
+      const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (
+        clean.includes('kill') || 
+        clean.includes('damage') || 
+        clean.includes('dmg') || 
+        clean.includes('accuracy') || 
+        clean.includes('ccurc') || 
+        clean.includes('acc')
+      );
+    });
+    if (hasCategoryLabels) {
+      superHeaderRowIndex = headerRowIndex - 1;
+    }
+  }
+
   const headerRow = grid[headerRowIndex] || [];
   const subheaderRow = subheaderRowIndex !== -1 ? grid[subheaderRowIndex] : [];
 
@@ -78,13 +97,40 @@ function parseSmartSpreadsheet(grid) {
   const checkTeam = (v) => v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || v === 'club';
   const checkSlot = (v) => v === 'slot' || v === 'id' || v === 'no' || v === 'index' || v === 'slotno' || v === '#';
 
+  const getCategory = (clean) => {
+    if (clean.includes('damage') || clean.includes('dmg')) return 'damage';
+    if (
+      clean.includes('ccurc') || 
+      clean.includes('acc') || 
+      clean.includes('accuracy') || 
+      clean.includes('pct') || 
+      clean.includes('percent')
+    ) return 'accuracy';
+    if (clean.includes('kills') || clean.includes('kill') || clean === 'pts' || clean === 'killsmatch') return 'kills';
+    return null;
+  };
+
   let lastTopLobbyNum = null;
+  let currentCategory = null;
 
   for (let c = 0; c < headerRow.length; c++) {
     const cellVal = String(headerRow[c] || '').trim();
     const cleanVal = cellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
     const subCellVal = subheaderRowIndex !== -1 ? String(subheaderRow[c] || '').trim() : '';
     const cleanSubVal = subCellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const superCellVal = superHeaderRowIndex !== -1 ? String(grid[superHeaderRowIndex][c] || '').trim() : '';
+    const cleanSuperVal = superCellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Track super-header category carry-forward
+    if (superHeaderRowIndex !== -1) {
+      const categoryFromSuper = getCategory(cleanSuperVal);
+      if (categoryFromSuper !== null) {
+        currentCategory = categoryFromSuper;
+      } else if (superCellVal !== '') {
+        currentCategory = null;
+      }
+    }
 
     if (checkPlayer(cleanVal) || (subheaderRowIndex !== -1 && checkPlayer(cleanSubVal))) {
       if (playerCol === -1) {
@@ -128,17 +174,18 @@ function parseSmartSpreadsheet(grid) {
         lobbies[lobbyNum] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
       }
 
-      const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
+      // Determine category (kills, damage, or accuracy)
+      let category = null;
+      if (superHeaderRowIndex !== -1 && currentCategory !== null) {
+        category = currentCategory;
+      } else {
+        const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
+        category = getCategory(checkVal) || 'kills'; // Fallback to kills
+      }
 
-      if (checkVal.includes('damage') || checkVal.includes('dmg')) {
+      if (category === 'damage') {
         lobbies[lobbyNum].damageCol = c;
-      } else if (
-        checkVal.includes('ccurc') || 
-        checkVal.includes('acc') || 
-        checkVal.includes('accuracy') || 
-        checkVal.includes('pct') || 
-        checkVal.includes('percent')
-      ) {
+      } else if (category === 'accuracy') {
         lobbies[lobbyNum].accuracyCol = c;
       } else {
         lobbies[lobbyNum].killsCol = c;
