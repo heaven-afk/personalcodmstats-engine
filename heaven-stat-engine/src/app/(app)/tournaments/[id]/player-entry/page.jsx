@@ -423,6 +423,8 @@ export default function PlayerEntryPage() {
         resultsByLobby[lobbyNum] = await getPlayerMatchResultsByDayLobby(tournament.id, day, lobbyNum);
       }
 
+      const promises = [];
+
       for (const row of smartImportRows) {
         if (!row.matchedPlayerId) continue;
 
@@ -454,17 +456,21 @@ export default function PlayerEntryPage() {
 
           if (existingResults.length > 0) {
             const firstExisting = existingResults[0];
-            await updatePlayerMatchResult(tournament.id, firstExisting.id, payload);
+            promises.push(updatePlayerMatchResult(tournament.id, firstExisting.id, payload));
             updatedCount++;
 
             for (let i = 1; i < existingResults.length; i++) {
-              await deletePlayerMatchResult(tournament.id, existingResults[i].id);
+              promises.push(deletePlayerMatchResult(tournament.id, existingResults[i].id));
             }
           } else {
-            await savePlayerMatchResult(tournament.id, payload);
+            promises.push(savePlayerMatchResult(tournament.id, payload));
             addedCount++;
           }
         }
+      }
+
+      if (promises.length > 0) {
+        await Promise.all(promises);
       }
 
       toast.success(`Successfully imported stats! Added ${addedCount}, updated ${updatedCount} records.`);
