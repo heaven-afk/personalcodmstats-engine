@@ -7,7 +7,7 @@ import {
   getPlayerRegistrations, addPlayerRegistration, updatePlayerRegistration, deletePlayerRegistration,
   clearAllTeamRegistrations, clearAllPlayerRegistrations,
 } from '@/lib/firestore/tournaments';
-import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers } from '@/lib/firestore/registry';
+import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
 import Modal from '@/components/ui/Modal';
 import { getSimilarTeams, getSimilarPlayers } from '@/lib/utils/similarity';
@@ -1127,6 +1127,37 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
             device: item.device,
             deviceModel: item.deviceModel
           };
+
+          // Sync updated fields to the global player profile registry
+          const currentGlobal = globalPlayers.find(p => p.id === item.playerId);
+          const updatedFields = {};
+          if (item.professionalName && item.professionalName !== currentGlobal?.professionalName) {
+            updatedFields.professionalName = item.professionalName;
+            updatedFields.professionalNameLower = item.professionalName.toLowerCase().trim();
+          }
+          if (item.ign && item.ign !== currentGlobal?.ign) {
+            updatedFields.ign = item.ign;
+            updatedFields.ignLower = item.ign.toLowerCase().trim();
+          }
+          if (item.gender && item.gender !== currentGlobal?.gender) {
+            updatedFields.gender = item.gender;
+          }
+          if (item.region && item.region !== currentGlobal?.region) {
+            updatedFields.region = item.region;
+          }
+          if (item.country && item.country !== currentGlobal?.country) {
+            updatedFields.country = item.country;
+          }
+          if (item.device && item.device !== currentGlobal?.device) {
+            updatedFields.device = item.device;
+          }
+          if (item.deviceModel && item.deviceModel !== currentGlobal?.deviceModel) {
+            updatedFields.deviceModel = item.deviceModel;
+          }
+
+          if (Object.keys(updatedFields).length > 0) {
+            await updatePlayer(item.playerId, updatedFields);
+          }
         } else {
           player = await createPlayer({
             professionalName: item.professionalName,
@@ -1251,6 +1282,24 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
 
     try {
       await updatePlayerRegistration(tournamentId, regId, fields);
+      if (currentReg.playerId) {
+        const globalFields = {};
+        const allowedKeys = ['professionalName', 'ign', 'gender', 'region', 'country', 'device', 'deviceModel'];
+        for (const key of allowedKeys) {
+          if (fields[key] !== undefined) {
+            globalFields[key] = fields[key];
+            if (key === 'professionalName') {
+              globalFields.professionalNameLower = fields.professionalName.toLowerCase().trim();
+            }
+            if (key === 'ign') {
+              globalFields.ignLower = fields.ign.toLowerCase().trim();
+            }
+          }
+        }
+        if (Object.keys(globalFields).length > 0) {
+          await updatePlayer(currentReg.playerId, globalFields);
+        }
+      }
       await onRefresh();
     } catch (e) {
       toast.error('Failed to update player: ' + e.message);

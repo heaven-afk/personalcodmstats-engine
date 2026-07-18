@@ -73,7 +73,26 @@ export async function createPlayer(data) {
     return localDb.localCreatePlayer(enriched);
   }
   const existing = await findPlayerByName(enriched.professionalName, enriched.ign);
-  if (existing) return existing;
+  if (existing) {
+    const updatedFields = {};
+    const checkFields = ['professionalName', 'ign', 'gender', 'region', 'country', 'device', 'deviceModel', 'category'];
+    for (const field of checkFields) {
+      if (enriched[field] && enriched[field] !== existing[field]) {
+        updatedFields[field] = enriched[field];
+        if (field === 'professionalName') {
+          updatedFields.professionalNameLower = enriched.professionalName.toLowerCase().trim();
+        }
+        if (field === 'ign') {
+          updatedFields.ignLower = enriched.ign.toLowerCase().trim();
+        }
+      }
+    }
+    if (Object.keys(updatedFields).length > 0) {
+      await updateDoc(doc(db, 'players', existing.id), updatedFields);
+      return { ...existing, ...updatedFields };
+    }
+    return existing;
+  }
   const ref = await addDoc(collection(db, 'players'), {
     professionalName: '', ign: '', gender: '', region: '', country: '',
     device: '', deviceModel: '', category: 'Registered', tournamentIds: [], createdAt: serverTimestamp(),
