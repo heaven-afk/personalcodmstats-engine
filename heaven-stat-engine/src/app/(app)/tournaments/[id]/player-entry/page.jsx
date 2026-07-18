@@ -78,6 +78,8 @@ function parseSmartSpreadsheet(grid) {
   const checkTeam = (v) => v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || v === 'club';
   const checkSlot = (v) => v === 'slot' || v === 'id' || v === 'no' || v === 'index' || v === 'slotno' || v === '#';
 
+  let lastTopLobbyNum = null;
+
   for (let c = 0; c < headerRow.length; c++) {
     const cellVal = String(headerRow[c] || '').trim();
     const cleanVal = cellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -106,9 +108,19 @@ function parseSmartSpreadsheet(grid) {
       return match ? parseInt(match[1]) : null;
     };
 
-    let lobbyNum = matchVal(cellVal);
+    const topLobbyMatch = matchVal(cellVal);
+    if (topLobbyMatch !== null) {
+      lastTopLobbyNum = topLobbyMatch;
+    } else if (cellVal !== '') {
+      lastTopLobbyNum = null;
+    }
+
+    let lobbyNum = topLobbyMatch;
     if (lobbyNum === null && subheaderRowIndex !== -1) {
       lobbyNum = matchVal(subCellVal);
+    }
+    if (lobbyNum === null && cellVal === '' && lastTopLobbyNum !== null) {
+      lobbyNum = lastTopLobbyNum;
     }
 
     if (lobbyNum !== null) {
