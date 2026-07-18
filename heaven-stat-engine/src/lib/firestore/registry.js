@@ -40,6 +40,8 @@ export async function findPlayerByName(professionalName, ign) {
     // Try query by exact professionalName
     snap = await getDocs(query(collection(db, 'players'), where('professionalName', '==', professionalName.trim()), limit(1)));
     if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+
+    return null; // Return null if professional name is provided but doesn't exist
   }
 
   if (ignLower) {

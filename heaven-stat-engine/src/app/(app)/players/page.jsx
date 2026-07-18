@@ -1,13 +1,13 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getPlayers } from '@/lib/firestore/registry';
+import { getPlayers, deletePlayer } from '@/lib/firestore/registry';
 import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayerMatchResults } from '@/lib/firestore/matchData';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge } from '@/components/ui/Badge';
-import { Users, Search, ExternalLink, Award, Cpu, Globe } from 'lucide-react';
+import { Users, Search, ExternalLink, Award, Cpu, Globe, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function PlayersPage() {
@@ -104,6 +104,17 @@ export default function PlayersPage() {
     return matchSearch && matchRegion && matchClass;
   });
 
+  const handleDeletePlayer = async (id, name) => {
+    if (!confirm(`Are you sure you want to delete player "${name}" globally?\n\nThis will permanently delete their profile and stats across ALL tournaments.`)) return;
+    try {
+      await deletePlayer(id);
+      toast.success(`Player "${name}" deleted from registry`);
+      setPlayers(prev => prev.filter(p => p.id !== id));
+    } catch (e) {
+      toast.error('Failed to delete player: ' + e.message);
+    }
+  };
+
   const regions = Array.from(new Set(players.map(p => p.region).filter(Boolean)));
   const classes = Array.from(new Set(players.map(p => p.lastClass).filter(Boolean)));
 
@@ -133,9 +144,19 @@ export default function PlayersPage() {
       header: 'Actions',
       key: 'actions',
       render: (row) => (
-        <Link href={`/players/${row.id}`} className="text-text-muted hover:text-gold transition">
-          <ExternalLink size={16} />
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Link href={`/players/${row.id}`} className="text-text-muted hover:text-gold transition" title="View Profile">
+            <ExternalLink size={16} />
+          </Link>
+          <button
+            onClick={() => handleDeletePlayer(row.id, row.professionalName || row.ign)}
+            className="text-text-muted hover:text-red-500 transition-colors"
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            title="Delete player globally"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
       ),
     },
   ];

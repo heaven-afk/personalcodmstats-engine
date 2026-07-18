@@ -7,7 +7,7 @@ import {
   getPlayerRegistrations, addPlayerRegistration, updatePlayerRegistration, deletePlayerRegistration,
   clearAllTeamRegistrations, clearAllPlayerRegistrations,
 } from '@/lib/firestore/tournaments';
-import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer } from '@/lib/firestore/registry';
+import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer, deletePlayer, deleteTeam } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
 import Modal from '@/components/ui/Modal';
 import { getSimilarTeams, getSimilarPlayers } from '@/lib/utils/similarity';
@@ -682,10 +682,25 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handleDelete = async (regId, teamName) => {
+    const currentReg = registrations.find(r => r.id === regId);
     if (!confirm(`Remove ${teamName} from this tournament?`)) return;
-    await deleteTeamRegistration(tournamentId, regId);
-    toast.success('Removed');
-    await onRefresh();
+    
+    setSaving(true);
+    try {
+      await deleteTeamRegistration(tournamentId, regId);
+      if (currentReg?.teamId) {
+        const deleteGlobal = confirm(`Would you also like to delete "${teamName}" from the Global Teams Registry?`);
+        if (deleteGlobal) {
+          await deleteTeam(currentReg.teamId);
+        }
+      }
+      toast.success('Removed');
+      await onRefresh();
+    } catch (e) {
+      toast.error('Failed to remove team: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePasteImport = async () => {
@@ -708,10 +723,19 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handleClearAll = async () => {
-    if (!confirm(`Are you sure you want to remove all ${registrations.length} teams from this tournament? This will not delete teams globally, but will remove their registrations.`)) return;
+    if (!confirm(`Are you sure you want to remove all ${registrations.length} teams from this tournament?`)) return;
+    const deleteGlobal = confirm("Would you also like to delete these teams from the Global Teams Registry overall?");
+    
     setSaving(true);
     try {
       await clearAllTeamRegistrations(tournamentId, registrations.map(r => r.id));
+      if (deleteGlobal) {
+        const deletePromises = registrations
+          .map(r => r.teamId)
+          .filter(Boolean)
+          .map(tid => deleteTeam(tid));
+        await Promise.all(deletePromises);
+      }
       toast.success('All team registrations cleared');
       await onRefresh();
     } catch (e) {
@@ -1049,7 +1073,10 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
       const exact = globalPlayers.find(p => {
         const pProName = (p.professionalName || '').trim().toLowerCase();
         const pIgn = (p.ign || '').trim().toLowerCase();
-        return (proNameLower && pProName === proNameLower) || (ignLower && pIgn === ignLower);
+        if (proNameLower) {
+          return pProName === proNameLower;
+        }
+        return ignLower && pIgn === ignLower;
       });
 
       if (exact) {
@@ -1307,10 +1334,25 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   };
 
   const handleDelete = async (regId, name) => {
-    if (!confirm(`Remove ${name}?`)) return;
-    await deletePlayerRegistration(tournamentId, regId);
-    toast.success('Removed');
-    await onRefresh();
+    const currentReg = registrations.find(r => r.id === regId);
+    if (!confirm(`Remove ${name} from this tournament?`)) return;
+    
+    setSaving(true);
+    try {
+      await deletePlayerRegistration(tournamentId, regId);
+      if (currentReg?.playerId) {
+        const deleteGlobal = confirm(`Would you also like to delete ${name}'s profile from the Global Player Registry? (Warning: This will delete their career profile and career stats across all tournaments!)`);
+        if (deleteGlobal) {
+          await deletePlayer(currentReg.playerId);
+        }
+      }
+      toast.success('Removed');
+      await onRefresh();
+    } catch (e) {
+      toast.error('Failed to remove player: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePasteImport = async () => {
@@ -1334,9 +1376,18 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
 
   const handleClearAll = async () => {
     if (!confirm(`Are you sure you want to remove all ${registrations.length} players from this tournament?`)) return;
+    const deleteGlobal = confirm("Would you also like to delete these players' profiles from the Global Player Registry overall? (Warning: This will delete their career profile and statistics!)");
+    
     setSaving(true);
     try {
       await clearAllPlayerRegistrations(tournamentId, registrations.map(r => r.id));
+      if (deleteGlobal) {
+        const deletePromises = registrations
+          .map(r => r.playerId)
+          .filter(Boolean)
+          .map(pid => deletePlayer(pid));
+        await Promise.all(deletePromises);
+      }
       toast.success('All player registrations cleared');
       await onRefresh();
     } catch (e) {

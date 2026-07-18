@@ -92,26 +92,37 @@ export function scanForDuplicates(globalTeams, threshold = 0.75) {
  * Filters a list of global players to find any that are similar to newPlayerName or newIGN.
  */
 export function getSimilarPlayers(newPlayerName, newIGN, globalPlayers, threshold = 0.75) {
-  if ((!newPlayerName || !newPlayerName.trim()) && (!newIGN || !newIGN.trim())) return [];
   const termName = newPlayerName?.trim().toLowerCase() || '';
   const termIGN = newIGN?.trim().toLowerCase() || '';
 
-  return globalPlayers
-    .map(player => {
-      let sim = 0;
-      if (termName && player.professionalName) {
-        sim = Math.max(sim, stringSimilarity(termName, player.professionalName));
-      }
-      if (termIGN && player.ign) {
-        sim = Math.max(sim, stringSimilarity(termIGN, player.ign));
-      }
-      return { player, similarity: sim };
-    })
-    .filter(res => res.similarity >= threshold && 
-      (termName ? res.player.professionalName?.toLowerCase() !== termName : true) && 
-      (termIGN ? res.player.ign?.toLowerCase() !== termIGN : true)
-    )
-    .sort((a, b) => b.similarity - a.similarity)
-    .map(res => res.player);
+  if (termName) {
+    return globalPlayers
+      .map(player => {
+        let sim = 0;
+        if (player.professionalName) {
+          sim = stringSimilarity(termName, player.professionalName);
+        }
+        return { player, similarity: sim };
+      })
+      .filter(res => res.similarity >= threshold && res.player.professionalName?.toLowerCase() !== termName)
+      .sort((a, b) => b.similarity - a.similarity)
+      .map(res => res.player);
+  }
+
+  if (termIGN) {
+    return globalPlayers
+      .map(player => {
+        let sim = 0;
+        if (player.ign) {
+          sim = stringSimilarity(termIGN, player.ign);
+        }
+        return { player, similarity: sim };
+      })
+      .filter(res => res.similarity >= threshold && res.player.ign?.toLowerCase() !== termIGN)
+      .sort((a, b) => b.similarity - a.similarity)
+      .map(res => res.player);
+  }
+
+  return [];
 }
 

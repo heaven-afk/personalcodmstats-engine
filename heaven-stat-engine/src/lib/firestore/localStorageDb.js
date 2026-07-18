@@ -507,9 +507,13 @@ export function localFindPlayerByName(professionalName, ign) {
   const players = localGetPlayers();
   const pn = professionalName?.toLowerCase().trim();
   const ignLower = ign?.toLowerCase().trim();
-  return players.find(
-    (p) => (pn && p.professionalName?.toLowerCase().trim() === pn) || (ignLower && p.ign?.toLowerCase().trim() === ignLower)
-  ) || null;
+  if (pn) {
+    return players.find((p) => p.professionalName?.toLowerCase().trim() === pn) || null;
+  }
+  if (ignLower) {
+    return players.find((p) => p.ign?.toLowerCase().trim() === ignLower) || null;
+  }
+  return null;
 }
 
 export function localFindTeamByName(teamName) {
