@@ -56,111 +56,108 @@ Response schema:
   ]
 }`;
 
-// Helper to call Groq Vision API
-async function callGroqVisionAPI(apiKey, systemPrompt, userText, base64Image) {
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+// Helper to call Google Gemini Vision API
+async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image) {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      max_tokens: 1000,
-      messages: [
+      systemInstruction: {
+        parts: [
+          { text: systemPrompt }
+        ]
+      },
+      contents: [
         {
-          role: 'system',
-          content: systemPrompt
-        },
-        {
-          role: 'user',
-          content: [
+          parts: [
+            { text: userText },
             {
-              type: 'text',
-              text: userText
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${base64Image}`
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: base64Image
               }
             }
           ]
         }
-      ]
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0
+      }
     })
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Groq API returned ${response.status}: ${errorText}`);
+    throw new Error(`Gemini API returned ${response.status}: ${errorText}`);
   }
 
   const data = await response.json();
-  const rawJsonText = data.choices?.[0]?.message?.content;
+  const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!rawJsonText) {
-    throw new Error('Groq Vision API returned an empty message content');
+    throw new Error('Gemini Vision API returned an empty message content');
   }
 
   return JSON.parse(rawJsonText);
 }
 
 // Helper to retry with conversation history
-async function callGroqVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText) {
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText) {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      max_tokens: 1000,
-      messages: [
+      systemInstruction: {
+        parts: [
+          { text: systemPrompt }
+        ]
+      },
+      contents: [
         {
-          role: 'system',
-          content: systemPrompt
-        },
-        {
-          role: 'user',
-          content: [
+          role: "user",
+          parts: [
+            { text: userText },
             {
-              type: 'text',
-              text: userText
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${base64Image}`
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: base64Image
               }
             }
           ]
         },
         {
-          role: 'assistant',
-          content: firstAssistantMsg
+          role: "model",
+          parts: [
+            { text: firstAssistantMsg }
+          ]
         },
         {
-          role: 'user',
-          content: followUpText
+          role: "user",
+          parts: [
+            { text: followUpText }
+          ]
         }
-      ]
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0
+      }
     })
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Groq API retry returned ${response.status}: ${errorText}`);
+    throw new Error(`Gemini API retry returned ${response.status}: ${errorText}`);
   }
 
   const data = await response.json();
-  const rawJsonText = data.choices?.[0]?.message?.content;
+  const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!rawJsonText) {
-    throw new Error('Groq Vision API retry returned an empty message content');
+    throw new Error('Gemini Vision API retry returned an empty message content');
   }
 
   return JSON.parse(rawJsonText);
@@ -191,9 +188,9 @@ function isRankAnomaly(rows) {
 
 export async function POST(req) {
   try {
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'groq_failed', message: 'GROQ_API_KEY is not configured on the server.' }, { status: 500 });
+      return NextResponse.json({ error: 'gemini_failed', message: 'No API key configured for Google Gemini on the server. Please set GEMINI_API_KEY or GOOGLE_API_KEY.' }, { status: 500 });
     }
 
     const formData = await req.formData();
@@ -222,9 +219,9 @@ export async function POST(req) {
 
     let extractedData;
     try {
-      extractedData = await callGroqVisionAPI(apiKey, systemPrompt, userText, base64Image);
+      extractedData = await callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image);
     } catch (err) {
-      return NextResponse.json({ error: 'groq_failed', message: err.message }, { status: 500 });
+      return NextResponse.json({ error: 'gemini_failed', message: err.message }, { status: 500 });
     }
 
     if (extractedData.error) {
@@ -241,7 +238,7 @@ export async function POST(req) {
     if (isLowConfidence) {
       try {
         const followUpText = "The kills column appears to be a number on the right side of each row. Please re-extract focusing on that column.";
-        extractedData = await callGroqVisionAPIWithHistory(
+        extractedData = await callGeminiVisionAPIWithHistory(
           apiKey,
           systemPrompt,
           userText,
@@ -282,3 +279,4 @@ export async function POST(req) {
     return NextResponse.json({ error: 'server_error', message: err.message }, { status: 500 });
   }
 }
+
