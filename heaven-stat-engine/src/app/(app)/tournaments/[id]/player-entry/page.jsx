@@ -91,7 +91,7 @@ function parseSmartSpreadsheet(grid) {
       const match = val.match(/lobby\s*(\d+)/i) || 
                     val.match(/game\s*(\d+)/i) || 
                     val.match(/match\s*(\d+)/i) || 
-                    val.match(/^l\s*(\d+)$/i);
+                    val.match(/\bl\s*(\d+)/i);
       return match ? parseInt(match[1]) : null;
     };
 
@@ -133,7 +133,18 @@ function parseSmartSpreadsheet(grid) {
     if (!rowData || rowData.length === 0) continue;
 
     const playerName = String(rowData[playerCol] || '').trim();
-    if (!playerName || playerName === '0' || playerName.toLowerCase() === 'player name' || playerName.toLowerCase() === 'player') continue;
+    const pLower = playerName.toLowerCase();
+    if (
+      !playerName || 
+      playerName === '0' || 
+      pLower === 'player name' || 
+      pLower === 'player' || 
+      pLower === 'ign' || 
+      pLower === 'name' || 
+      pLower === 'players'
+    ) {
+      continue;
+    }
 
     const teamName = teamCol !== -1 ? String(rowData[teamCol] || '').trim() : '';
     const slot = slotCol !== -1 ? String(rowData[slotCol] || '').trim() : '';
