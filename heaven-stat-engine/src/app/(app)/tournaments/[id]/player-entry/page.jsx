@@ -181,6 +181,18 @@ function parseSmartSpreadsheet(grid) {
     });
   }
 
+  console.log("--- Smart Spreadsheet Parser Diagnostics ---");
+  console.log("Found Header Row Index:", headerRowIndex);
+  console.log("Found Subheader Row Index:", subheaderRowIndex);
+  console.log("Matched Player Column (playerCol):", playerCol);
+  console.log("Matched Team Column (teamCol):", teamCol);
+  console.log("Matched Slot Column (slotCol):", slotCol);
+  console.log("Mapped Lobbies and Columns:", lobbies);
+  console.log("Total Parsed Rows:", parsedRows.length);
+  if (parsedRows.length > 0) {
+    console.log("First Parsed Row Sample:", parsedRows[0]);
+  }
+
   return {
     lobbies: Object.keys(lobbies).map(Number).sort((a, b) => a - b),
     rows: parsedRows
@@ -1805,22 +1817,28 @@ export default function PlayerEntryPage() {
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '10px 14px', background: 'var(--bg-alt-row)', borderRadius: 8, marginBottom: 16 }}>
             <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Lobbies to Import:</span>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              {smartImportLobbies.map(l => (
-                <label key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: 600 }}>
-                  <input
-                    type="checkbox"
-                    checked={smartImportSelectedLobbies.includes(l)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b)=>a-b));
-                      } else {
-                        setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
-                      }
-                    }}
-                  />
-                  Lobby {l}
-                </label>
-              ))}
+              {smartImportLobbies.length === 0 ? (
+                <span style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  ⚠️ No Lobby columns (e.g., "Lobby 1", "Game 2", etc.) were found in your spreadsheet headers!
+                </span>
+              ) : (
+                smartImportLobbies.map(l => (
+                  <label key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={smartImportSelectedLobbies.includes(l)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b)=>a-b));
+                        } else {
+                          setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
+                        }
+                      }}
+                    />
+                    Lobby {l}
+                  </label>
+                ))
+              )}
             </div>
           </div>
 
