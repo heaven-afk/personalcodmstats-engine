@@ -27,6 +27,9 @@ function parseSmartSpreadsheet(grid) {
         clean === 'player' || 
         clean === 'teamname' || 
         clean === 'slot' ||
+        clean === 'ign' ||
+        clean === 'team' ||
+        clean === 'clan' ||
         clean.startsWith('lobby') || 
         clean.startsWith('game') ||
         (clean.startsWith('l') && /^\d+$/.test(clean.substring(1)))
@@ -52,7 +55,11 @@ function parseSmartSpreadsheet(grid) {
       cleanSub.includes('acc') || 
       cleanSub.includes('accuracy') || 
       cleanSub.includes('kills') ||
-      cleanSub.includes('kill')
+      cleanSub.includes('kill') ||
+      cleanSub.startsWith('lobby') || 
+      cleanSub.startsWith('game') ||
+      cleanSub.startsWith('match') ||
+      (cleanSub.startsWith('l') && /^\d+$/.test(cleanSub.substring(1)))
     );
   });
   if (hasSubheaders) {
@@ -67,21 +74,25 @@ function parseSmartSpreadsheet(grid) {
   let slotCol = -1;
   const lobbies = {};
 
+  const checkPlayer = (v) => v === 'playername' || v === 'player' || v === 'ign' || v === 'name' || v === 'players';
+  const checkTeam = (v) => v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || v === 'club';
+  const checkSlot = (v) => v === 'slot' || v === 'id' || v === 'no' || v === 'index' || v === 'slotno' || v === '#';
+
   for (let c = 0; c < headerRow.length; c++) {
     const cellVal = String(headerRow[c] || '').trim();
     const cleanVal = cellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
     const subCellVal = subheaderRowIndex !== -1 ? String(subheaderRow[c] || '').trim() : '';
     const cleanSubVal = subCellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    if (cleanVal === 'playername' || cleanVal === 'player' || (cleanVal === 'name' && playerCol === -1)) {
+    if (checkPlayer(cleanVal) || (subheaderRowIndex !== -1 && checkPlayer(cleanSubVal))) {
       if (playerCol === -1) {
         playerCol = c;
       }
-    } else if (cleanVal === 'teamname' || cleanVal === 'team' || cleanVal === 'clan') {
+    } else if (checkTeam(cleanVal) || (subheaderRowIndex !== -1 && checkTeam(cleanSubVal))) {
       if (teamCol === -1) {
         teamCol = c;
       }
-    } else if (cleanVal === 'slot' || cleanVal === 'id' || cleanVal === 'no' || cleanVal === 'index' || cellVal === '#') {
+    } else if (checkSlot(cleanVal) || (subheaderRowIndex !== -1 && checkSlot(cleanSubVal))) {
       if (slotCol === -1) {
         slotCol = c;
       }
