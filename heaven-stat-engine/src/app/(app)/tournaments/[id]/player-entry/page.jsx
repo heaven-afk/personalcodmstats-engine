@@ -88,6 +88,11 @@ function parseSmartSpreadsheet(grid) {
   const headerRow = grid[headerRowIndex] || [];
   const subheaderRow = subheaderRowIndex !== -1 ? grid[subheaderRowIndex] : [];
 
+  // Compute the maximum column count across ALL rows so that sub-columns of the
+  // last lobby group (which sit beyond the header row's last non-empty cell when
+  // merged cells are used) are never silently skipped.
+  const maxCols = grid.reduce((max, row) => Math.max(max, (row || []).length), 0);
+
   let playerCol = -1;
   let teamCol = -1;
   let slotCol = -1;
@@ -113,7 +118,7 @@ function parseSmartSpreadsheet(grid) {
   let lastTopLobbyNum = null;
   let currentCategory = null;
 
-  for (let c = 0; c < headerRow.length; c++) {
+  for (let c = 0; c < maxCols; c++) {
     const cellVal = String(headerRow[c] || '').trim();
     const cleanVal = cellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
     const subCellVal = subheaderRowIndex !== -1 ? String(subheaderRow[c] || '').trim() : '';
@@ -627,7 +632,12 @@ export default function PlayerEntryPage() {
 
     // Attempt to parse automatically using smart spreadsheet importer
     const delimiter = pasteText.includes('\t') ? '\t' : (pasteText.includes(',') ? ',' : (pasteText.includes(';') ? ';' : ' '));
-    const grid = pasteText.split('\n').map(l => l.trim()).filter(Boolean).map(r => r.split(delimiter).map(cell => cell.trim()));
+    // IMPORTANT: Do NOT trim each line before splitting — trailing empty cells are represented
+    // as trailing tab/comma characters. Trimming strips them, making the header row shorter
+    // than data rows and causing the last lobby's sub-columns to be skipped.
+    const grid = pasteText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+      .filter(l => l.trim().length > 0)
+      .map(r => r.split(delimiter).map(cell => cell.trim()));
 
     try {
       const { lobbies, rows } = parseSmartSpreadsheet(grid);
