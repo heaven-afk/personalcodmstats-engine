@@ -117,6 +117,7 @@ function parseSmartSpreadsheet(grid) {
 
   let lastTopLobbyNum = null;
   let currentCategory = null;
+  let lastHeaderCategory = null;
 
   for (let c = 0; c < maxCols; c++) {
     const cellVal = String(headerRow[c] || '').trim();
@@ -134,6 +135,18 @@ function parseSmartSpreadsheet(grid) {
         currentCategory = categoryFromSuper;
       } else if (superCellVal !== '') {
         currentCategory = null;
+      }
+    }
+
+    // Track header-row category carry-forward (where categories are in header row)
+    const headerCategoryMatch = getCategory(cleanVal);
+    if (headerCategoryMatch !== null) {
+      lastHeaderCategory = headerCategoryMatch;
+    } else if (cellVal !== '') {
+      const isLobby = cellVal.toLowerCase().includes('lobby') || cellVal.toLowerCase().includes('game') || cellVal.toLowerCase().includes('match') || /^l\s*\d+/i.test(cellVal);
+      const isPlayerOrTeam = checkPlayer(cleanVal) || checkTeam(cleanVal) || checkSlot(cleanVal);
+      if (!isLobby && isPlayerOrTeam) {
+        lastHeaderCategory = null;
       }
     }
 
@@ -197,7 +210,11 @@ function parseSmartSpreadsheet(grid) {
 
       // Determine category (kills, damage, or accuracy)
       let category = null;
-      if (superHeaderRowIndex !== -1 && currentCategory !== null) {
+      if (subheaderRowIndex !== -1 && getCategory(cleanSubVal) !== null) {
+        category = getCategory(cleanSubVal);
+      } else if (lastHeaderCategory !== null) {
+        category = lastHeaderCategory;
+      } else if (superHeaderRowIndex !== -1 && currentCategory !== null) {
         category = currentCategory;
       } else {
         const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
