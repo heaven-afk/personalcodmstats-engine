@@ -292,7 +292,8 @@ function parseSmartSpreadsheet(grid) {
 
   return {
     lobbies: Object.keys(lobbies).map(Number).sort((a, b) => a - b),
-    rows: parsedRows
+    rows: parsedRows,
+    columnMappings: lobbies
   };
 }
 
@@ -497,6 +498,7 @@ export default function PlayerEntryPage() {
   const [smartImportRows, setSmartImportRows] = useState([]);
   const [smartImportLobbies, setSmartImportLobbies] = useState([]);
   const [smartImportSelectedLobbies, setSmartImportSelectedLobbies] = useState([]);
+  const [smartImportColumnMappings, setSmartImportColumnMappings] = useState({});
   const [smartImportFileName, setSmartImportFileName] = useState('');
   const [importing, setImporting] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
@@ -507,7 +509,7 @@ export default function PlayerEntryPage() {
       return;
     }
 
-    const { lobbies, rows } = parseSmartSpreadsheet(grid);
+    const { lobbies, rows, columnMappings } = parseSmartSpreadsheet(grid);
     if (rows.length === 0) {
       toast.error("No player stats could be parsed from the data.");
       return;
@@ -528,6 +530,7 @@ export default function PlayerEntryPage() {
 
     setSmartImportLobbies(lobbies);
     setSmartImportSelectedLobbies(lobbies);
+    setSmartImportColumnMappings(columnMappings || {});
     setSmartImportRows(previewRows);
     setSmartImportFileName(fileName || 'Pasted Data');
     setShowPaste(false);
@@ -548,6 +551,7 @@ export default function PlayerEntryPage() {
     setSmartImportRows([]);
     setSmartImportLobbies([]);
     setSmartImportSelectedLobbies([]);
+    setSmartImportColumnMappings({});
     setSmartImportFileName('');
     setPendingFile(null);
   };
@@ -657,7 +661,7 @@ export default function PlayerEntryPage() {
       .map(r => r.split(delimiter).map(cell => cell.trim()));
 
     try {
-      const { lobbies, rows } = parseSmartSpreadsheet(grid);
+      const { lobbies, rows, columnMappings } = parseSmartSpreadsheet(grid);
       if (rows.length > 0) {
         const previewRows = rows.map((row, idx) => {
           const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
@@ -674,6 +678,7 @@ export default function PlayerEntryPage() {
 
         setSmartImportLobbies(lobbies);
         setSmartImportSelectedLobbies(lobbies);
+        setSmartImportColumnMappings(columnMappings || {});
         setSmartImportRows(previewRows);
         setSmartImportFileName('Pasted Data');
       } else {
@@ -1975,32 +1980,44 @@ export default function PlayerEntryPage() {
           </div>
 
           {/* Lobby Selection checklist */}
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '10px 14px', background: 'var(--bg-alt-row)', borderRadius: 8, marginBottom: 16 }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Lobbies to Import:</span>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              {smartImportLobbies.length === 0 ? (
-                <span style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  ⚠️ No Lobby columns (e.g., "Lobby 1", "Game 2", etc.) were found in your spreadsheet headers!
-                </span>
-              ) : (
-                smartImportLobbies.map(l => (
-                  <label key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: 600 }}>
-                    <input
-                      type="checkbox"
-                      checked={smartImportSelectedLobbies.includes(l)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b)=>a-b));
-                        } else {
-                          setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
-                        }
-                      }}
-                    />
-                    Lobby {l}
-                  </label>
-                ))
-              )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', background: 'var(--bg-alt-row)', borderRadius: 8, marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Lobbies to Import:</span>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                {smartImportLobbies.length === 0 ? (
+                  <span style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    ⚠️ No Lobby columns (e.g., "Lobby 1", "Game 2", etc.) were found in your spreadsheet headers!
+                  </span>
+                ) : (
+                  smartImportLobbies.map(l => (
+                    <label key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer', color: 'var(--text-primary)', fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={smartImportSelectedLobbies.includes(l)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b)=>a-b));
+                          } else {
+                            setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
+                          }
+                        }}
+                      />
+                      Lobby {l}
+                    </label>
+                  ))
+                )}
+              </div>
             </div>
+            {Object.keys(smartImportColumnMappings).length > 0 && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-md)', paddingTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600 }}>Mapped Columns:</span>
+                {Object.entries(smartImportColumnMappings).map(([l, cols]) => (
+                  <span key={l}>
+                    L{l} (Kills: col {cols.killsCol === -1 ? 'None' : cols.killsCol}, Dmg: col {cols.damageCol === -1 ? 'None' : cols.damageCol}, Acc: col {cols.accuracyCol === -1 ? 'None' : cols.accuracyCol})
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Table Container */}
