@@ -7,20 +7,33 @@ import Papa from 'papaparse';
 
 // ─── Generic CSV parse ────────────────────────────────────────────────────────
 export function parseCSV(text) {
-  // Trim trailing empty columns from spreadsheet exports to prevent PapaParse warnings
+  // Trim trailing columns that are empty across ALL rows (header + data).
+  // We must look at every row — not just the header — so that spreadsheets
+  // with merged/grouped headers (e.g. "L1","","","L2","","","L3","","")
+  // don't have their Lobby-3 sub-columns mistakenly stripped.
   const lines = text.trim().split('\n');
   if (lines.length > 0) {
     const delimiter = lines[0].includes('\t') ? '\t' : (lines[0].includes(';') ? ';' : ',');
-    const headers = lines[0].split(delimiter);
-    let lastValid = headers.length - 1;
-    while (lastValid >= 0 && !headers[lastValid].trim()) {
-      lastValid--;
+    // Find the maximum column index that has any non-empty value across all rows
+    let lastValid = -1;
+    for (const line of lines) {
+      const cols = line.split(delimiter);
+      for (let i = cols.length - 1; i > lastValid; i--) {
+        if (cols[i].trim()) {
+          lastValid = i;
+          break;
+        }
+      }
     }
-    if (lastValid < headers.length - 1) {
-      text = lines.map(line => {
-        const cols = line.split(delimiter);
-        return cols.slice(0, lastValid + 1).join(delimiter);
-      }).join('\n');
+    if (lastValid >= 0) {
+      // Determine the number of columns from the header to know if trimming is needed
+      const headerCols = lines[0].split(delimiter);
+      if (lastValid < headerCols.length - 1) {
+        text = lines.map(line => {
+          const cols = line.split(delimiter);
+          return cols.slice(0, lastValid + 1).join(delimiter);
+        }).join('\n');
+      }
     }
   }
 
@@ -101,8 +114,8 @@ export function parseTeamMatchCSV(text) {
   return {
     rows: data.map((row, i) => ({
       rowIndex: i,
-      day: int(row.day || row.d || 0),
-      lobby: int(row.lobby || row.l || row.match || row.game || 0),
+      day: int(row.day || row.d || row.dayno || row.daynumber || 0),
+      lobby: int(row.lobby || row.l || row.lobbynumber || row.lobbynum || row.lobbyno || row.match || row.matchno || row.matchnumber || row.game || row.gameno || row.gamenumber || row.round || row.roundno || row.roundnumber || 0),
       teamName: str(row.teamname || row.team || row.name || ''),
       placement: int(row.placement || row.position || row.place || row.pos || row.rank || row.rnk || 0),
       kills: int(row.kills || row.kill || row.k || 0),
@@ -118,8 +131,8 @@ export function parsePlayerMatchCSV(text) {
   return {
     rows: data.map((row, i) => ({
       rowIndex: i,
-      day: int(row.day || row.d || 0),
-      lobby: int(row.lobby || row.l || row.match || row.game || 0),
+      day: int(row.day || row.d || row.dayno || row.daynumber || 0),
+      lobby: int(row.lobby || row.l || row.lobbynumber || row.lobbynum || row.lobbyno || row.match || row.matchno || row.matchnumber || row.game || row.gameno || row.gamenumber || row.round || row.roundno || row.roundnumber || 0),
       playerIGN: str(row.playerign || row.ign || row.player || row.playername || row.name || row.proname || ''),
       teamName: str(row.teamname || row.team || ''),
       kills: int(row.kills || row.kill || row.k || 0),

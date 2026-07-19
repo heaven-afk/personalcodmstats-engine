@@ -158,15 +158,31 @@ function parseSmartSpreadsheet(grid) {
     if (topLobbyMatch !== null) {
       lastTopLobbyNum = topLobbyMatch;
     } else if (cellVal !== '') {
-      lastTopLobbyNum = null;
+      // Only reset the carry-forward when we hit a cell that is clearly a
+      // player/team/slot identifier (not a stat-category label like "Kills" or "Dmg").
+      // Stat-category cells belong to the CURRENT lobby group and should NOT clear it.
+      const isStatCategory = getCategory(cleanVal) !== null;
+      const isPlayerOrTeam =
+        checkPlayer(cleanVal) || checkTeam(cleanVal) || checkSlot(cleanVal);
+      if (!isStatCategory && isPlayerOrTeam) {
+        lastTopLobbyNum = null;
+      }
     }
 
     let lobbyNum = topLobbyMatch;
     if (lobbyNum === null && subheaderRowIndex !== -1) {
       lobbyNum = matchVal(subCellVal);
     }
-    if (lobbyNum === null && cellVal === '' && lastTopLobbyNum !== null) {
-      lobbyNum = lastTopLobbyNum;
+    // Carry-forward: non-lobby, non-stat top-header cells that are empty inherit
+    // the last seen lobby number (handles merged Excel header cells).
+    if (lobbyNum === null && lastTopLobbyNum !== null) {
+      // Only inherit when: no subheader detected, OR the cell (or its subheader) is
+      // a known stat category, OR the top-header cell is blank.
+      const topIsStat = getCategory(cleanVal) !== null;
+      const subIsStat = getCategory(cleanSubVal) !== null;
+      if (cellVal === '' || topIsStat || subIsStat) {
+        lobbyNum = lastTopLobbyNum;
+      }
     }
 
     if (lobbyNum !== null) {

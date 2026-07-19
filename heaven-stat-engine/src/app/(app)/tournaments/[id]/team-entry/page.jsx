@@ -70,19 +70,46 @@ function parseTeamEntryPaste(text, teamRegs, lobbiesCount) {
         let posColIndex = -1;
         let killsColIndex = -1;
 
+        // Stricter lobby-number matching: the number must immediately follow the
+        // prefix with no other digits (so "l3" matches "l3", "l3pos" but NOT "l13").
+        const lobbyNumRe = new RegExp(
+          `(?:lobby|match|game|^l)\\s*${l}(?!\\d)`,
+          'i'
+        );
+
         headers.forEach((h, idx) => {
-          const lower = h.toLowerCase();
-          const matchesLobby = lower.includes(`l${l}`) || lower.includes(`lobby${l}`) || lower.includes(`lobby ${l}`) || lower.includes(`match${l}`) || lower.includes(`match ${l}`) || lower.includes(`game${l}`) || lower.includes(`game ${l}`) || (lower.includes(`${l}`) && (lower.includes('pos') || lower.includes('place') || lower.includes('kill')));
-          
+          const lower = h.trim().toLowerCase();
+          // Does this column belong to lobby l?
+          const matchesLobby =
+            lobbyNumRe.test(lower) ||
+            // plain "l3" / "l 3" style shorthand
+            new RegExp(`^l\\s*${l}(?!\\d)`, 'i').test(lower) ||
+            // generic: header contains the lobby number AND a placement/kill keyword
+            (new RegExp(`(?:^|\\D)${l}(?!\\d)`).test(lower) &&
+              (lower.includes('pos') || lower.includes('place') ||
+               lower.includes('rank') || lower.includes('kill')));
+
           if (matchesLobby) {
-            if (lower.includes('pos') || lower.includes('placement') || lower.includes('place') || lower.includes('rank') || lower.includes('position')) {
+            if (
+              lower.includes('pos') ||
+              lower.includes('placement') ||
+              lower.includes('place') ||
+              lower.includes('rank') ||
+              lower.includes('position')
+            ) {
               posColIndex = idx;
-            } else if (lower.includes('kill') || lower.includes('k')) {
+            } else if (
+              lower.includes('kill') ||
+              lower.includes('kills') ||
+              // accept bare "k" only when the entire token is just that letter
+              lower === 'k'
+            ) {
               killsColIndex = idx;
             }
           }
         });
 
+        // Positional fallback when headers gave no result for this lobby
         if (posColIndex === -1 && killsColIndex === -1) {
           const pIdx = 1 + (l - 1) * 2;
           const kIdx = 2 + (l - 1) * 2;
@@ -90,24 +117,30 @@ function parseTeamEntryPaste(text, teamRegs, lobbiesCount) {
           if (kIdx < cols.length) killsColIndex = kIdx;
         }
 
-        const placement = posColIndex !== -1 && posColIndex < cols.length ? parseInt(cols[posColIndex]) || 0 : 0;
-        const kills = killsColIndex !== -1 && killsColIndex < cols.length ? parseInt(cols[killsColIndex]) || 0 : 0;
+        // Only include lobby if at least one column was resolved
+        const hasPos   = posColIndex   !== -1 && posColIndex   < cols.length;
+        const hasKills = killsColIndex !== -1 && killsColIndex < cols.length;
+        if (!hasPos && !hasKills) continue;
 
-        if (placement > 0 || kills > 0) {
-          lobbyValues.push({ lobby: l, placement, kills });
-        }
+        const placement = hasPos   ? (parseInt(cols[posColIndex])   || 0) : 0;
+        const kills     = hasKills ? (parseInt(cols[killsColIndex]) || 0) : 0;
+
+        lobbyValues.push({ lobby: l, placement, kills });
       }
     } else {
       for (let l = 1; l <= lobbiesCount; l++) {
         const pIdx = 1 + (l - 1) * 2;
         const kIdx = 2 + (l - 1) * 2;
-        
-        const placement = pIdx < cols.length ? parseInt(cols[pIdx]) || 0 : 0;
-        const kills = kIdx < cols.length ? parseInt(cols[kIdx]) || 0 : 0;
 
-        if (placement > 0 || kills > 0) {
-          lobbyValues.push({ lobby: l, placement, kills });
-        }
+        // Only include lobby if at least one positional column exists in this row
+        const hasPos   = pIdx < cols.length;
+        const hasKills = kIdx < cols.length;
+        if (!hasPos && !hasKills) continue;
+
+        const placement = hasPos   ? (parseInt(cols[pIdx]) || 0) : 0;
+        const kills     = hasKills ? (parseInt(cols[kIdx]) || 0) : 0;
+
+        lobbyValues.push({ lobby: l, placement, kills });
       }
     }
 
