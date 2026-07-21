@@ -221,12 +221,24 @@ function parseSmartSpreadsheet(grid) {
         category = getCategory(checkVal) || 'kills'; // Fallback to kills
       }
 
+      // This column was inherited via carry-forward from a blank gap cell (no header
+      // text, no stat sub-header).  Guard against overwriting an already-mapped
+      // slot — blank gap columns between stat groups (e.g. between the KILLS and
+      // DAMAGE super-headers) would otherwise clobber the correctly-assigned column.
+      const isCarryForwardFromBlank = topLobbyMatch === null && cleanVal === '' && cleanSubVal === '';
+
       if (category === 'damage') {
-        lobbies[lobbyNum].damageCol = c;
+        if (!isCarryForwardFromBlank || lobbies[lobbyNum].damageCol === -1) {
+          lobbies[lobbyNum].damageCol = c;
+        }
       } else if (category === 'accuracy') {
-        lobbies[lobbyNum].accuracyCol = c;
+        if (!isCarryForwardFromBlank || lobbies[lobbyNum].accuracyCol === -1) {
+          lobbies[lobbyNum].accuracyCol = c;
+        }
       } else {
-        lobbies[lobbyNum].killsCol = c;
+        if (!isCarryForwardFromBlank || lobbies[lobbyNum].killsCol === -1) {
+          lobbies[lobbyNum].killsCol = c;
+        }
       }
     }
   }
