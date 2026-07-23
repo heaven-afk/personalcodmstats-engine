@@ -145,55 +145,61 @@ function aggregatePlayers(registryPlayers, allPlayerRegs, allPlayerRes) {
   })).filter(p => p.careerMatches > 0 || p.tournamentsCount > 0);
 }
 
+import useSWR from 'swr';
+
+function useGlobalComparisonData() {
+  return useSWR('global-comparison-data', async () => {
+    const [registryTeams, registryPlayers, tournaments] = await Promise.all([
+      getTeams(), getPlayers(), getTournaments(),
+    ]);
+    const [teamRegs, teamRes, teamBonuses, playerRes, playerRegs] = await Promise.all([
+      Promise.all(tournaments.map(t => getTeamRegistrations(t.id))),
+      Promise.all(tournaments.map(t => getTeamMatchResults(t.id))),
+      Promise.all(tournaments.map(t => getBonusPoints(t.id))),
+      Promise.all(tournaments.map(t => getPlayerMatchResults(t.id))),
+      Promise.all(tournaments.map(t => getPlayerRegistrations(t.id))),
+    ]);
+    return {
+      rawRegistryTeams: registryTeams,
+      rawRegistryPlayers: registryPlayers,
+      allTournaments: tournaments,
+      allTeamRegs: teamRegs,
+      allTeamRes: teamRes,
+      allTeamBonuses: teamBonuses,
+      allPlayerRes: playerRes,
+      allPlayerRegs: playerRegs,
+    };
+  }, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000,
+  });
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function ComparisonPage() {
   const [mode, setMode]                       = useState('teams');
   const [scope, setScope]                     = useState('global');   // 'global' | 'tournament'
   const [selectedTournamentId, setSelectedTournamentId] = useState('');
-  const [loading, setLoading]                 = useState(true);
   const [leftId, setLeftId]                   = useState('');
   const [rightId, setRightId]                 = useState('');
   const [activeTab, setActiveTab]             = useState('overview');
 
-  // ── Raw data (loaded once) ────────────────────────────────────────────────
-  const [rawRegistryTeams, setRawRegistryTeams]   = useState([]);
-  const [rawRegistryPlayers, setRawRegistryPlayers] = useState([]);
-  const [allTournaments, setAllTournaments]        = useState([]);
-  const [allTeamRegs, setAllTeamRegs]             = useState([]);
-  const [allTeamRes, setAllTeamRes]               = useState([]);
-  const [allTeamBonuses, setAllTeamBonuses]       = useState([]);
-  const [allPlayerRes, setAllPlayerRes]           = useState([]);
-  const [allPlayerRegs, setAllPlayerRegs]         = useState([]);
+  const { data, error, isLoading } = useGlobalComparisonData();
+
+  const rawRegistryTeams   = data?.rawRegistryTeams   || [];
+  const rawRegistryPlayers = data?.rawRegistryPlayers || [];
+  const allTournaments        = data?.allTournaments        || [];
+  const allTeamRegs             = data?.allTeamRegs             || [];
+  const allTeamRes               = data?.allTeamRes               || [];
+  const allTeamBonuses       = data?.allTeamBonuses       || [];
+  const allPlayerRes           = data?.allPlayerRes           || [];
+  const allPlayerRegs         = data?.allPlayerRegs         || [];
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [registryTeams, registryPlayers, tournaments] = await Promise.all([
-          getTeams(), getPlayers(), getTournaments(),
-        ]);
-        const [teamRegs, teamRes, teamBonuses, playerRes, playerRegs] = await Promise.all([
-          Promise.all(tournaments.map(t => getTeamRegistrations(t.id))),
-          Promise.all(tournaments.map(t => getTeamMatchResults(t.id))),
-          Promise.all(tournaments.map(t => getBonusPoints(t.id))),
-          Promise.all(tournaments.map(t => getPlayerMatchResults(t.id))),
-          Promise.all(tournaments.map(t => getPlayerRegistrations(t.id))),
-        ]);
-        setRawRegistryTeams(registryTeams);
-        setRawRegistryPlayers(registryPlayers);
-        setAllTournaments(tournaments);
-        setAllTeamRegs(teamRegs);
-        setAllTeamRes(teamRes);
-        setAllTeamBonuses(teamBonuses);
-        setAllPlayerRes(playerRes);
-        setAllPlayerRegs(playerRegs);
-      } catch (err) {
-        toast.error('Failed to load comparison data: ' + err.message);
-      } finally {
-        setLoading(false);
-      }
+    if (error) {
+      toast.error('Failed to load comparison data: ' + error.message);
     }
-    load();
-  }, []);
+  }, [error]);
 
   // ── Derive scoped entity lists ────────────────────────────────────────────
   const { teams, players } = useMemo(() => {
@@ -229,7 +235,7 @@ export default function ComparisonPage() {
   // Reset selections when scope/tournament/mode changes
   const resetSelections = () => { setLeftId(''); setRightId(''); setActiveTab('overview'); };
 
-  if (loading) return <LoadingSpinner size="lg" text="Loading comparison data..." />;
+  if (isLoading) return <LoadingSpinner size="lg" text="Loading comparison data..." />;
 
   const selectedTournament = allTournaments.find(t => t.id === selectedTournamentId);
 

@@ -16,6 +16,8 @@ import { BarChart3, ArrowUpDown, ArrowUp, ArrowDown, Shield, AlertTriangle, Trop
 import { cleanImageUrl } from '@/lib/utils/image';
 import toast from 'react-hot-toast';
 
+import useSWR from 'swr';
+
 const BASE_TABS = [
   { key: 'daily',      label: 'Daily' },
   { key: 'season',     label: 'Season' },
@@ -68,18 +70,8 @@ export default function StandingsPage() {
   const router = useRouter();
   const [tab, setTab] = useState('daily');
   const [selectedDay, setSelectedDay] = useState(1);
-  const [loading, setLoading] = useState(true);
-
-  const [teamResults, setTeamResults] = useState([]);
-  const [bonusPoints, setBonusPoints] = useState([]);
-  const [playerResults, setPlayerResults] = useState([]);
-  const [teamRegs, setTeamRegs] = useState([]);
-  const [playerRegs, setPlayerRegs] = useState([]);
-  const [teams, setTeams] = useState([]);
-  const [players, setPlayers] = useState([]);
 
   // Qualifier groups state
-  const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
 
   // Advancement modal state
@@ -93,50 +85,63 @@ export default function StandingsPage() {
 
   const isQualifier = tournament?.type === 'qualifier';
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [tr, bp, pr, tRegs, pRegs, allTeams, allPlayers, gList] = await Promise.all([
-          getTeamMatchResults(tournament.id),
-          getBonusPoints(tournament.id),
-          getPlayerMatchResults(tournament.id),
-          getTeamRegistrations(tournament.id),
-          getPlayerRegistrations(tournament.id),
-          getTeams(),
-          getPlayers(),
-          isQualifier ? getGroups(tournament.id) : Promise.resolve([]),
-        ]);
+  const { data, isLoading, mutate } = useSWR(
+    tournament?.id ? ['tournament-standings', tournament.id, isQualifier] : null,
+    async () => {
+      const [tr, bp, pr, tRegs, pRegs, allTeams, allPlayers, gList] = await Promise.all([
+        getTeamMatchResults(tournament.id),
+        getBonusPoints(tournament.id),
+        getPlayerMatchResults(tournament.id),
+        getTeamRegistrations(tournament.id),
+        getPlayerRegistrations(tournament.id),
+        getTeams(),
+        getPlayers(),
+        isQualifier ? getGroups(tournament.id) : Promise.resolve([]),
+      ]);
 
-        const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
-        const enrichedTeamResults = tr.map((r) => ({
-          ...r,
-          teamName: teamMap[r.teamId]?.teamName || r.teamName || r.teamId,
-          clanName: teamMap[r.teamId]?.clanName || '',
-        }));
-        const enrichedBonuses = bp.map((b) => ({
-          ...b,
-          teamName: teamMap[b.teamId]?.teamName || b.teamId,
-          clanName: teamMap[b.teamId]?.clanName || '',
-        }));
-        setTeamResults(enrichedTeamResults);
-        setBonusPoints(enrichedBonuses);
-        setPlayerResults(pr);
-        setTeamRegs(tRegs);
-        setPlayerRegs(pRegs);
-        setTeams(allTeams);
-        setPlayers(allPlayers);
+      const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
+      const enrichedTeamResults = tr.map((r) => ({
+        ...r,
+        teamName: teamMap[r.teamId]?.teamName || r.teamName || r.teamId,
+        clanName: teamMap[r.teamId]?.clanName || '',
+      }));
+      const enrichedBonuses = bp.map((b) => ({
+        ...b,
+        teamName: teamMap[b.teamId]?.teamName || b.teamId,
+        clanName: teamMap[b.teamId]?.clanName || '',
+      }));
 
-        if (isQualifier) {
-          setGroups(gList);
-          if (gList.length > 0 && !selectedGroupId) {
-            setSelectedGroupId(gList[0].id);
-          }
-        }
-      } catch (err) { console.error(err); }
-      finally { setLoading(false); }
+      return {
+        teamResults: enrichedTeamResults,
+        bonusPoints: enrichedBonuses,
+        playerResults: pr,
+        teamRegs: tRegs,
+        playerRegs: pRegs,
+        teams: allTeams,
+        players: allPlayers,
+        groups: gList,
+      };
+    },
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 60000,
     }
-    load();
-  }, [tournament.id, isQualifier]);
+  );
+
+  const teamResults   = data?.teamResults   || [];
+  const bonusPoints   = data?.bonusPoints   || [];
+  const playerResults = data?.playerResults || [];
+  const teamRegs      = data?.teamRegs      || [];
+  const playerRegs    = data?.playerRegs    || [];
+  const teams         = data?.teams         || [];
+  const players       = data?.players       || [];
+  const groups        = data?.groups        || [];
+
+  useEffect(() => {
+    if (isQualifier && groups.length > 0 && !selectedGroupId) {
+      setSelectedGroupId(groups[0].id);
+    }
+  }, [isQualifier, groups, selectedGroupId]);
 
   const selectedGroup = isQualifier ? groups.find(g => g.id === selectedGroupId) : null;
   const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
@@ -281,12 +286,7 @@ export default function StandingsPage() {
 
         toast.success(`Advanced ${advancingTeams.length} teams into target group!`);
         setShowAdvancementModal(false);
-        const updatedGroups = await getGroups(tournament.id);
-        setGroups(updatedGroups);
-        const updatedTR = await getTeamRegistrations(tournament.id);
-        setTeamRegs(updatedTR);
-        const updatedPR = await getPlayerRegistrations(tournament.id);
-        setPlayerRegs(updatedPR);
+        await mutate();
 
       } else {
         // Option B: Advance into a new Standard tournament
@@ -362,7 +362,7 @@ export default function StandingsPage() {
     return false;
   }, [teamResults, playerResults]);
 
-  if (loading) return <LoadingSpinner size="lg" />;
+  if (isLoading) return <LoadingSpinner size="lg" text="Loading standings..." />;
 
   const renderTeamTable = (data, showRank = false, isTeamRankTab = false) => (
     <TeamTable

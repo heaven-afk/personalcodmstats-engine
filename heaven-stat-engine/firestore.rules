@@ -1,8 +1,76 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ─── Access functions ──────────────────────────────────────────────
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email == 'ogadizion01@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isAuthorizedDesigner() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          'designer1@example.com',   // REPLACE with a real designer/collaborator email
+          'designer2@example.com'    // add or remove entries as needed
+        ];
+    }
+
+    function isOwnerOrDesigner() {
+      return isOwner() || isAuthorizedDesigner();
+    }
+
+    // ─── Overlay Engine collections ────────────────────────────────────
+    // Public reads preserved (required for OBS Browser Source to render
+    // without logging in). Writes allowed for the owner OR any listed designer.
+    match /overlayTemplates/{templateId} {
+      allow read: if true;
+      allow write: if isOwnerOrDesigner();
+    }
+
+    match /overlaySlots/{slotId} {
+      allow read: if true;
+      allow write: if isOwnerOrDesigner();
+    }
+
+    match /overlayDataFieldCatalog/{catalogId} {
+      allow read: if true;
+      allow write: if isOwnerOrDesigner();
+    }
+
+    // ─── Heaven Stat Engine's own data ─────────────────────────────────
+    // Public reads preserved (Overlay Engine's public render page and OBS
+    // need to read team names/logos/tournament data without logging in).
+    // Writes restricted to the owner ONLY — this is Heaven's own analytics
+    // data; no designer/collaborator should ever create or edit it.
+    match /tournaments/{tournamentId}/{document=**} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /teams/{teamId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /players/{playerId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /clans/{clanId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    // ─── Fallback rule for anything else — strictest default ──────────
+    // Any collection not explicitly listed above defaults to owner-only,
+    // both read and write. This is the safe default for anything new
+    // added later that hasn't been explicitly opened up.
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isOwner();
     }
   }
 }

@@ -2,8 +2,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import Wordmark from '@/components/ui/Wordmark';
 import {
-  LayoutDashboard, Trophy, Users, Shield, Swords, BarChart3, Settings, LogOut, Zap, GitCompare, FlaskConical, X
+  LayoutDashboard, Trophy, Users, Shield, BarChart3, Settings, LogOut, GitCompare, FlaskConical, X
 } from 'lucide-react';
 
 const NAV = [
@@ -41,32 +42,29 @@ export default function Sidebar({ mobileOpen, onClose }) {
         <X size={20} />
       </button>
 
-      {/* Logo */}
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-icon">
-          <Zap size={20} className="text-black" />
-        </div>
-        <div>
-          <div className="sidebar-logo-title">Heaven</div>
-          <div className="sidebar-logo-sub">Stat Engine</div>
-        </div>
+      {/* Logo Wordmark Header */}
+      <div className="sidebar-logo" style={{ padding: '24px 18px 20px' }}>
+        <Wordmark size="sm" />
       </div>
 
       <div className="sidebar-divider" />
 
       {/* Navigation */}
       <nav className="sidebar-nav">
-        {NAV.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            onClick={onClose}
-            className={`sidebar-link ${isActive(href) ? 'active' : ''}`}
-          >
-            <Icon size={17} />
-            <span>{label}</span>
-          </Link>
-        ))}
+        {NAV.map(({ href, label, icon: Icon }) => {
+          const active = isActive(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              onClick={onClose}
+              className={`sidebar-link ${active ? 'active' : ''}`}
+            >
+              <Icon size={17} style={{ color: active ? 'var(--gold)' : 'inherit' }} />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="sidebar-spacer" />
@@ -75,7 +73,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
       {/* Bottom */}
       <div className="sidebar-bottom">
         <Link href="/settings" onClick={onClose} className={`sidebar-link ${pathname === '/settings' ? 'active' : ''}`}>
-          <Settings size={17} />
+          <Settings size={17} style={{ color: pathname === '/settings' ? 'var(--gold)' : 'inherit' }} />
           <span>Settings</span>
         </Link>
         <button className="sidebar-link sidebar-logout" onClick={() => { onClose?.(); logout(); }}>
