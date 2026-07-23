@@ -26,14 +26,18 @@ export async function createTournament(data) {
   if (!isFirebaseConfigured) {
     return localDb.localCreateTournament(data);
   }
-  const ref = await addDoc(collection(db, 'tournaments'), {
+  const payload = {
     name: '', season: '', description: '', status: 'setup',
+    type: data.type || 'standard',
     createdAt: serverTimestamp(), completedAt: null,
-    structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
     scoring: { killPointValue: 2, placementPoints: [], bonusTypes: [] },
     ...data,
-  });
-  return { id: ref.id, ...data };
+  };
+  if (payload.type === 'standard' && !payload.structure) {
+    payload.structure = { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] };
+  }
+  const ref = await addDoc(collection(db, 'tournaments'), payload);
+  return { id: ref.id, ...payload };
 }
 
 export async function updateTournament(id, data) {

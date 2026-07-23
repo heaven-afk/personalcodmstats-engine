@@ -7,6 +7,7 @@ import {
   getPlayerRegistrations, addPlayerRegistration, updatePlayerRegistration, deletePlayerRegistration,
   clearAllTeamRegistrations, clearAllPlayerRegistrations,
 } from '@/lib/firestore/tournaments';
+import { getGroups } from '@/lib/firestore/groups';
 import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer, deletePlayer, deleteTeam } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
 import Modal from '@/components/ui/Modal';
@@ -342,28 +343,52 @@ export default function RegisterPage() {
   const [globalTeams, setGlobalTeams] = useState([]);
   const [globalPlayers, setGlobalPlayers] = useState([]);
 
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+
   const [importProgress, setImportProgress] = useState(null);
 
-  const classes = tournament?.structure?.playerClasses || [];
-
   const refresh = useCallback(async () => {
-    const [tr, pr, gt, gp] = await Promise.all([
+    const isQualifier = tournament?.type === 'qualifier';
+    const [tr, pr, gt, gp, gList] = await Promise.all([
       getTeamRegistrations(id),
       getPlayerRegistrations(id),
       getTeams(),
       getPlayers(),
+      isQualifier ? getGroups(id) : Promise.resolve([]),
     ]);
     setTeamRegs(tr);
     setPlayerRegs(pr);
     setGlobalTeams(gt);
     setGlobalPlayers(gp);
-  }, [id]);
+    if (isQualifier) {
+      setGroups(gList);
+      if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
+        setSelectedGroupId(gList[0].id);
+      }
+    }
+  }, [id, tournament?.type, selectedGroupId]);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
   }, [refresh]);
 
   if (loading) return <LoadingSpinner size="lg" text="Loading registrations..." />;
+
+  const isQualifier = tournament?.type === 'qualifier';
+
+  const displayedTeamRegs = isQualifier && selectedGroupId
+    ? teamRegs.filter(r => r.groupId === selectedGroupId)
+    : teamRegs;
+
+  const displayedPlayerRegs = isQualifier && selectedGroupId
+    ? playerRegs.filter(r => r.groupId === selectedGroupId)
+    : playerRegs;
+
+  const activeGroup = groups.find(g => g.id === selectedGroupId);
+  const classes = isQualifier
+    ? (activeGroup?.structure?.playerClasses || [])
+    : (tournament?.structure?.playerClasses || []);
 
   return (
     <div>
@@ -374,34 +399,57 @@ export default function RegisterPage() {
         </div>
       </div>
 
+      {isQualifier && groups.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, padding: '14px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--gold)' }}>Select Group:</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {groups.map(g => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setSelectedGroupId(g.id)}
+                  className={`btn btn-sm ${selectedGroupId === g.id ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontWeight: selectedGroupId === g.id ? 700 : 500 }}
+                >
+                  {g.groupName}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="tab-bar">
         <button className={`tab ${tab === 'teams' ? 'active' : ''}`} onClick={() => setTab('teams')}>
-          <Shield size={14} style={{ marginRight: 6 }} /> Teams ({teamRegs.length})
+          <Shield size={14} style={{ marginRight: 6 }} /> Teams ({displayedTeamRegs.length})
         </button>
         <button className={`tab ${tab === 'players' ? 'active' : ''}`} onClick={() => setTab('players')}>
-          <Users size={14} style={{ marginRight: 6 }} /> Players ({playerRegs.length})
+          <Users size={14} style={{ marginRight: 6 }} /> Players ({displayedPlayerRegs.length})
         </button>
       </div>
 
       {tab === 'teams' && (
         <TeamRegistrationPanel
           tournamentId={id}
-          registrations={teamRegs}
+          registrations={displayedTeamRegs}
           globalTeams={globalTeams}
           onRefresh={refresh}
           setImportProgress={setImportProgress}
+          selectedGroupId={isQualifier ? selectedGroupId : null}
         />
       )}
       {tab === 'players' && (
         <PlayerRegistrationPanel
           tournamentId={id}
-          registrations={playerRegs}
-          teamRegistrations={teamRegs}
+          registrations={displayedPlayerRegs}
+          teamRegistrations={displayedTeamRegs}
           globalPlayers={globalPlayers}
           globalTeams={globalTeams}
           classes={classes}
           onRefresh={refresh}
           setImportProgress={setImportProgress}
+          selectedGroupId={isQualifier ? selectedGroupId : null}
         />
       )}
 
@@ -495,7 +543,7 @@ function useSheetUpload(onImport) {
 }
 
 // ─── Team Registration Panel ─────────────────────────────────────────────────
-function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress }) {
+function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress, selectedGroupId }) {
   const [addingRow, setAddingRow] = useState(false);
   const [newTeam, setNewTeam] = useState({ slot: '', teamName: '', clanName: '', tier: '' });
   const [teamSearch, setTeamSearch] = useState('');
@@ -584,6 +632,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
           clanName: team.clanName,
           slot: item.slot,
           tier: item.tier,
+          ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
         });
         added++;
         if (setImportProgress) setImportProgress(Math.round(((i + 1) / total) * 100));
@@ -618,6 +667,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
           clanName: exact.clanName || clan,
           slot,
           tier,
+          ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
         });
         toast.success(`${exact.teamName} linked and registered`);
         setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
@@ -662,6 +712,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
         clanName: team.clanName,
         slot,
         tier,
+        ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
       });
       toast.success(`${team.teamName} registered`);
       setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
@@ -1215,6 +1266,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           country: item.country || player.country || '',
           device: item.device || player.device || '',
           deviceModel: item.deviceModel || player.deviceModel || '',
+          ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
         });
 
         added++;
@@ -1279,6 +1331,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         country: player.country || '',
         device: player.device || '',
         deviceModel: player.deviceModel || '',
+        ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
       });
       toast.success(`${player.professionalName || player.ign} registered`);
       setNewPlayer(p => ({ ...p, slot: '', professionalName: '', ign: '' }));

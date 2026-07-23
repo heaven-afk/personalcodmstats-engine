@@ -194,11 +194,14 @@ export function localCreateTournament(data) {
   const newT = {
     id,
     name: '', season: '', description: '', status: 'setup',
+    type: data.type || 'standard',
     createdAt: mockTimestamp(), completedAt: null,
-    structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
     scoring: { killPointValue: 2, placementPoints: [], bonusTypes: [] },
     ...data
   };
+  if (newT.type === 'standard' && !newT.structure) {
+    newT.structure = { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] };
+  }
   list.unshift(newT);
   setStorageItem('heaven_tournaments', list);
   return newT;
@@ -226,12 +229,55 @@ export function localDeleteTournament(id) {
 
   // Clean up associated local storage keys
   if (isBrowser) {
+    localStorage.removeItem(`heaven_groups_${id}`);
     localStorage.removeItem(`heaven_regs_teams_${id}`);
     localStorage.removeItem(`heaven_regs_players_${id}`);
     localStorage.removeItem(`heaven_results_teams_${id}`);
     localStorage.removeItem(`heaven_results_players_${id}`);
     localStorage.removeItem(`heaven_bonus_${id}`);
   }
+}
+
+// Groups
+export function localGetGroups(tId) {
+  return getStorageItem(`heaven_groups_${tId}`);
+}
+
+export function localGetGroup(tId, groupId) {
+  const list = localGetGroups(tId);
+  return list.find(g => g.id === groupId) || null;
+}
+
+export function localCreateGroup(tId, data) {
+  const list = localGetGroups(tId);
+  const id = 'g_' + Math.random().toString(36).substr(2, 9);
+  const newG = {
+    id,
+    groupName: '',
+    structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
+    advancementCount: 2,
+    status: 'setup',
+    createdAt: mockTimestamp(),
+    ...data,
+  };
+  list.push(newG);
+  setStorageItem(`heaven_groups_${tId}`, list);
+  return newG;
+}
+
+export function localUpdateGroup(tId, groupId, data) {
+  const list = localGetGroups(tId);
+  const index = list.findIndex(g => g.id === groupId);
+  if (index !== -1) {
+    list[index] = { ...list[index], ...data };
+    setStorageItem(`heaven_groups_${tId}`, list);
+  }
+}
+
+export function localDeleteGroup(tId, groupId) {
+  let list = localGetGroups(tId);
+  list = list.filter(g => g.id !== groupId);
+  setStorageItem(`heaven_groups_${tId}`, list);
 }
 
 // Team Registrations

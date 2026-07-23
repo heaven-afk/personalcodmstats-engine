@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createTournament } from '@/lib/firestore/tournaments';
+import { createGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
 import { ChevronRight, ChevronLeft, Plus, Trash2, Check, Zap, AlignJustify, Layers, FileSpreadsheet } from 'lucide-react';
 import ScoringConfigEditor, { DEFAULT_PLACEMENT_POINTS, SCORING_PRESETS } from '@/components/ui/ScoringConfigEditor';
@@ -107,24 +108,92 @@ export default function CreateTournamentPage() {
   const removeBonus = (i) => setBonusTypes(b => b.filter((_, j) => j !== i));
   const updateBonus = (i, val) => setBonusTypes(b => b.map((bt, j) => j === i ? { name: val } : bt));
 
+  // Tournament Type ('standard' | 'qualifier')
+  const [tournamentType, setTournamentType] = useState('standard');
+  const [qualifierGroups, setQualifierGroups] = useState([
+    {
+      groupName: 'Group A',
+      structure: {
+        totalDays: 6,
+        lobbiesPerDay: 4,
+        playerClasses: [
+          { className: 'Class 1', activeDays: [1,2,3,4,5,6], badgeColor: '#C00000' },
+          { className: 'Class 2', activeDays: [3,4,5], badgeColor: '#00B0F0' },
+        ],
+      },
+      advancementCount: 2,
+      status: 'setup',
+    },
+    {
+      groupName: 'Group B',
+      structure: {
+        totalDays: 6,
+        lobbiesPerDay: 4,
+        playerClasses: [
+          { className: 'Class 1', activeDays: [1,2,3,4,5,6], badgeColor: '#C00000' },
+          { className: 'Class 2', activeDays: [3,4,5], badgeColor: '#00B0F0' },
+        ],
+      },
+      advancementCount: 2,
+      status: 'setup',
+    },
+  ]);
+
+  const addQualifierGroup = () => {
+    const nextChar = String.fromCharCode(65 + qualifierGroups.length);
+    setQualifierGroups(prev => [
+      ...prev,
+      {
+        groupName: `Group ${nextChar}`,
+        structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
+        advancementCount: 2,
+        status: 'setup',
+      }
+    ]);
+  };
+  const removeQualifierGroup = (idx) => setQualifierGroups(prev => prev.filter((_, i) => i !== idx));
+  const updateQualifierGroup = (idx, field, val) => setQualifierGroups(prev => prev.map((g, i) => i === idx ? { ...g, [field]: val } : g));
+  const updateQualifierGroupStructure = (idx, field, val) => setQualifierGroups(prev => prev.map((g, i) => i === idx ? { ...g, structure: { ...g.structure, [field]: val } } : g));
+
   const handleCreate = async () => {
     if (!name.trim()) { toast.error('Tournament name is required'); setStep(1); return; }
+    if (tournamentType === 'qualifier' && qualifierGroups.length === 0) {
+      toast.error('At least one group is required for a Qualifier tournament');
+      setStep(2);
+      return;
+    }
     setSaving(true);
     try {
-      const t = await createTournament({
+      const tournamentPayload = {
         name: name.trim(),
         season: season.trim(),
         description: description.trim(),
+        type: tournamentType,
         banner: bannerSource === 'upload' ? banner : '',
         bannerUrl: bannerSource === 'url' ? bannerUrl.trim() : '',
         format,
-        structure: { totalDays: Number(totalDays), lobbiesPerDay: Number(lobbiesPerDay), playerClasses },
         scoring: {
           killPointValue: Number(killPointValue),
           placementPoints: placementPoints.filter(pp => pp.position > 0),
           bonusTypes: bonusTypes.filter(bt => bt.name.trim()),
         },
-      });
+      };
+
+      if (tournamentType === 'standard') {
+        tournamentPayload.structure = {
+          totalDays: Number(totalDays),
+          lobbiesPerDay: Number(lobbiesPerDay),
+          playerClasses,
+        };
+      }
+
+      const t = await createTournament(tournamentPayload);
+
+      if (tournamentType === 'qualifier') {
+        for (const g of qualifierGroups) {
+          await createGroup(t.id, g);
+        }
+      }
 
       // Bulk import any files uploaded during creation
       if (createMode === 'import' && importFiles.length > 0) {
@@ -161,7 +230,7 @@ export default function CreateTournamentPage() {
     }
   };
 
-  const STEPS = ['Basic Info', 'Structure', 'Scoring'];
+  const STEPS = ['Basic Info', tournamentType === 'qualifier' ? 'Groups' : 'Structure', 'Scoring'];
 
   return (
     <div style={{ maxWidth: 760, margin: '0 auto' }}>
@@ -170,6 +239,35 @@ export default function CreateTournamentPage() {
           <h1 className="page-title">Create Tournament</h1>
           <p className="page-subtitle">Set up a new event from scratch</p>
         </div>
+      </div>
+
+      {/* Tournament Type Selector (Standard vs Qualifier) */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+        {[
+          { id: 'standard', label: 'Standard Tournament', desc: 'Single tournament structure shared across all teams' },
+          { id: 'qualifier', label: 'Qualifier Tournament', desc: 'Multiple independent groups with individual schedules & shared kill table' }
+        ].map(({ id: typeId, label, desc }) => (
+          <button
+            key={typeId}
+            type="button"
+            onClick={() => setTournamentType(typeId)}
+            style={{
+              flex: 1,
+              padding: '12px 16px',
+              borderRadius: 10,
+              cursor: 'pointer',
+              textAlign: 'left',
+              border: `2px solid ${tournamentType === typeId ? 'var(--gold)' : 'var(--border-md)'}`,
+              background: tournamentType === typeId ? 'rgba(201,168,76,0.12)' : 'var(--bg-alt-row)',
+              transition: 'all 0.15s',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: tournamentType === typeId ? 'var(--gold)' : 'var(--text-primary)', marginBottom: 2 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{desc}</div>
+          </button>
+        ))}
       </div>
 
       {/* Mode selector */}
@@ -388,8 +486,8 @@ export default function CreateTournamentPage() {
           </div>
         )}
 
-        {/* ─── Step 2: Structure ─────────────────────────────────── */}
-        {step === 2 && (
+        {/* ─── Step 2: Structure (Standard) or Groups (Qualifier) ─── */}
+        {step === 2 && tournamentType === 'standard' && (
           <div className="flex-col">
             <h2 className="card-title" style={{ marginBottom: 4 }}>Event Structure</h2>
             <div className="grid-2">
@@ -441,6 +539,76 @@ export default function CreateTournamentPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {step === 2 && tournamentType === 'qualifier' && (
+          <div className="flex-col">
+            <div className="flex-between" style={{ marginBottom: 16 }}>
+              <div>
+                <h2 className="card-title" style={{ marginBottom: 4 }}>Qualifier Groups</h2>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Define independent groups. Each group has its own day count, lobby count, and advancement count.
+                </p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={addQualifierGroup}>
+                <Plus size={13} /> Add Group
+              </button>
+            </div>
+
+            {qualifierGroups.map((g, idx) => (
+              <div key={idx} style={{ background: 'var(--bg-alt-row)', border: '1px solid var(--border-md)', borderRadius: 10, padding: 16, marginBottom: 14 }}>
+                <div className="flex-between" style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1 }}>
+                    <input
+                      className="form-input"
+                      style={{ fontWeight: 700, width: 220 }}
+                      value={g.groupName}
+                      onChange={e => updateQualifierGroup(idx, 'groupName', e.target.value)}
+                      placeholder="Group Name (e.g. Group A)"
+                    />
+                  </div>
+                  {qualifierGroups.length > 1 && (
+                    <button type="button" className="btn btn-ghost" onClick={() => removeQualifierGroup(idx)}>
+                      <Trash2 size={14} style={{ color: 'var(--danger)' }} />
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div className="form-field">
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Total Days</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min={1} max={14}
+                      value={g.structure.totalDays}
+                      onChange={e => updateQualifierGroupStructure(idx, 'totalDays', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Lobbies Per Day</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min={1} max={10}
+                      value={g.structure.lobbiesPerDay}
+                      onChange={e => updateQualifierGroupStructure(idx, 'lobbiesPerDay', Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Advancing Teams Count</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min={1} max={50}
+                      value={g.advancementCount}
+                      onChange={e => updateQualifierGroup(idx, 'advancementCount', Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

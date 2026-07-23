@@ -56,6 +56,20 @@ export async function deleteTeamMatchResult(tournamentId, resultId) {
   await deleteDoc(doc(db, 'tournaments', tournamentId, 'teamMatchResults', resultId));
 }
 
+export async function getTeamMatchResultsByGroup(tournamentId, groupId) {
+  if (!isFirebaseConfigured) {
+    const list = await getTeamMatchResults(tournamentId);
+    return list.filter(r => r.groupId === groupId);
+  }
+  const snap = await getDocs(
+    query(
+      collection(db, 'tournaments', tournamentId, 'teamMatchResults'),
+      where('groupId', '==', groupId)
+    )
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
 // ─── Player Match Results ─────────────────────────────────────────────────────
 export async function getPlayerMatchResults(tournamentId) {
   if (!isFirebaseConfigured) {
@@ -63,6 +77,20 @@ export async function getPlayerMatchResults(tournamentId) {
   }
   const snap = await getDocs(
     query(collection(db, 'tournaments', tournamentId, 'playerMatchResults'), orderBy('day'), orderBy('lobby'))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function getPlayerMatchResultsByGroup(tournamentId, groupId) {
+  if (!isFirebaseConfigured) {
+    const list = await getPlayerMatchResults(tournamentId);
+    return list.filter(r => r.groupId === groupId);
+  }
+  const snap = await getDocs(
+    query(
+      collection(db, 'tournaments', tournamentId, 'playerMatchResults'),
+      where('groupId', '==', groupId)
+    )
   );
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
@@ -114,6 +142,20 @@ export async function getBonusPoints(tournamentId) {
   }
   const snap = await getDocs(
     query(collection(db, 'tournaments', tournamentId, 'bonusPoints'), orderBy('day'), orderBy('teamId'))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function getBonusPointsByGroup(tournamentId, groupId) {
+  if (!isFirebaseConfigured) {
+    const list = await getBonusPoints(tournamentId);
+    return list.filter(b => b.groupId === groupId);
+  }
+  const snap = await getDocs(
+    query(
+      collection(db, 'tournaments', tournamentId, 'bonusPoints'),
+      where('groupId', '==', groupId)
+    )
   );
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }

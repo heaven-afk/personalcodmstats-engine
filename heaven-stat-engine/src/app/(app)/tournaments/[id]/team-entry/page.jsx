@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, deleteTeamMatchResult, getBonusPoints, addBonusPoint, updateBonusPoint, deleteBonusPoint } from '@/lib/firestore/matchData';
 import { getTeamRegistrations } from '@/lib/firestore/tournaments';
+import { getGroups } from '@/lib/firestore/groups';
 import { computeDailyStandings } from '@/lib/engine/standings';
 import { getPlacementPoints } from '@/lib/engine/scoring';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -165,6 +166,11 @@ export default function TeamEntryPage() {
   const [showRef, setShowRef] = useState(false);
   const [saving, setSaving] = useState({});
 
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+
+  const isQualifier = tournament?.type === 'qualifier';
+
   // Lock state — persisted per tournament + day in localStorage
   const lockKey = id ? `lock_team_${id}_day${day}` : null;
   const [isLocked, setIsLocked] = useState(false);
@@ -209,23 +215,48 @@ export default function TeamEntryPage() {
   const [isOcrMode, setIsOcrMode] = useState(false);
   const ocrFileRef = useRef(null);
 
-  const { structure = {}, scoring = {} } = tournament;
-  const totalDays = structure.totalDays || 6;
-  const lobbiesPerDay = structure.lobbiesPerDay || 4;
-  const { killPointValue = 2, placementPoints = [], bonusTypes = [] } = scoring;
-
   const refresh = useCallback(async () => {
-    const [regs, results, bonus] = await Promise.all([
+    const isQual = tournament?.type === 'qualifier';
+    const [regs, results, bonus, gList] = await Promise.all([
       getTeamRegistrations(id),
       getTeamMatchResults(id),
       getBonusPoints(id),
+      isQual ? getGroups(id) : Promise.resolve([]),
     ]);
     setTeamRegs(regs);
     setAllResults(results);
     setAllBonus(bonus);
-  }, [id]);
+    if (isQual) {
+      setGroups(gList);
+      if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
+        setSelectedGroupId(gList[0].id);
+      }
+    }
+  }, [id, tournament?.type, selectedGroupId]);
 
   useEffect(() => { refresh().finally(() => setLoading(false)); }, [refresh]);
+
+  const selectedGroup = isQualifier ? groups.find(g => g.id === selectedGroupId) : null;
+  const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
+  const totalDays = activeStructure.totalDays || 6;
+  const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
+  const { scoring = {} } = tournament;
+  const { killPointValue = 2, placementPoints = [], bonusTypes = [] } = scoring;
+
+  const activeTeamRegs = useMemo(() => {
+    if (!isQualifier || !selectedGroupId) return teamRegs;
+    return teamRegs.filter(r => r.groupId === selectedGroupId);
+  }, [teamRegs, isQualifier, selectedGroupId]);
+
+  const activeResults = useMemo(() => {
+    if (!isQualifier || !selectedGroupId) return allResults;
+    return allResults.filter(r => r.groupId === selectedGroupId);
+  }, [allResults, isQualifier, selectedGroupId]);
+
+  const activeBonus = useMemo(() => {
+    if (!isQualifier || !selectedGroupId) return allBonus;
+    return allBonus.filter(b => b.groupId === selectedGroupId);
+  }, [allBonus, isQualifier, selectedGroupId]);
 
   // Live preview parse effect
   useEffect(() => {
@@ -234,14 +265,14 @@ export default function TeamEntryPage() {
       setPasteErrors([]);
       return;
     }
-    const { results, errors } = parseTeamEntryPaste(pasteText, teamRegs, lobbiesPerDay);
+    const { results, errors } = parseTeamEntryPaste(pasteText, activeTeamRegs, lobbiesPerDay);
     setParsedPreview(results);
     setPasteErrors(errors);
-  }, [pasteText, teamRegs, lobbiesPerDay]);
+  }, [pasteText, activeTeamRegs, lobbiesPerDay]);
 
   // Build a lookup: teamId → lobbyNum → { result }
-  const dayResults = useMemo(() => allResults.filter(r => r.day === day), [allResults, day]);
-  const dayBonus = useMemo(() => allBonus.filter(b => b.day === day), [allBonus, day]);
+  const dayResults = useMemo(() => activeResults.filter(r => r.day === day), [activeResults, day]);
+  const dayBonus = useMemo(() => activeBonus.filter(b => b.day === day), [activeBonus, day]);
 
   const getResult = (teamId, lobby) => dayResults.find(r => r.teamId === teamId && r.lobby === lobby);
 
@@ -259,7 +290,16 @@ export default function TeamEntryPage() {
           r.id === existing.id ? { ...r, [field]: numVal } : r
         ));
       } else {
-        const saved = await saveTeamMatchResult(id, { teamId, teamName: teamRegs.find(t => t.teamId === teamId)?.teamName || teamId, day, lobby, placement: 0, kills: 0, [field]: numVal });
+        const saved = await saveTeamMatchResult(id, {
+          teamId,
+          teamName: activeTeamRegs.find(t => t.teamId === teamId)?.teamName || teamId,
+          day,
+          lobby,
+          placement: 0,
+          kills: 0,
+          [field]: numVal,
+          ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {})
+        });
         setAllResults(prev => [...prev, saved]);
       }
     } catch (e) { toast.error(e.message); await refresh(); }
@@ -732,13 +772,13 @@ export default function TeamEntryPage() {
   const standingsData = useMemo(() => {
     const enriched = [...dayResults.map(r => ({
       ...r,
-      teamName: teamRegs.find(t => t.teamId === r.teamId)?.teamName || r.teamId,
-      clanName: teamRegs.find(t => t.teamId === r.teamId)?.clanName || '',
+      teamName: activeTeamRegs.find(t => t.teamId === r.teamId)?.teamName || r.teamId,
+      clanName: activeTeamRegs.find(t => t.teamId === r.teamId)?.clanName || '',
     }))];
 
     // For any registered team that doesn't have any results in enriched,
     // inject a dummy result so they appear in computeDailyStandings
-    for (const reg of teamRegs) {
+    for (const reg of activeTeamRegs) {
       const hasResult = enriched.some(r => r.teamId === reg.teamId);
       if (!hasResult) {
         enriched.push({
@@ -755,7 +795,7 @@ export default function TeamEntryPage() {
     }
 
     return computeDailyStandings(enriched, dayBonus, scoring, day);
-  }, [dayResults, dayBonus, teamRegs, scoring, day]);
+  }, [dayResults, dayBonus, activeTeamRegs, scoring, day]);
 
   if (loading) return <LoadingSpinner size="lg" text="Loading team data..." />;
 
@@ -837,6 +877,28 @@ export default function TeamEntryPage() {
         </div>
       </div>
 
+      {/* Group Selector for Qualifier tournaments */}
+      {isQualifier && groups.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--gold)' }}>Select Group:</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {groups.map(g => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => { setSelectedGroupId(g.id); setDay(1); }}
+                  className={`btn btn-sm ${selectedGroupId === g.id ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontWeight: selectedGroupId === g.id ? 700 : 500 }}
+                >
+                  {g.groupName}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Day selector */}
       <div className="tab-bar" style={{ marginBottom: 20 }}>
         {Array.from({ length: totalDays }, (_, i) => i + 1).map(d => (
@@ -873,7 +935,7 @@ export default function TeamEntryPage() {
           <div className="data-table-container">
             <div className="data-table-toolbar">
               <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Day {day} — Match Entry</span>
-              <span className="data-table-count">{teamRegs.length} teams</span>
+              <span className="data-table-count">{activeTeamRegs.length} teams</span>
               {isLocked && (
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,

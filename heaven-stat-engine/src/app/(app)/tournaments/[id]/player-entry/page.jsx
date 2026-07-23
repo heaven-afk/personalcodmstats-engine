@@ -5,6 +5,7 @@ import {
   getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
 } from '@/lib/firestore/matchData';
 import { getPlayerRegistrations, getTeamRegistrations } from '@/lib/firestore/tournaments';
+import { getGroups } from '@/lib/firestore/groups';
 import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge } from '@/components/ui/Badge';
@@ -709,10 +710,16 @@ export default function PlayerEntryPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pasteText, playerRegs, players]);
 
-  const { structure = {}, scoring = {} } = tournament;
-  const totalDays = structure.totalDays || 6;
-  const lobbiesPerDay = structure.lobbiesPerDay || 4;
-  const playerClasses = structure.playerClasses || [];
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+
+  const isQualifier = tournament?.type === 'qualifier';
+
+  const selectedGroup = isQualifier ? groups.find(g => g.id === selectedGroupId) : null;
+  const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
+  const totalDays = activeStructure.totalDays || 6;
+  const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
+  const playerClasses = activeStructure.playerClasses || [];
   const maxLobbies = lobbiesPerDay; // L1, L2, L3...
 
   // formData: playerId → { kills: {L1,L2,L3,...}, damage: {L1,L2,...}, accuracy: {L1,L2,...}, existingId }
@@ -732,14 +739,26 @@ export default function PlayerEntryPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [regs, allPlayers, results, teamRegs] = await Promise.all([
+      const [regs, allPlayers, results, teamRegs, gList] = await Promise.all([
         getPlayerRegistrations(tournament.id),
         getPlayers(),
         getPlayerMatchResultsByDayLobby(tournament.id, day, lobby),
         getTeamRegistrations(tournament.id),
+        isQualifier ? getGroups(tournament.id) : Promise.resolve([]),
       ]);
 
-      const enrichedRegs = regs.map(reg => {
+      if (isQualifier) {
+        setGroups(gList);
+        if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
+          setSelectedGroupId(gList[0].id);
+        }
+      }
+
+      const activeGroupRegs = (isQualifier && selectedGroupId)
+        ? regs.filter(r => r.groupId === selectedGroupId)
+        : regs;
+
+      const enrichedRegs = activeGroupRegs.map(reg => {
         const teamReg = teamRegs.find(t => t.teamId === reg.teamId || (reg.teamName && t.teamName?.toLowerCase() === reg.teamName.toLowerCase()));
         return {
           ...reg,
@@ -770,7 +789,7 @@ export default function PlayerEntryPage() {
       setFormData(fd);
     } catch (err) { toast.error('Load failed'); console.error(err); }
     finally { setLoading(false); }
-  }, [tournament.id, day, lobby]);
+  }, [tournament.id, day, lobby, isQualifier, selectedGroupId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -802,6 +821,7 @@ export default function PlayerEntryPage() {
       kills: isKillsEmpty ? null : (parseInt(row.kills) ?? 0),
       damage: isDamageEmpty ? null : (parseFloat(row.damage) ?? 0),
       accuracy: isAccuracyEmpty ? null : (parseFloat(row.accuracy) ?? 0),
+      ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {}),
     };
     try {
       if (row.existingId) {
@@ -1406,6 +1426,28 @@ export default function PlayerEntryPage() {
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Group Selector for Qualifier tournaments */}
+      {isQualifier && groups.length > 0 && (
+        <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--gold)' }}>Select Group:</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {groups.map(g => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => { setSelectedGroupId(g.id); setDay(1); setLobby(1); }}
+                  className={`btn btn-sm ${selectedGroupId === g.id ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontWeight: selectedGroupId === g.id ? 700 : 500 }}
+                >
+                  {g.groupName}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
