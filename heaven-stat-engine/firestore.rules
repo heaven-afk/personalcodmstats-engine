@@ -5,13 +5,11 @@ service cloud.firestore {
     // ─── Access functions ──────────────────────────────────────────────
     function isOwner() {
       return request.auth != null
-        && request.auth.token.email == 'ogadizion01@gmail.com'
-        && request.auth.token.email_verified == true;
+        && request.auth.token.email == 'ogadizion01@gmail.com';
     }
 
     function isAuthorizedDesigner() {
       return request.auth != null
-        && request.auth.token.email_verified == true
         && request.auth.token.email in [
           'designer1@example.com',   // REPLACE with a real designer/collaborator email
           'designer2@example.com'    // add or remove entries as needed
