@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getPlayerMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
+import { getGroups } from '@/lib/firestore/groups';
 import { computeTeamRanking, computeClanRanking, computeDailyStandings } from '@/lib/engine/standings';
 import { computePlayerStats } from '@/lib/engine/playerStats';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
@@ -11,7 +12,7 @@ import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
-import { Download, Copy, Table, List, Settings } from 'lucide-react';
+import { Download, Copy, Table, List } from 'lucide-react';
 
 const PRESETS = [
   { id: 'top-players-set1', name: 'Top Players (Class 1)', desc: 'Players in Class 1 sorted by total kills.' },
@@ -21,18 +22,21 @@ const PRESETS = [
   { id: 'player-roster',    name: 'Full Player Roster',     desc: 'List of all registered players and their setup details.' },
   { id: 'team-registry',    name: 'Full Team Registry',     desc: 'List of all registered teams and their setup details.' },
   { id: 'team-analytics',   name: 'Full Team Analytics',    desc: 'Enriched analytics including PPM, KPM, consistency, rating and playstyle labels.' },
-  { id: 'daily-pts-matrix', name: 'Daily Points Matrix',    desc: 'Day-by-day (D1-D6) breakdown of points for all teams.' },
+  { id: 'daily-pts-matrix', name: 'Daily Points Matrix',    desc: 'Day-by-day breakdown of points for all teams.' },
 ];
 
 export default function ExtractionPage() {
   const { id: tournamentId } = useParams();
   const { tournament } = useTournament();
   const { structure = {}, scoring = {} } = tournament || {};
+  const isQualifier = tournament?.type === 'qualifier';
 
   const [activePreset, setActivePreset] = useState('top-players-set1');
   const [limit, setLimit] = useState(10);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState('all');
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('all');
 
   // Raw database tables
   const [teamRegs, setTeamRegs] = useState([]);
@@ -44,18 +48,20 @@ export default function ExtractionPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [tReg, pReg, tRes, pRes, bPts] = await Promise.all([
+        const [tReg, pReg, tRes, pRes, bPts, gList] = await Promise.all([
           getTeamRegistrations(tournamentId),
           getPlayerRegistrations(tournamentId),
           getTeamMatchResults(tournamentId),
           getPlayerMatchResults(tournamentId),
           getBonusPoints(tournamentId),
+          getGroups(tournamentId),
         ]);
         setTeamRegs(tReg);
         setPlayerRegs(pReg);
         setTeamResults(tRes);
         setPlayerResults(pRes);
         setBonusPoints(bPts);
+        setGroups(gList || []);
       } catch (err) {
         toast.error('Failed to load raw tournament data: ' + err.message);
       } finally {
@@ -67,17 +73,41 @@ export default function ExtractionPage() {
 
   if (loading) return <LoadingSpinner size="lg" text="Analyzing tournament data..." />;
 
+  const selectedGroupObj = isQualifier && selectedGroupId !== 'all' ? groups.find(g => g.id === selectedGroupId) : null;
+  const activeStructure = selectedGroupObj?.structure || structure;
+  const activeTotalDays = activeStructure.totalDays || 6;
+
   // ─── Data Extract Selectors ──────────────────────────────────────────────────
   const getExtractData = () => {
     if (!tournament) return { rows: [], columns: [] };
 
+    const activeTeamRegs = (isQualifier && selectedGroupId !== 'all')
+      ? teamRegs.filter(r => r.groupId === selectedGroupId)
+      : teamRegs;
+    const groupTeamIds = new Set(activeTeamRegs.map(r => r.teamId));
+
+    const activePlayerRegs = (isQualifier && selectedGroupId !== 'all')
+      ? playerRegs.filter(r => r.groupId === selectedGroupId)
+      : playerRegs;
+
+    const activeTeamResults = (isQualifier && selectedGroupId !== 'all')
+      ? teamResults.filter(r => r.groupId === selectedGroupId)
+      : teamResults;
+
+    const activePlayerResults = (isQualifier && selectedGroupId !== 'all')
+      ? playerResults.filter(r => r.groupId === selectedGroupId)
+      : playerResults;
+
+    const activeBonusPoints = (isQualifier && selectedGroupId !== 'all')
+      ? bonusPoints.filter(b => b.groupId === selectedGroupId || (!b.groupId && groupTeamIds.has(b.teamId)))
+      : bonusPoints;
 
     switch (activePreset) {
       case 'top-players-set1': {
         const filteredResults = selectedDay === 'all' 
-          ? playerResults 
-          : playerResults.filter(r => r.day === Number(selectedDay));
-        const stats = computePlayerStats(filteredResults, playerRegs, tournament);
+          ? activePlayerResults 
+          : activePlayerResults.filter(r => r.day === Number(selectedDay));
+        const stats = computePlayerStats(filteredResults, activePlayerRegs, tournament);
         const filtered = stats
           .filter(p => p.class && p.class.toLowerCase().includes('1'))
           .sort((a, b) => b.totalKills - a.totalKills);
@@ -116,9 +146,9 @@ export default function ExtractionPage() {
 
       case 'top-players-set2': {
         const filteredResults = selectedDay === 'all' 
-          ? playerResults 
-          : playerResults.filter(r => r.day === Number(selectedDay));
-        const stats = computePlayerStats(filteredResults, playerRegs, tournament);
+          ? activePlayerResults 
+          : activePlayerResults.filter(r => r.day === Number(selectedDay));
+        const stats = computePlayerStats(filteredResults, activePlayerRegs, tournament);
         const filtered = stats
           .filter(p => p.class && p.class.toLowerCase().includes('2'))
           .sort((a, b) => b.totalKills - a.totalKills);
@@ -157,8 +187,8 @@ export default function ExtractionPage() {
 
       case 'top-teams-pts': {
         const ranking = selectedDay === 'all'
-          ? computeTeamRanking(teamResults, bonusPoints, scoring)
-          : computeDailyStandings(teamResults, bonusPoints, scoring, Number(selectedDay));
+          ? computeTeamRanking(activeTeamResults, activeBonusPoints, scoring)
+          : computeDailyStandings(activeTeamResults, activeBonusPoints, scoring, Number(selectedDay));
         const sliced = limit > 0 ? ranking.slice(0, limit) : ranking;
         const mapped = sliced.map((t, i) => ({
           Rank: t.rank || i + 1,
@@ -192,8 +222,8 @@ export default function ExtractionPage() {
 
       case 'clan-rankings': {
         const ranking = selectedDay === 'all'
-          ? computeTeamRanking(teamResults, bonusPoints, scoring)
-          : computeDailyStandings(teamResults, bonusPoints, scoring, Number(selectedDay));
+          ? computeTeamRanking(activeTeamResults, activeBonusPoints, scoring)
+          : computeDailyStandings(activeTeamResults, activeBonusPoints, scoring, Number(selectedDay));
         const clans = computeClanRanking(ranking);
         const sliced = limit > 0 ? clans.slice(0, limit) : clans;
         const mapped = sliced.map((c, i) => ({
@@ -221,7 +251,7 @@ export default function ExtractionPage() {
       }
 
       case 'player-roster': {
-        const mapped = playerRegs.map(p => ({
+        const mapped = activePlayerRegs.map(p => ({
           Slot: p.slot || '—',
           'Pro Name': p.professionalName || '—',
           IGN: p.ign || '—',
@@ -249,7 +279,7 @@ export default function ExtractionPage() {
       }
 
       case 'team-registry': {
-        const mapped = teamRegs.map(t => ({
+        const mapped = activeTeamRegs.map(t => ({
           Slot: t.slot || '—',
           'Team Name': t.teamName || '—',
           Clan: t.clanName || '—',
@@ -269,11 +299,11 @@ export default function ExtractionPage() {
 
       case 'team-analytics': {
         const filteredResults = selectedDay === 'all'
-          ? teamResults
-          : teamResults.filter(r => r.day === Number(selectedDay));
+          ? activeTeamResults
+          : activeTeamResults.filter(r => r.day === Number(selectedDay));
         const filteredBonuses = selectedDay === 'all'
-          ? bonusPoints
-          : bonusPoints.filter(b => b.day === Number(selectedDay));
+          ? activeBonusPoints
+          : activeBonusPoints.filter(b => b.day === Number(selectedDay));
         const analytics = computeTeamAnalytics(filteredResults, filteredBonuses, scoring);
         const sliced = limit > 0 ? analytics.slice(0, limit) : analytics;
         const mapped = sliced.map(t => ({
@@ -316,8 +346,8 @@ export default function ExtractionPage() {
       }
 
       case 'daily-pts-matrix': {
-        const collation = computeTeamRanking(teamResults, bonusPoints, scoring);
-        const days = Array.from({ length: structure.totalDays || 6 }, (_, i) => i + 1);
+        const collation = computeTeamRanking(activeTeamResults, activeBonusPoints, scoring);
+        const days = Array.from({ length: activeTotalDays }, (_, i) => i + 1);
         const mapped = collation.map(t => {
           const row = {
             Team: t.teamName,
@@ -347,6 +377,14 @@ export default function ExtractionPage() {
 
   const { rows, columns } = getExtractData();
 
+  const getFileSuffix = () => {
+    const daySuffix = selectedDay === 'all' ? '' : `_day_${selectedDay}`;
+    const groupSuffix = (isQualifier && selectedGroupId !== 'all' && selectedGroupObj)
+      ? `_${selectedGroupObj.groupName.replace(/\s+/g, '_')}`
+      : '';
+    return `${daySuffix}${groupSuffix}`;
+  };
+
   // ─── Downloader Actions ──────────────────────────────────────────────────────
   const handleCopyJSON = () => {
     try {
@@ -364,8 +402,7 @@ export default function ExtractionPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      const fileSuffix = selectedDay === 'all' ? '' : `_day_${selectedDay}`;
-      link.setAttribute('download', `${activePreset}${fileSuffix}_export.csv`);
+      link.setAttribute('download', `${activePreset}${getFileSuffix()}_export.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -381,8 +418,7 @@ export default function ExtractionPage() {
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Data Extract');
-      const fileSuffix = selectedDay === 'all' ? '' : `_day_${selectedDay}`;
-      XLSX.writeFile(wb, `${activePreset}${fileSuffix}_export.xlsx`);
+      XLSX.writeFile(wb, `${activePreset}${getFileSuffix()}_export.xlsx`);
       toast.success('Excel file downloaded!');
     } catch (e) {
       toast.error('Failed to download Excel file: ' + e.message);
@@ -410,7 +446,6 @@ export default function ExtractionPage() {
               key={preset.id}
               onClick={() => {
                 setActivePreset(preset.id);
-                // Reset limit if roster/registry to avoid hiding entries
                 if (['player-roster', 'team-registry', 'daily-pts-matrix'].includes(preset.id)) {
                   setLimit(0);
                 } else {
@@ -437,6 +472,22 @@ export default function ExtractionPage() {
             <div className="flex-between flex-wrap gap-4 pb-4 border-b border-border mb-4">
               {/* Configuration panel */}
               <div className="flex items-center gap-4 flex-wrap">
+                {isQualifier && groups.length > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-text-muted font-medium">Group:</span>
+                    <select
+                      value={selectedGroupId}
+                      onChange={(e) => setSelectedGroupId(e.target.value)}
+                      className="form-input py-1 px-2 text-xs"
+                      style={{ width: 140 }}
+                    >
+                      <option value="all">All Groups</option>
+                      {groups.map(g => (
+                        <option key={g.id} value={g.id}>{g.groupName}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {!['player-roster', 'team-registry', 'daily-pts-matrix'].includes(activePreset) && (
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-text-muted">Limit rows:</span>
@@ -464,7 +515,7 @@ export default function ExtractionPage() {
                       style={{ width: 100 }}
                     >
                       <option value="all">All Days</option>
-                      {Array.from({ length: structure.totalDays || 6 }, (_, i) => i + 1).map(d => (
+                      {Array.from({ length: activeTotalDays }, (_, i) => i + 1).map(d => (
                         <option key={d} value={d}>Day {d}</option>
                       ))}
                     </select>
