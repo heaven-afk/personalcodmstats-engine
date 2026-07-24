@@ -744,17 +744,15 @@ export default function PlayerEntryPage() {
         getPlayers(),
         getPlayerMatchResultsByDayLobby(tournament.id, day, lobby),
         getTeamRegistrations(tournament.id),
-        isQualifier ? getGroups(tournament.id) : Promise.resolve([]),
+        getGroups(tournament.id),
       ]);
 
-      if (isQualifier) {
-        setGroups(gList);
-        if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
-          setSelectedGroupId(gList[0].id);
-        }
+      setGroups(gList);
+      if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
+        setSelectedGroupId(gList[0].id);
       }
 
-      const activeGroupRegs = (isQualifier && selectedGroupId)
+      const activeGroupRegs = selectedGroupId
         ? regs.filter(r => r.groupId === selectedGroupId)
         : regs;
 
@@ -1430,8 +1428,8 @@ export default function PlayerEntryPage() {
         </div>
       )}
 
-      {/* Group Selector for Qualifier tournaments */}
-      {isQualifier && groups.length > 0 && (
+      {/* Group Selector */}
+      {groups.length > 0 && (
         <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--gold)' }}>Select Group:</span>

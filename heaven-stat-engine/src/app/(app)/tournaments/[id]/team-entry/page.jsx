@@ -216,48 +216,45 @@ export default function TeamEntryPage() {
   const ocrFileRef = useRef(null);
 
   const refresh = useCallback(async () => {
-    const isQual = tournament?.type === 'qualifier';
     const [regs, results, bonus, gList] = await Promise.all([
       getTeamRegistrations(id),
       getTeamMatchResults(id),
       getBonusPoints(id),
-      isQual ? getGroups(id) : Promise.resolve([]),
+      getGroups(id),
     ]);
     setTeamRegs(regs);
     setAllResults(results);
     setAllBonus(bonus);
-    if (isQual) {
-      setGroups(gList);
-      if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
-        setSelectedGroupId(gList[0].id);
-      }
+    setGroups(gList);
+    if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
+      setSelectedGroupId(gList[0].id);
     }
-  }, [id, tournament?.type, selectedGroupId]);
+  }, [id, selectedGroupId]);
 
   useEffect(() => { refresh().finally(() => setLoading(false)); }, [refresh]);
 
-  const selectedGroup = isQualifier ? groups.find(g => g.id === selectedGroupId) : null;
-  const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
+  const hasGroups = groups.length > 0;
+  const selectedGroup = hasGroups ? groups.find(g => g.id === selectedGroupId) : null;
+  const activeStructure = (selectedGroup?.structure) || (tournament?.structure || {});
   const totalDays = activeStructure.totalDays || 6;
   const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
   const { scoring = {} } = tournament;
   const { killPointValue = 2, placementPoints = [], bonusTypes = [] } = scoring;
 
   const activeTeamRegs = useMemo(() => {
-    if (!isQualifier || !selectedGroupId) return teamRegs;
+    if (!selectedGroupId) return teamRegs;
     return teamRegs.filter(r => r.groupId === selectedGroupId);
-  }, [teamRegs, isQualifier, selectedGroupId]);
+  }, [teamRegs, selectedGroupId]);
 
   const activeResults = useMemo(() => {
-    if (!isQualifier || !selectedGroupId) return allResults;
+    if (!selectedGroupId) return allResults;
     return allResults.filter(r => r.groupId === selectedGroupId);
-  }, [allResults, isQualifier, selectedGroupId]);
+  }, [allResults, selectedGroupId]);
 
   const activeBonus = useMemo(() => {
-    if (!isQualifier || !selectedGroupId) return allBonus;
-    const groupTeamIds = new Set(activeTeamRegs.map(r => r.teamId));
-    return allBonus.filter(b => b.groupId === selectedGroupId || (!b.groupId && groupTeamIds.has(b.teamId)));
-  }, [allBonus, isQualifier, selectedGroupId, activeTeamRegs]);
+    if (!selectedGroupId) return allBonus;
+    return allBonus.filter(b => b.groupId === selectedGroupId);
+  }, [allBonus, selectedGroupId]);
 
   // Live preview parse effect
   useEffect(() => {
@@ -363,7 +360,8 @@ export default function TeamEntryPage() {
               day,
               lobby: lv.lobby,
               placement: lv.placement,
-              kills: lv.kills
+              kills: lv.kills,
+              ...(selectedGroupId ? { groupId: selectedGroupId } : {})
             });
             tempDayResults.push(saved);
             addedCount++;
@@ -499,7 +497,7 @@ export default function TeamEntryPage() {
           const slotStr = String(row.slot || '');
           const match = slotStr.match(/\d+/);
           const numericSlot = match ? parseInt(match[0]) : 0;
-          const team = teamRegs.find(t => t.slot === numericSlot);
+          const team = activeTeamRegs.find(t => t.slot === numericSlot);
           return {
             placement: parseInt(row.rank) || 0,
             slot: row.slot,
@@ -558,7 +556,7 @@ export default function TeamEntryPage() {
           const slotStr = String(val || '');
           const match = slotStr.match(/\d+/);
           const numericSlot = match ? parseInt(match[0]) : 0;
-          const team = teamRegs.find(t => t.slot === numericSlot);
+          const team = activeTeamRegs.find(t => t.slot === numericSlot);
           updatedRow.teamId = team?.teamId || null;
           updatedRow.teamName = team?.teamName || null;
         } else if (field === 'placement') {
@@ -628,7 +626,8 @@ export default function TeamEntryPage() {
           lobby: lobbyNum,
           placement: row.placement,
           kills: row.kills === null ? 0 : row.kills,
-          inputMethod: 'ocr'
+          inputMethod: 'ocr',
+          ...(selectedGroupId ? { groupId: selectedGroupId } : {})
         };
 
         if (existingIdxs.length > 0) {
@@ -736,7 +735,7 @@ export default function TeamEntryPage() {
       });
       return nextPreviews;
     });
-  }, [ocrQueue, teamRegs]);
+  }, [ocrQueue, activeTeamRegs]);
 
   const sessionSummary = useMemo(() => {
     const lobbies = Object.values(lobbyPreviews);
@@ -878,8 +877,8 @@ export default function TeamEntryPage() {
         </div>
       </div>
 
-      {/* Group Selector for Qualifier tournaments */}
-      {isQualifier && groups.length > 0 && (
+      {/* Group Selector */}
+      {groups.length > 0 && (
         <div className="card" style={{ marginBottom: 16, padding: '12px 18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--gold)' }}>Select Group:</span>
@@ -1460,9 +1459,9 @@ export default function TeamEntryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {teamRegs.length === 0 ? (
-                    <tr><td colSpan={20} className="empty-row">No teams registered — go to Registration first</td></tr>
-                  ) : teamRegs.map((reg, ri) => {
+                  {activeTeamRegs.length === 0 ? (
+                    <tr><td colSpan={20} className="empty-row">No teams registered for this group — go to Registration first</td></tr>
+                  ) : activeTeamRegs.map((reg, ri) => {
                     const lobbyData = Array.from({ length: lobbiesPerDay }, (_, i) => {
                       const r = getResult(reg.teamId, i + 1);
                       return r || { placement: '', kills: '', id: null };
@@ -1528,7 +1527,7 @@ export default function TeamEntryPage() {
             bonusPoints={dayBonus}
             bonusTypes={bonusTypes}
             onRefresh={refresh}
-            groupId={isQualifier ? selectedGroupId : null}
+            groupId={selectedGroupId || null}
           />
         </div>
 

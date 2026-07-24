@@ -86,7 +86,7 @@ export default function StandingsPage() {
   const isQualifier = tournament?.type === 'qualifier';
 
   const { data, isLoading, mutate } = useSWR(
-    tournament?.id ? ['tournament-standings', tournament.id, isQualifier] : null,
+    tournament?.id ? ['tournament-standings', tournament.id] : null,
     async () => {
       const [tr, bp, pr, tRegs, pRegs, allTeams, allPlayers, gList] = await Promise.all([
         getTeamMatchResults(tournament.id),
@@ -96,7 +96,7 @@ export default function StandingsPage() {
         getPlayerRegistrations(tournament.id),
         getTeams(),
         getPlayers(),
-        isQualifier ? getGroups(tournament.id) : Promise.resolve([]),
+        getGroups(tournament.id),
       ]);
 
       const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
@@ -137,46 +137,47 @@ export default function StandingsPage() {
   const players       = data?.players       || [];
   const groups        = data?.groups        || [];
 
+  const hasGroups = groups.length > 0;
+
   useEffect(() => {
-    if (isQualifier && groups.length > 0 && !selectedGroupId) {
+    if (groups.length > 0 && (!selectedGroupId || !groups.some(g => g.id === selectedGroupId))) {
       setSelectedGroupId(groups[0].id);
     }
-  }, [isQualifier, groups, selectedGroupId]);
+  }, [groups, selectedGroupId]);
 
-  const selectedGroup = isQualifier ? groups.find(g => g.id === selectedGroupId) : null;
-  const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
+  const selectedGroup = hasGroups ? groups.find(g => g.id === selectedGroupId) : null;
+  const activeStructure = (selectedGroup?.structure) || (tournament?.structure || {});
   const totalDays = activeStructure.totalDays || 6;
 
-  // Tabs list including Kill Table for Qualifier
+  // Tabs list including Kill Table for Qualifier / Group tournaments
   const TABS = useMemo(() => {
-    if (!isQualifier) return BASE_TABS;
+    if (!hasGroups) return BASE_TABS;
     return [
       ...BASE_TABS,
       { key: 'killTable', label: 'Kill Table (All Groups)' }
     ];
-  }, [isQualifier]);
+  }, [hasGroups]);
 
-  // Group scoped data filtering for per-group tabs
+  // Group scoped data filtering for per-group tabs — strictly isolates match scores and bonuses by groupId
   const groupTeamResults = useMemo(() => {
-    if (!isQualifier || !selectedGroupId) return teamResults;
+    if (!selectedGroupId) return teamResults;
     return teamResults.filter(r => r.groupId === selectedGroupId);
-  }, [teamResults, isQualifier, selectedGroupId]);
+  }, [teamResults, selectedGroupId]);
 
   const groupBonuses = useMemo(() => {
-    if (!isQualifier || !selectedGroupId) return bonusPoints;
-    const groupTeamIds = new Set(teamRegs.filter(r => r.groupId === selectedGroupId).map(r => r.teamId));
-    return bonusPoints.filter(b => b.groupId === selectedGroupId || (!b.groupId && groupTeamIds.has(b.teamId)));
-  }, [bonusPoints, isQualifier, selectedGroupId, teamRegs]);
+    if (!selectedGroupId) return bonusPoints;
+    return bonusPoints.filter(b => b.groupId === selectedGroupId);
+  }, [bonusPoints, selectedGroupId]);
 
   const groupPlayerResults = useMemo(() => {
-    if (!isQualifier || !selectedGroupId) return playerResults;
+    if (!selectedGroupId) return playerResults;
     return playerResults.filter(r => r.groupId === selectedGroupId);
-  }, [playerResults, isQualifier, selectedGroupId]);
+  }, [playerResults, selectedGroupId]);
 
   const groupPlayerRegs = useMemo(() => {
-    if (!isQualifier || !selectedGroupId) return playerRegs;
+    if (!selectedGroupId) return playerRegs;
     return playerRegs.filter(p => p.groupId === selectedGroupId);
-  }, [playerRegs, isQualifier, selectedGroupId]);
+  }, [playerRegs, selectedGroupId]);
 
   // Compute standings per group using EXACT unmodified core engine functions
   const daily = useMemo(() => computeDailyStandings(groupTeamResults, groupBonuses, tournament.scoring, selectedDay), [groupTeamResults, groupBonuses, tournament.scoring, selectedDay]);
@@ -192,12 +193,12 @@ export default function StandingsPage() {
 
   // Unfiltered Shared Kill Table across ALL groups combined
   const allGroupPlayerStats = useMemo(() => {
-    if (!isQualifier) return [];
+    if (!hasGroups) return [];
     return computePlayerStats(playerResults, playerRegs, tournament);
-  }, [isQualifier, playerResults, playerRegs, tournament]);
+  }, [hasGroups, playerResults, playerRegs, tournament]);
 
   const sharedKillTable = useMemo(() => {
-    if (!isQualifier) return [];
+    if (!hasGroups) return [];
     const groupMap = Object.fromEntries(groups.map(g => [g.id, g.groupName]));
     const regGroupMap = Object.fromEntries(playerRegs.map(p => [p.playerId, p.groupId]));
     
@@ -206,7 +207,7 @@ export default function StandingsPage() {
       groupId: regGroupMap[ps.playerId] || null,
       groupName: groupMap[regGroupMap[ps.playerId]] || '—',
     })).sort((a, b) => b.totalKills - a.totalKills);
-  }, [isQualifier, allGroupPlayerStats, groups, playerRegs]);
+  }, [hasGroups, allGroupPlayerStats, groups, playerRegs]);
 
   const teamMap = useMemo(() => {
     return Object.fromEntries(teams.map((t) => [t.id, t]));
@@ -215,9 +216,9 @@ export default function StandingsPage() {
   // Advancement calculation: top N teams from current group's teamRanking
   const advancementCount = selectedGroup?.advancementCount || 2;
   const advancingTeams = useMemo(() => {
-    if (!isQualifier || !selectedGroup || teamRanking.length === 0) return [];
+    if (!selectedGroup || teamRanking.length === 0) return [];
     return teamRanking.slice(0, advancementCount);
-  }, [isQualifier, selectedGroup, teamRanking, advancementCount]);
+  }, [selectedGroup, teamRanking, advancementCount]);
 
   const handleAdvancementSubmit = async () => {
     if (advancingTeams.length === 0) {
@@ -404,8 +405,8 @@ export default function StandingsPage() {
         </div>
       )}
 
-      {/* Qualifier Group Selector Tabs (rendered for per-group tabs) */}
-      {isQualifier && groups.length > 0 && tab !== 'killTable' && (
+      {/* Group Selector Tabs (rendered for per-group tabs) */}
+      {groups.length > 0 && tab !== 'killTable' && (
         <div className="card" style={{ marginBottom: 20, padding: '14px 18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

@@ -349,25 +349,22 @@ export default function RegisterPage() {
   const [importProgress, setImportProgress] = useState(null);
 
   const refresh = useCallback(async () => {
-    const isQualifier = tournament?.type === 'qualifier';
     const [tr, pr, gt, gp, gList] = await Promise.all([
       getTeamRegistrations(id),
       getPlayerRegistrations(id),
       getTeams(),
       getPlayers(),
-      isQualifier ? getGroups(id) : Promise.resolve([]),
+      getGroups(id),
     ]);
     setTeamRegs(tr);
     setPlayerRegs(pr);
     setGlobalTeams(gt);
     setGlobalPlayers(gp);
-    if (isQualifier) {
-      setGroups(gList);
-      if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
-        setSelectedGroupId(gList[0].id);
-      }
+    setGroups(gList);
+    if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
+      setSelectedGroupId(gList[0].id);
     }
-  }, [id, tournament?.type, selectedGroupId]);
+  }, [id, selectedGroupId]);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
@@ -375,20 +372,17 @@ export default function RegisterPage() {
 
   if (loading) return <LoadingSpinner size="lg" text="Loading registrations..." />;
 
-  const isQualifier = tournament?.type === 'qualifier';
-
-  const displayedTeamRegs = isQualifier && selectedGroupId
+  const hasGroups = groups.length > 0;
+  const displayedTeamRegs = selectedGroupId
     ? teamRegs.filter(r => r.groupId === selectedGroupId)
     : teamRegs;
 
-  const displayedPlayerRegs = isQualifier && selectedGroupId
+  const displayedPlayerRegs = selectedGroupId
     ? playerRegs.filter(r => r.groupId === selectedGroupId)
     : playerRegs;
 
   const activeGroup = groups.find(g => g.id === selectedGroupId);
-  const classes = isQualifier
-    ? (activeGroup?.structure?.playerClasses || [])
-    : (tournament?.structure?.playerClasses || []);
+  const classes = (activeGroup?.structure?.playerClasses || []) || (tournament?.structure?.playerClasses || []);
 
   return (
     <div>
@@ -399,7 +393,7 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {isQualifier && groups.length > 0 && (
+      {groups.length > 0 && (
         <div className="card" style={{ marginBottom: 20, padding: '14px 18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--gold)' }}>Select Group:</span>
@@ -436,7 +430,7 @@ export default function RegisterPage() {
           globalTeams={globalTeams}
           onRefresh={refresh}
           setImportProgress={setImportProgress}
-          selectedGroupId={isQualifier ? selectedGroupId : null}
+          selectedGroupId={selectedGroupId || null}
         />
       )}
       {tab === 'players' && (
@@ -449,7 +443,7 @@ export default function RegisterPage() {
           classes={classes}
           onRefresh={refresh}
           setImportProgress={setImportProgress}
-          selectedGroupId={isQualifier ? selectedGroupId : null}
+          selectedGroupId={selectedGroupId || null}
         />
       )}
 
