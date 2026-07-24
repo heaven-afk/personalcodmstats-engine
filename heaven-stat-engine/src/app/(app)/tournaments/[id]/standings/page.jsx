@@ -164,8 +164,9 @@ export default function StandingsPage() {
 
   const groupBonuses = useMemo(() => {
     if (!isQualifier || !selectedGroupId) return bonusPoints;
-    return bonusPoints.filter(b => b.groupId === selectedGroupId);
-  }, [bonusPoints, isQualifier, selectedGroupId]);
+    const groupTeamIds = new Set(teamRegs.filter(r => r.groupId === selectedGroupId).map(r => r.teamId));
+    return bonusPoints.filter(b => b.groupId === selectedGroupId || (!b.groupId && groupTeamIds.has(b.teamId)));
+  }, [bonusPoints, isQualifier, selectedGroupId, teamRegs]);
 
   const groupPlayerResults = useMemo(() => {
     if (!isQualifier || !selectedGroupId) return playerResults;

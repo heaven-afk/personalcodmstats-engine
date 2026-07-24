@@ -255,8 +255,9 @@ export default function TeamEntryPage() {
 
   const activeBonus = useMemo(() => {
     if (!isQualifier || !selectedGroupId) return allBonus;
-    return allBonus.filter(b => b.groupId === selectedGroupId);
-  }, [allBonus, isQualifier, selectedGroupId]);
+    const groupTeamIds = new Set(activeTeamRegs.map(r => r.teamId));
+    return allBonus.filter(b => b.groupId === selectedGroupId || (!b.groupId && groupTeamIds.has(b.teamId)));
+  }, [allBonus, isQualifier, selectedGroupId, activeTeamRegs]);
 
   // Live preview parse effect
   useEffect(() => {
@@ -1523,10 +1524,11 @@ export default function TeamEntryPage() {
           <BonusPanel
             tournamentId={id}
             day={day}
-            teamRegs={teamRegs}
+            teamRegs={activeTeamRegs}
             bonusPoints={dayBonus}
             bonusTypes={bonusTypes}
             onRefresh={refresh}
+            groupId={isQualifier ? selectedGroupId : null}
           />
         </div>
 
@@ -1669,7 +1671,7 @@ function CellInput({ value, onSave, locked = false, style = {} }) {
 }
 
 // ─── Bonus Points Panel ──────────────────────────────────────────────────────
-function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRefresh }) {
+function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRefresh, groupId }) {
   const [adding, setAdding] = useState(false);
   const [newBonus, setNewBonus] = useState({ teamId: '', type: '', amount: '', note: '' });
   const [saving, setSaving] = useState(false);
@@ -1684,6 +1686,7 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
         type: newBonus.type || 'Bonus',
         amount: Number(newBonus.amount),
         note: newBonus.note,
+        ...(groupId ? { groupId } : {}),
       });
       setNewBonus({ teamId: '', type: '', amount: '', note: '' });
       setAdding(false);

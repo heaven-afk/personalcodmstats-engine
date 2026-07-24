@@ -82,6 +82,8 @@ export async function GET(request) {
   const dayParam = searchParams.get('day');
   const day = dayParam !== null ? parseInt(dayParam, 10) : null;
 
+  const groupId = searchParams.get('groupId');
+
   if (!tournamentId) {
     return corsJson({ error: 'tournamentId is required' }, 400);
   }
@@ -102,11 +104,19 @@ export async function GET(request) {
 
   try {
     if (type === 'team') {
-      const [teamResults, bonusPoints, allTeams] = await Promise.all([
+      const [allTeamResults, allBonusPoints, allTeams] = await Promise.all([
         getTeamMatchResults(tournamentId),
         getBonusPoints(tournamentId),
         getTeams(),
       ]);
+
+      let teamResults = allTeamResults;
+      let bonusPoints = allBonusPoints;
+      if (groupId) {
+        teamResults = allTeamResults.filter(r => r.groupId === groupId);
+        const groupTeamIds = new Set(teamResults.map(r => r.teamId));
+        bonusPoints = allBonusPoints.filter(b => b.groupId === groupId || (!b.groupId && groupTeamIds.has(b.teamId)));
+      }
 
       // ── Daily mode: return standings for a single day only ──────────────────
       if (day !== null && !isNaN(day)) {

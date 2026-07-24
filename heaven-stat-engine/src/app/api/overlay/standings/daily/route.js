@@ -36,6 +36,8 @@ export async function GET(request) {
   const lobby = searchParams.get('lobby') ? parseInt(searchParams.get('lobby')) : null;
   const n = parseInt(searchParams.get('n') || '5');
 
+  const groupId = searchParams.get('groupId');
+
   if (!tournamentId || !day) {
     return corsJson({ error: 'tournamentId and day are required' }, 400);
   }
@@ -50,11 +52,12 @@ export async function GET(request) {
   const allTeams = await getTeams();
   const globalTeamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
 
-  // Filter to the requested day + optional lobby
+  // Filter to the requested day + optional lobby + optional group
   const scopedResults = allResults.filter(r => {
     const dayMatch = r.day === day;
     const lobbyMatch = lobby !== null ? r.lobby === lobby : true;
-    return dayMatch && lobbyMatch;
+    const groupMatch = groupId ? r.groupId === groupId : true;
+    return dayMatch && lobbyMatch && groupMatch;
   });
 
   const { placementPoints = [], killPointValue = 2 } = tournament.scoring || {};
