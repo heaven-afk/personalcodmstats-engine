@@ -5,44 +5,40 @@ service cloud.firestore {
     // ─── Access functions ──────────────────────────────────────────────
     function isOwner() {
       return request.auth != null
-        && request.auth.token.email == 'ogadizion01@gmail.com';
+        && request.auth.token.email == 'ogadizion01@gmail.com'
+        && request.auth.token.email_verified == true;
     }
 
-    function isAuthorizedDesigner() {
-      return request.auth != null
-        && request.auth.token.email in [
-          'designer1@example.com',   // REPLACE with a real designer/collaborator email
-          'designer2@example.com'    // add or remove entries as needed
-        ];
-    }
-
-    function isOwnerOrDesigner() {
-      return isOwner() || isAuthorizedDesigner();
+    function isSignedIn() {
+      return request.auth != null;
     }
 
     // ─── Overlay Engine collections ────────────────────────────────────
     // Public reads preserved (required for OBS Browser Source to render
-    // without logging in). Writes allowed for the owner OR any listed designer.
+    // without logging in). Writes allowed for ANY signed-in Firebase user —
+    // access is controlled by who has a Firebase Auth account at all
+    // (created manually by the owner in the Firebase Console), not by an
+    // email allowlist maintained in this rules file.
     match /overlayTemplates/{templateId} {
       allow read: if true;
-      allow write: if isOwnerOrDesigner();
+      allow write: if isSignedIn();
     }
 
     match /overlaySlots/{slotId} {
       allow read: if true;
-      allow write: if isOwnerOrDesigner();
+      allow write: if isSignedIn();
     }
 
     match /overlayDataFieldCatalog/{catalogId} {
       allow read: if true;
-      allow write: if isOwnerOrDesigner();
+      allow write: if isSignedIn();
     }
 
     // ─── Heaven Stat Engine's own data ─────────────────────────────────
     // Public reads preserved (Overlay Engine's public render page and OBS
     // need to read team names/logos/tournament data without logging in).
     // Writes restricted to the owner ONLY — this is Heaven's own analytics
-    // data; no designer/collaborator should ever create or edit it.
+    // data; no collaborator should ever create or edit it.
     match /tournaments/{tournamentId}/{document=**} {
       allow read: if true;
       allow write: if isOwner();
@@ -64,11 +60,9 @@ service cloud.firestore {
     }
 
     // ─── Fallback rule for anything else — strictest default ──────────
-    // Any collection not explicitly listed above defaults to owner-only,
-    // both read and write. This is the safe default for anything new
-    // added later that hasn't been explicitly opened up.
     match /{document=**} {
       allow read, write: if isOwner();
     }
   }
 }
+
