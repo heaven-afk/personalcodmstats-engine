@@ -1679,17 +1679,24 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
     if (!newBonus.teamId || !newBonus.amount) { toast.error('Team and amount required'); return; }
     setSaving(true);
     try {
+      let amountNum = Number(newBonus.amount);
+      const selectedType = (newBonus.type || '').toLowerCase();
+      const isPenaltyType = selectedType.includes('penalty') || selectedType.includes('deduct') || selectedType.includes('violation') || selectedType.includes('fine') || selectedType.includes('minus');
+      if (isPenaltyType && amountNum > 0) {
+        amountNum = -amountNum;
+      }
+
       await addBonusPoint(tournamentId, {
         teamId: newBonus.teamId,
         day,
         type: newBonus.type || 'Bonus',
-        amount: Number(newBonus.amount),
+        amount: amountNum,
         note: newBonus.note,
         ...(groupId ? { groupId } : {}),
       });
       setNewBonus({ teamId: '', type: '', amount: '', note: '' });
       setAdding(false);
-      toast.success('Bonus added');
+      toast.success(amountNum < 0 ? 'Penalty/Deduction applied' : 'Bonus added');
       await onRefresh();
     } catch (e) { toast.error(e.message); }
     finally { setSaving(false); }

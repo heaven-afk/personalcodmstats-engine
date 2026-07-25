@@ -744,7 +744,13 @@ function TeamTable({ data, scoring, showRank, teamMap, advancingTeamIds = [] }) 
                   <td style={{ fontFamily: 'var(--font-mono)' }}>{row.events ?? '—'}</td>
                   <td style={{ fontFamily: 'var(--font-mono)' }}>{row.placementPts}</td>
                   <td style={{ fontFamily: 'var(--font-mono)' }}>{row.kills}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)', color: row.bonusPts !== 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{row.bonusPts}</td>
+                  <td style={{
+                    fontFamily: 'var(--font-mono)',
+                    color: row.bonusPts > 0 ? 'var(--green)' : row.bonusPts < 0 ? '#ef4444' : 'var(--text-muted)',
+                    fontWeight: row.bonusPts !== 0 ? 600 : 400
+                  }}>
+                    {row.bonusPts > 0 ? `+${row.bonusPts}` : row.bonusPts}
+                  </td>
                   <td className="col-gold">{row.totalPts}</td>
                 </tr>
               );

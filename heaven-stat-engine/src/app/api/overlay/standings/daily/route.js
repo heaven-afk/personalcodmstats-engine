@@ -96,12 +96,27 @@ export async function GET(request) {
     t.lobbiesPlayed.push({ lobby: r.lobby, placement: r.placement, kills: r.kills });
   }
 
-  // Add bonus points scoped to this day
   const scopedBonuses = bonusPoints.filter(b => b.day === day && (lobby === null || b.lobby === lobby));
   for (const b of scopedBonuses) {
-    if (teamMap[b.teamId]) {
-      teamMap[b.teamId].totalPts += b.amount || 0;
+    if (!teamMap[b.teamId]) {
+      const reg = teamRegs.find(t => t.teamId === b.teamId);
+      const globalTeam = globalTeamMap[b.teamId];
+      teamMap[b.teamId] = {
+        teamId: b.teamId,
+        teamName: b.teamName || reg?.teamName || globalTeam?.teamName || b.teamId,
+        clanName: reg?.clanName || globalTeam?.clanName || '',
+        logoUrl: reg?.logoUrl || globalTeam?.logoUrl || globalTeam?.logo || null,
+        wins: 0,
+        matches: 0,
+        placementPts: 0,
+        kills: 0,
+        totalPts: 0,
+        top3Finishes: 0,
+        top5Finishes: 0,
+        lobbiesPlayed: [],
+      };
     }
+    teamMap[b.teamId].totalPts += b.amount || 0;
   }
 
   // Sort by totalPts desc (tiebreak: placementPts, then kills)

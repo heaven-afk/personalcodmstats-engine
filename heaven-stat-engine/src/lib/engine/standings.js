@@ -43,9 +43,21 @@ export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConf
   }
 
   for (const bonus of dayBonuses) {
-    if (teamMap[bonus.teamId]) {
-      teamMap[bonus.teamId].bonusPts += bonus.amount || 0;
+    const key = bonus.teamId;
+    if (!teamMap[key]) {
+      teamMap[key] = {
+        teamId: bonus.teamId,
+        teamName: bonus.teamName || bonus.teamId,
+        clanName: bonus.clanName || '',
+        wins: 0, matches: 0,
+        placementPts: 0, kills: 0, damage: 0,
+        bonusPts: 0, sumOfPositions: 0,
+        top3Finishes: 0,
+        top5Finishes: 0,
+        lobbyData: [],
+      };
     }
+    teamMap[key].bonusPts += bonus.amount || 0;
   }
 
   const standings = Object.values(teamMap).map((t) => {
@@ -107,8 +119,23 @@ export function computeSeasonStandings(teamMatchResults, bonusPoints, scoringCon
 
   for (const bonus of bonusPoints) {
     const key = bonus.teamId;
-    if (teamMap[key]) {
-      teamMap[key].bonusPts += bonus.amount || 0;
+    if (!teamMap[key]) {
+      teamMap[key] = {
+        teamId: bonus.teamId,
+        teamName: bonus.teamName || bonus.teamId,
+        clanName: bonus.clanName || '',
+        wins: 0, matches: 0,
+        placementPts: 0, kills: 0, damage: 0,
+        bonusPts: 0, sumOfPositions: 0,
+        top3Finishes: 0,
+        top5Finishes: 0,
+        activeDays: new Set(),
+        perDay: {},
+      };
+    }
+    teamMap[key].bonusPts += bonus.amount || 0;
+    if (bonus.day) {
+      teamMap[key].activeDays.add(bonus.day);
       if (!teamMap[key].perDay[bonus.day]) {
         teamMap[key].perDay[bonus.day] = { wins: 0, matches: 0, placePts: 0, kills: 0, bonusPts: 0 };
       }
