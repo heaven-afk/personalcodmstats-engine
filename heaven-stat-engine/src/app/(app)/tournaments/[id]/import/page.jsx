@@ -611,7 +611,7 @@ function SheetPreviewModal({ fileName, sheetName, csvText, mappingType, onClose 
   });
 
   const headers = data && data.length > 0 ? Object.keys(data[0]) : [];
-  const rows = data ? data.slice(0, 10) : [];
+  const rows = data ? data.slice(0, 30) : [];
 
   const cleanHeader = (h) => h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -623,8 +623,8 @@ function SheetPreviewModal({ fileName, sheetName, csvText, mappingType, onClose 
     }}>
       <div style={{
         background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-        borderRadius: 14, padding: 24, width: '90%', maxWidth: 800,
-        maxHeight: '85vh', overflowY: 'auto',
+        borderRadius: 14, padding: 24, width: '95vw', maxWidth: 1300,
+        maxHeight: '90vh', overflowY: 'auto',
         boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -704,7 +704,7 @@ function SheetPreviewModal({ fileName, sheetName, csvText, mappingType, onClose 
         {rows.length === 0 ? (
           <div className="empty-row" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>No rows found in this sheet.</div>
         ) : (
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border-md)', borderRadius: 8, maxHeight: '40vh' }}>
+          <div style={{ overflowX: 'auto', border: '1px solid var(--border-md)', borderRadius: 8, maxHeight: '65vh' }}>
             <table className="data-table" style={{ fontSize: '0.75rem', width: '100%', margin: 0 }}>
               <thead>
                 <tr style={{ background: 'var(--bg-header)' }}>

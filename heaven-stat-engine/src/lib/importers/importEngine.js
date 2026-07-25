@@ -8,6 +8,7 @@ import { createTeam, createPlayer } from '@/lib/firestore/registry';
 import { getTeamRegistrations, getPlayerRegistrations, addTeamRegistration, addPlayerRegistration } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, getPlayerMatchResults, savePlayerMatchResult, updatePlayerMatchResult } from '@/lib/firestore/matchData';
 import { parseTeamRegistrationCSV, parsePlayerRegistrationCSV, parseTeamMatchCSV, parsePlayerMatchCSV } from './csvParser';
+import { getSimilarTeams } from '@/lib/utils/similarity';
 
 export async function importTeamRegistrations(tournamentId, csvText, onProgress) {
   const { rows, errors } = parseTeamRegistrationCSV(csvText);
@@ -86,9 +87,15 @@ export async function importPlayerRegistrations(tournamentId, csvText, onProgres
       if (existingKeys.has(key)) {
         skipped++;
       } else {
-        const matchedTeam = teamRegs.find(
-          t => t.teamName?.toLowerCase() === row.teamName?.toLowerCase()
+        let matchedTeam = teamRegs.find(
+          t => t.teamName?.trim().toLowerCase() === (row.teamName || '').trim().toLowerCase()
         );
+        if (!matchedTeam && row.teamName?.trim()) {
+          const similar = getSimilarTeams(row.teamName, teamRegs, 0.75);
+          if (similar.length > 0) {
+            matchedTeam = similar[0];
+          }
+        }
 
         const player = await createPlayer({
           professionalName: row.professionalName || '',
@@ -106,7 +113,7 @@ export async function importPlayerRegistrations(tournamentId, csvText, onProgres
           slot: row.slot || (existingRegs.length + added + 1),
           class: row.class || 'Registered',
           teamId: matchedTeam?.teamId || '',
-          teamName: row.teamName || '',
+          teamName: matchedTeam?.teamName || row.teamName || '',
           ign: player.ign,
           professionalName: player.professionalName,
         });

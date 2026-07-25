@@ -1114,6 +1114,15 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                (ignLower && rIgn === ignLower && rTeam === teamLower);
       });
 
+      // Similar team check for tournament registered teams
+      let similarTeam = null;
+      if (teamName && !teamRegistrations.some(t => t.teamName?.trim().toLowerCase() === teamLower)) {
+        const similarRegs = getSimilarTeams(teamName, teamRegistrations, 0.75);
+        if (similarRegs.length > 0) {
+          similarTeam = similarRegs[0];
+        }
+      }
+
       // Exact match
       const exact = globalPlayers.find(p => {
         const pProName = (p.professionalName || '').trim().toLowerCase();
@@ -1130,7 +1139,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           slot,
           professionalName: exact.professionalName || proName,
           ign: exact.ign || ign,
-          teamName,
+          teamName: similarTeam ? similarTeam.teamName : teamName,
           category,
           gender: exact.gender || gender,
           region: exact.region || region,
@@ -1141,6 +1150,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           isLinked: true,
           originalName: proName || ign,
           conflict: null,
+          similarTeam: null,
           isDuplicate
         };
       }
@@ -1164,6 +1174,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         isLinked: false,
         originalName: proName || ign,
         conflict: similar.length > 0 ? similar[0] : null,
+        similarTeam,
         isDuplicate
       };
     });
@@ -1243,16 +1254,22 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           });
         }
 
-        const matchedTeam = teamRegistrations.find(
-          t => t.teamName?.toLowerCase() === item.teamName?.toLowerCase()
+        let matchedTeam = teamRegistrations.find(
+          t => t.teamName?.trim().toLowerCase() === (item.teamName || '').trim().toLowerCase()
         );
+        if (!matchedTeam && item.teamName?.trim()) {
+          const similar = getSimilarTeams(item.teamName, teamRegistrations, 0.75);
+          if (similar.length > 0) {
+            matchedTeam = similar[0];
+          }
+        }
 
         await addPlayerRegistration(tournamentId, {
           playerId: player.id,
           slot: item.slot,
           class: item.category,
           teamId: matchedTeam?.teamId || '',
-          teamName: item.teamName,
+          teamName: matchedTeam?.teamName || item.teamName || '',
           ign: player.ign,
           professionalName: player.professionalName,
           gender: item.gender || player.gender || '',
@@ -1691,12 +1708,12 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         </table>
       </div>
       {showImportPreview && (
-        <Modal title="Sync & Register Players Preview" onClose={() => setShowImportPreview(false)} size="lg">
+        <Modal title="Sync & Register Players Preview" onClose={() => setShowImportPreview(false)} size="xl">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Review the players parsed from your import. You can link them to existing registry profiles or register them as new.
+              Review the players parsed from your import. Teams with similar names are checked automatically. You can link players to existing registry profiles or register them as new.
             </p>
-            <div style={{ maxHeight: '50vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <div style={{ maxHeight: '65vh', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -1712,8 +1729,8 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                     <tr key={item.id} style={{ 
                       background: item.isDuplicate 
                         ? 'rgba(239, 68, 68, 0.05)' 
-                        : item.conflict 
-                        ? 'rgba(201,168,76,0.02)' 
+                        : item.conflict || item.similarTeam
+                        ? 'rgba(201,168,76,0.03)' 
                         : 'transparent',
                       opacity: item.isDuplicate ? 0.7 : 1
                     }}>
@@ -1727,11 +1744,39 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                         </div>
                       </td>
                       <td>
-                        <span style={{ fontWeight: 500 }}>{item.teamName || 'Unassigned'}</span>
-                        {item.teamName && !teamRegistrations.some(t => t.teamName?.toLowerCase() === item.teamName?.toLowerCase()) && (
-                          <div style={{ fontSize: '0.68rem', color: 'var(--gold)', marginTop: 2 }}>
-                            ⚠️ Team not registered in tournament
-                          </div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.teamName || 'Unassigned'}</div>
+                        {item.teamName && (
+                          teamRegistrations.some(t => t.teamName?.trim().toLowerCase() === item.teamName.trim().toLowerCase()) ? (
+                            <div style={{ fontSize: '0.68rem', color: 'var(--green)', marginTop: 2 }}>
+                              ✓ Team Registered
+                            </div>
+                          ) : item.similarTeam ? (
+                            <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ fontSize: '0.68rem', color: 'var(--gold)' }}>
+                                💡 Similar team: <strong>{item.similarTeam.teamName}</strong>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-secondary"
+                                style={{ fontSize: '0.65rem', padding: '2px 6px', width: 'fit-content' }}
+                                onClick={() => {
+                                  const newQueue = [...importQueue];
+                                  newQueue[idx] = {
+                                    ...item,
+                                    teamName: item.similarTeam.teamName,
+                                    similarTeam: null
+                                  };
+                                  setImportQueue(newQueue);
+                                }}
+                              >
+                                Use "{item.similarTeam.teamName}"
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                              ⚠️ Team not registered
+                            </div>
+                          )
                         )}
                       </td>
                       <td>
