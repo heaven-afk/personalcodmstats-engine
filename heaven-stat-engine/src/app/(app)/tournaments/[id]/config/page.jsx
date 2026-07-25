@@ -7,6 +7,8 @@ import toast from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
 import { Plus, Trash2, Check, Zap, ChevronLeft } from 'lucide-react';
 
+import { AVAILABLE_MAPS } from '@/lib/constants/maps';
+
 const DEFAULT_PLACEMENT = [
   { position: 1, points: 25 }, { position: 2, points: 20 },
   { position: 3, points: 15 }, { position: 4, points: 10 },
@@ -94,6 +96,7 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
   const [killPointValue, setKillPointValue] = useState(tournament.scoring?.killPointValue || 2);
   const [placementPoints, setPlacementPoints] = useState(tournament.scoring?.placementPoints || DEFAULT_PLACEMENT);
   const [bonusTypes, setBonusTypes] = useState(tournament.scoring?.bonusTypes || []);
+  const [mapConfig, setMapConfig] = useState(tournament.mapConfig || { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} });
 
   // Banner options
   const [bannerSource, setBannerSource] = useState(tournament.banner ? 'upload' : tournament.bannerUrl ? 'url' : 'upload'); // 'upload' | 'url'
@@ -264,6 +267,11 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
         description: description.trim(),
         banner: bannerSource === 'upload' ? banner : '',
         bannerUrl: bannerSource === 'url' ? bannerUrl.trim() : '',
+        mapConfig: {
+          mode: mapConfig?.mode || 'rigid',
+          map: mapConfig?.map || AVAILABLE_MAPS[0],
+          schedule: mapConfig?.schedule || {},
+        },
       };
 
       if (!isLocked) {
@@ -395,6 +403,54 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
               <label className="form-label">Lobbies Per Day</label>
               <input className="form-input" type="number" min={1} max={10} value={lobbiesPerDay} onChange={e => setLobbiesPerDay(e.target.value)} disabled={isLocked} />
             </div>
+          </div>
+
+          {/* Maps Section */}
+          <div style={{ background: 'var(--bg-alt-row)', borderRadius: 8, padding: 14, marginTop: 12, marginBottom: 16 }}>
+            <label className="form-label" style={{ marginBottom: 10, display: 'block', fontWeight: 600 }}>Map Configuration</label>
+            <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.875rem' }}>
+                <input
+                  type="radio"
+                  name="mapMode"
+                  value="rigid"
+                  checked={(mapConfig?.mode || 'rigid') === 'rigid'}
+                  onChange={() => setMapConfig(m => ({ ...m, mode: 'rigid' }))}
+                />
+                Rigid Mode (Single Map)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.875rem' }}>
+                <input
+                  type="radio"
+                  name="mapMode"
+                  value="flexible"
+                  checked={mapConfig?.mode === 'flexible'}
+                  onChange={() => setMapConfig(m => ({ ...m, mode: 'flexible' }))}
+                />
+                Flexible Mode (Per-Lobby Schedule)
+              </label>
+            </div>
+
+            {(mapConfig?.mode || 'rigid') === 'rigid' && (
+              <div className="form-field" style={{ maxWidth: 320, marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Map</label>
+                <select
+                  className="form-select"
+                  value={mapConfig?.map || AVAILABLE_MAPS[0]}
+                  onChange={e => setMapConfig(m => ({ ...m, map: e.target.value }))}
+                >
+                  {AVAILABLE_MAPS.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {mapConfig?.mode === 'flexible' && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Flexible mode selected. Map assignments per lobby column are set at Team Entry.
+              </p>
+            )}
           </div>
 
           <div>

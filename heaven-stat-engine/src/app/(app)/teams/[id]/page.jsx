@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { getTeam, updateTeam } from '@/lib/firestore/registry';
 import { getTournaments, getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
+import { getGroups } from '@/lib/firestore/groups';
+import { AVAILABLE_MAPS } from '@/lib/constants/maps';
+import { getActiveMapConfig, getMapForMatch } from '@/lib/utils/mapConfig';
 import { computeTeamRanking } from '@/lib/engine/standings';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
@@ -27,6 +30,7 @@ export default function TeamProfilePage() {
     bonusPts: 0,
     totalPts: 0,
   });
+  const [mapCounts, setMapCounts] = useState({ Isolated: 0, Blackout: 0, 'Rebirth Island': 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,10 +51,12 @@ export default function TeamProfilePage() {
         const tRegsPromises = allTourneys.map(t => getTeamRegistrations(t.id));
         const tResPromises = allTourneys.map(t => getTeamMatchResults(t.id));
         const tBonusPromises = allTourneys.map(t => getBonusPoints(t.id));
+        const tGroupsPromises = allTourneys.map(t => t.type === 'qualifier' ? getGroups(t.id) : Promise.resolve([]));
 
         const allRegs = await Promise.all(tRegsPromises);
         const allRes = await Promise.all(tResPromises);
         const allBonuses = await Promise.all(tBonusPromises);
+        const allGroupsList = await Promise.all(tGroupsPromises);
 
         const participationHistory = [];
         let totalWins = 0;
@@ -60,10 +66,25 @@ export default function TeamProfilePage() {
         let totalBonusPts = 0;
         let totalPts = 0;
 
+        const counts = { Isolated: 0, Blackout: 0, 'Rebirth Island': 0 };
+
         allTourneys.forEach((tourney, i) => {
           const regs = allRegs[i];
           const res = allRes[i];
           const bonuses = allBonuses[i];
+          const gList = allGroupsList[i] || [];
+          const gMap = Object.fromEntries(gList.map(g => [g.id, g]));
+
+          // Calculate per-map matches for this team
+          const teamMatches = res.filter(r => r.teamId === id);
+          teamMatches.forEach(r => {
+            const group = r.groupId ? gMap[r.groupId] : null;
+            const mapConfig = getActiveMapConfig(tourney, group);
+            const m = getMapForMatch(mapConfig, r.day, r.lobby);
+            if (m && counts[m] !== undefined) {
+              counts[m]++;
+            }
+          });
 
           // Check if team registered in this tournament
           const reg = regs.find(r => r.teamId === id);
@@ -97,6 +118,7 @@ export default function TeamProfilePage() {
           }
         });
 
+        setMapCounts(counts);
         setHistory(participationHistory);
         setCareerStats({
           wins: totalWins,
@@ -333,6 +355,20 @@ export default function TeamProfilePage() {
               <div className="p-3 bg-bg-alt-row/40 rounded-lg border border-border">
                 <div className="text-xs text-text-muted">Kill Pts</div>
                 <div className="text-xl font-bold font-mono text-text-primary mt-1">{careerStats.killPts}</div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Matches Played by Map
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {AVAILABLE_MAPS.map(m => (
+                  <div key={m} style={{ padding: '6px 10px', background: 'var(--bg-alt-row)', border: '1px solid var(--border-md)', borderRadius: 6, fontSize: '0.78rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>{m}:</span>{' '}
+                    <strong style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{mapCounts[m] || 0}</strong>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

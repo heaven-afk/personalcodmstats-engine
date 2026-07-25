@@ -7,6 +7,7 @@ import { setTournamentStatus } from '@/lib/firestore/tournaments';
 import { getGroups, createGroup, updateGroup, deleteGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
 import { useState, useEffect, useCallback } from 'react';
+import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 
 const STATUS_FLOW = ['setup', 'active', 'completed', 'archived'];
 
@@ -22,9 +23,12 @@ export default function TournamentOverviewPage() {
   const [newGroup, setNewGroup] = useState({
     groupName: '',
     structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
+    mapConfig: { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} },
     advancementCount: 2,
     status: 'setup',
   });
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [editingGroupData, setEditingGroupData] = useState(null);
 
   const loadGroupsList = useCallback(async () => {
     if (tournament?.type !== 'qualifier') return;
@@ -73,12 +77,26 @@ export default function TournamentOverviewPage() {
       setNewGroup({
         groupName: '',
         structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
+        mapConfig: { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} },
         advancementCount: 2,
         status: 'setup',
       });
       await loadGroupsList();
     } catch (err) {
       toast.error('Failed to create group: ' + err.message);
+    }
+  };
+
+  const handleSaveGroupEdit = async (groupId) => {
+    if (!editingGroupData) return;
+    try {
+      await updateGroup(tournament.id, groupId, editingGroupData);
+      toast.success('Group updated successfully');
+      setEditingGroupId(null);
+      setEditingGroupData(null);
+      await loadGroupsList();
+    } catch (err) {
+      toast.error('Failed to update group: ' + err.message);
     }
   };
 
@@ -207,6 +225,48 @@ export default function TournamentOverviewPage() {
                   />
                 </div>
               </div>
+
+              {/* Map Config Section */}
+              <div style={{ background: 'rgba(0,0,0,0.15)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: 6, display: 'block' }}>Group Map Mode</label>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="newGroupMapMode"
+                      value="rigid"
+                      checked={(newGroup.mapConfig?.mode || 'rigid') === 'rigid'}
+                      onChange={() => setNewGroup(g => ({ ...g, mapConfig: { ...g.mapConfig, mode: 'rigid' } }))}
+                    />
+                    Rigid
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="newGroupMapMode"
+                      value="flexible"
+                      checked={newGroup.mapConfig?.mode === 'flexible'}
+                      onChange={() => setNewGroup(g => ({ ...g, mapConfig: { ...g.mapConfig, mode: 'flexible' } }))}
+                    />
+                    Flexible
+                  </label>
+
+                  {(newGroup.mapConfig?.mode || 'rigid') === 'rigid' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Map:</span>
+                      <select
+                        className="form-select"
+                        style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                        value={newGroup.mapConfig?.map || AVAILABLE_MAPS[0]}
+                        onChange={e => setNewGroup(g => ({ ...g, mapConfig: { ...g.mapConfig, map: e.target.value } }))}
+                      >
+                        {AVAILABLE_MAPS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowAddGroup(false)}>Cancel</button>
                 <button type="button" className="btn btn-primary btn-sm" onClick={handleAddGroup}>Save Group</button>
@@ -218,52 +278,141 @@ export default function TournamentOverviewPage() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No groups defined yet. Click "Add Group" to create one.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {groups.map(g => (
-                <div
-                  key={g.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '14px 18px',
-                    background: 'var(--bg-alt-row)',
-                    border: '1px solid var(--border-md)',
-                    borderRadius: 10,
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--gold)' }}>{g.groupName}</span>
-                      <StatusBadge status={g.status || 'setup'} />
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Days: {g.structure?.totalDays || 6} · Lobbies: {g.structure?.lobbiesPerDay || 4} · Advances: Top {g.advancementCount || 2} teams
-                    </div>
-                  </div>
+              {groups.map(g => {
+                const isEditingThis = editingGroupId === g.id;
+                return (
+                  <div
+                    key={g.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 12,
+                      padding: '14px 18px',
+                      background: 'var(--bg-alt-row)',
+                      border: '1px solid var(--border-md)',
+                      borderRadius: 10,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--gold)' }}>{g.groupName}</span>
+                          <StatusBadge status={g.status || 'setup'} />
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          Days: {g.structure?.totalDays || 6} · Lobbies: {g.structure?.lobbiesPerDay || 4} · Advances: Top {g.advancementCount || 2} teams
+                          {' · '}
+                          Map: {g.mapConfig?.mode === 'flexible' ? 'Flexible' : `Rigid (${g.mapConfig?.map || 'Isolated'})`}
+                        </div>
+                      </div>
 
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <select
-                      className="form-select"
-                      style={{ fontSize: '0.78rem', padding: '4px 8px' }}
-                      value={g.status || 'setup'}
-                      onChange={e => handleGroupStatusChange(g.id, e.target.value)}
-                    >
-                      <option value="setup">Setup</option>
-                      <option value="active">Active</option>
-                      <option value="completed">Completed</option>
-                    </select>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      style={{ padding: '6px', color: 'var(--danger)' }}
-                      onClick={() => handleDeleteGroup(g.id, g.groupName)}
-                      title="Delete group"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <select
+                          className="form-select"
+                          style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                          value={g.status || 'setup'}
+                          onChange={e => handleGroupStatusChange(g.id, e.target.value)}
+                        >
+                          <option value="setup">Setup</option>
+                          <option value="active">Active</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '6px 10px', fontSize: '0.78rem' }}
+                          onClick={() => {
+                            if (isEditingThis) {
+                              setEditingGroupId(null);
+                              setEditingGroupData(null);
+                            } else {
+                              setEditingGroupId(g.id);
+                              setEditingGroupData({
+                                groupName: g.groupName,
+                                structure: g.structure || { totalDays: 6, lobbiesPerDay: 4 },
+                                mapConfig: g.mapConfig || { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} },
+                                advancementCount: g.advancementCount || 2,
+                              });
+                            }
+                          }}
+                        >
+                          {isEditingThis ? 'Cancel' : 'Edit Map'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ padding: '6px', color: 'var(--danger)' }}
+                          onClick={() => handleDeleteGroup(g.id, g.groupName)}
+                          title="Delete group"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isEditingThis && editingGroupData && (
+                      <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 12, marginTop: 4 }}>
+                        <h5 style={{ fontSize: '0.8rem', color: 'var(--gold)', marginBottom: 8, fontWeight: 700 }}>Edit Group Map Config</h5>
+                        <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer' }}>
+                            <input
+                              type="radio"
+                              name={`editMapMode_${g.id}`}
+                              value="rigid"
+                              checked={(editingGroupData.mapConfig?.mode || 'rigid') === 'rigid'}
+                              onChange={() => setEditingGroupData(eg => ({
+                                ...eg,
+                                mapConfig: { ...(eg.mapConfig || {}), mode: 'rigid' }
+                              }))}
+                            />
+                            Rigid
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', cursor: 'pointer' }}>
+                            <input
+                              type="radio"
+                              name={`editMapMode_${g.id}`}
+                              value="flexible"
+                              checked={editingGroupData.mapConfig?.mode === 'flexible'}
+                              onChange={() => setEditingGroupData(eg => ({
+                                ...eg,
+                                mapConfig: { ...(eg.mapConfig || {}), mode: 'flexible' }
+                              }))}
+                            />
+                            Flexible
+                          </label>
+
+                          {(editingGroupData.mapConfig?.mode || 'rigid') === 'rigid' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Map:</span>
+                              <select
+                                className="form-select"
+                                style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                                value={editingGroupData.mapConfig?.map || AVAILABLE_MAPS[0]}
+                                onChange={e => setEditingGroupData(eg => ({
+                                  ...eg,
+                                  mapConfig: { ...(eg.mapConfig || {}), map: e.target.value }
+                                }))}
+                              >
+                                {AVAILABLE_MAPS.map(m => <option key={m} value={m}>{m}</option>)}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleSaveGroupEdit(g.id)}
+                          >
+                            Save Group Map Config
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

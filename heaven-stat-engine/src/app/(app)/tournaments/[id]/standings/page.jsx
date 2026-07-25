@@ -16,6 +16,8 @@ import { BarChart3, ArrowUpDown, ArrowUp, ArrowDown, Shield, AlertTriangle, Trop
 import { cleanImageUrl } from '@/lib/utils/image';
 import toast from 'react-hot-toast';
 
+import { AVAILABLE_MAPS } from '@/lib/constants/maps';
+import { getActiveMapConfig, filterResultsByMap } from '@/lib/utils/mapConfig';
 import useSWR from 'swr';
 
 const BASE_TABS = [
@@ -27,6 +29,7 @@ const BASE_TABS = [
   { key: 'set2',       label: 'Player Set 2' },
   { key: 'combined',   label: 'Combined' },
   { key: 'details',    label: 'Details' },
+  { key: 'byMap',      label: 'By Map' },
 ];
 
 function SortableTH({ label, field, sortKey, sortDir, onSort }) {
@@ -70,6 +73,7 @@ export default function StandingsPage() {
   const router = useRouter();
   const [tab, setTab] = useState('daily');
   const [selectedDay, setSelectedDay] = useState(1);
+  const [selectedMapSubTab, setSelectedMapSubTab] = useState(AVAILABLE_MAPS[0]);
 
   // Qualifier groups state
   const [selectedGroupId, setSelectedGroupId] = useState('');
@@ -185,11 +189,38 @@ export default function StandingsPage() {
   const teamRanking = useMemo(() => computeTeamRanking(groupTeamResults, groupBonuses, tournament.scoring), [groupTeamResults, groupBonuses, tournament.scoring]);
   const clanRanking = useMemo(() => computeClanRanking(teamRanking), [teamRanking]);
 
-  // Group-scoped player stats
-  const groupPlayerStats = useMemo(() => computePlayerStats(groupPlayerResults, groupPlayerRegs, tournament), [groupPlayerResults, groupPlayerRegs, tournament]);
-  const set1Players = useMemo(() => filterSet1Players(groupPlayerStats), [groupPlayerStats]);
-  const set2Players = useMemo(() => filterSet2Players(groupPlayerStats), [groupPlayerStats]);
-  const combined = useMemo(() => sortCombined(groupPlayerStats), [groupPlayerStats]);
+  // Map-filtered statistics using activeMapConfig
+  const activeMapConfig = getActiveMapConfig(tournament, selectedGroup);
+
+  const mapFilteredTeamResults = useMemo(() => {
+    return filterResultsByMap(groupTeamResults, activeMapConfig, selectedMapSubTab);
+  }, [groupTeamResults, activeMapConfig, selectedMapSubTab]);
+
+  const mapFilteredBonuses = useMemo(() => {
+    return filterResultsByMap(groupBonuses, activeMapConfig, selectedMapSubTab);
+  }, [groupBonuses, activeMapConfig, selectedMapSubTab]);
+
+  const mapFilteredPlayerResults = useMemo(() => {
+    return filterResultsByMap(groupPlayerResults, activeMapConfig, selectedMapSubTab);
+  }, [groupPlayerResults, activeMapConfig, selectedMapSubTab]);
+
+  const mapTeamRanking = useMemo(() => {
+    return computeTeamRanking(mapFilteredTeamResults, mapFilteredBonuses, tournament.scoring);
+  }, [mapFilteredTeamResults, mapFilteredBonuses, tournament.scoring]);
+
+  const mapPlayerStats = useMemo(() => {
+    return computePlayerStats(mapFilteredPlayerResults, groupPlayerRegs, tournament);
+  }, [mapFilteredPlayerResults, groupPlayerRegs, tournament]);
+
+  const mapSortedPlayers = useMemo(() => {
+    return [...mapPlayerStats].sort((a, b) => b.totalKills - a.totalKills);
+  }, [mapPlayerStats]);
+
+  const mapUniqueMatchesCount = useMemo(() => {
+    const set = new Set();
+    mapFilteredTeamResults.forEach(r => set.add(`d${r.day}-l${r.lobby}`));
+    return set.size;
+  }, [mapFilteredTeamResults]);
 
   // Unfiltered Shared Kill Table across ALL groups combined
   const allGroupPlayerStats = useMemo(() => {
@@ -566,6 +597,92 @@ export default function StandingsPage() {
         combined.length === 0
           ? <EmptyState icon={BarChart3} title="No data" text="Enter player match data to see details." />
           : <DetailsTable data={combined} totalDays={totalDays} />
+      )}
+
+      {/* By Map Standings */}
+      {tab === 'byMap' && (
+        !activeMapConfig || !activeMapConfig.mode ? (
+          <EmptyState
+            icon={Trophy}
+            title="No Map Configuration"
+            text="No maps have been assigned to this tournament yet — set them in Tournament Configuration."
+            action={
+              <button
+                className="btn btn-primary"
+                onClick={() => router.push(`/tournaments/${tournament.id}/config`)}
+              >
+                Go to Tournament Configuration
+              </button>
+            }
+          />
+        ) : (
+          <div className="space-y-6">
+            {/* Map Sub-tabs */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              {AVAILABLE_MAPS.map((mapName) => (
+                <button
+                  key={mapName}
+                  className={`btn btn-sm ${selectedMapSubTab === mapName ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSelectedMapSubTab(mapName)}
+                  style={{ fontWeight: selectedMapSubTab === mapName ? 700 : 500 }}
+                >
+                  {mapName}
+                </button>
+              ))}
+            </div>
+
+            {/* Summary Card */}
+            <div className="card-grid" style={{ marginBottom: 24 }}>
+              <div className="stat-card">
+                <div className="stat-card-icon gold"><Trophy size={20} /></div>
+                <div>
+                  <div className="stat-card-value">{mapUniqueMatchesCount}</div>
+                  <div className="stat-card-label">Matches Played ({selectedMapSubTab})</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-card-icon cyan"><Shield size={20} /></div>
+                <div>
+                  <div className="stat-card-value" style={{ fontSize: '1rem' }}>{mapTeamRanking[0]?.teamName || '—'}</div>
+                  <div className="stat-card-label">Top Team ({mapTeamRanking[0]?.totalPts || 0} Pts)</div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-card-icon red"><Zap size={20} /></div>
+                <div>
+                  <div className="stat-card-value" style={{ fontSize: '1rem' }}>{mapSortedPlayers[0]?.ign || mapSortedPlayers[0]?.playerName || '—'}</div>
+                  <div className="stat-card-label">Top Player ({mapSortedPlayers[0]?.totalKills || 0} Kills)</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Team Standings Section */}
+            <div className="card space-y-4">
+              <h3 className="card-title flex items-center gap-2">
+                <Shield size={18} className="text-gold" />
+                Team Standings — {selectedMapSubTab}
+              </h3>
+              {mapTeamRanking.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No team matches played on {selectedMapSubTab} yet.</p>
+              ) : (
+                <TeamTable data={mapTeamRanking} scoring={tournament.scoring} showRank={true} teamMap={teamMap} />
+              )}
+            </div>
+
+            {/* Player Standings Section */}
+            <div className="card space-y-4">
+              <h3 className="card-title flex items-center gap-2">
+                <Zap size={18} className="text-gold" />
+                Player Standings — {selectedMapSubTab}
+              </h3>
+              {mapSortedPlayers.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No player matches recorded on {selectedMapSubTab} yet.</p>
+              ) : (
+                <PlayerTable data={mapSortedPlayers} totalDays={totalDays} />
+              )}
+            </div>
+          </div>
+        )
       )}
 
       {/* PART 6: Shared Kill Table Across All Groups Combined */}

@@ -13,6 +13,8 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
 import { Download, Copy, Table, List } from 'lucide-react';
+import { AVAILABLE_MAPS } from '@/lib/constants/maps';
+import { getActiveMapConfig, filterResultsByMap } from '@/lib/utils/mapConfig';
 
 const PRESETS = [
   { id: 'top-players-set1', name: 'Top Players (Class 1)', desc: 'Players in Class 1 sorted by total kills.' },
@@ -35,6 +37,7 @@ export default function ExtractionPage() {
   const [limit, setLimit] = useState(10);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState('all');
+  const [selectedMap, setSelectedMap] = useState('all');
   const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState('all');
 
@@ -90,17 +93,24 @@ export default function ExtractionPage() {
       ? playerRegs.filter(r => r.groupId === selectedGroupId)
       : playerRegs;
 
-    const activeTeamResults = (isQualifier && selectedGroupId !== 'all')
+    let activeTeamResults = (isQualifier && selectedGroupId !== 'all')
       ? teamResults.filter(r => r.groupId === selectedGroupId)
       : teamResults;
 
-    const activePlayerResults = (isQualifier && selectedGroupId !== 'all')
+    let activePlayerResults = (isQualifier && selectedGroupId !== 'all')
       ? playerResults.filter(r => r.groupId === selectedGroupId)
       : playerResults;
 
-    const activeBonusPoints = (isQualifier && selectedGroupId !== 'all')
+    let activeBonusPoints = (isQualifier && selectedGroupId !== 'all')
       ? bonusPoints.filter(b => b.groupId === selectedGroupId || (!b.groupId && groupTeamIds.has(b.teamId)))
       : bonusPoints;
+
+    const activeMapConfig = getActiveMapConfig(tournament, selectedGroupObj);
+    if (selectedMap !== 'all' && activeMapConfig) {
+      activeTeamResults = filterResultsByMap(activeTeamResults, activeMapConfig, selectedMap);
+      activePlayerResults = filterResultsByMap(activePlayerResults, activeMapConfig, selectedMap);
+      activeBonusPoints = filterResultsByMap(activeBonusPoints, activeMapConfig, selectedMap);
+    }
 
     switch (activePreset) {
       case 'top-players-set1': {
@@ -517,6 +527,22 @@ export default function ExtractionPage() {
                       <option value="all">All Days</option>
                       {Array.from({ length: activeTotalDays }, (_, i) => i + 1).map(d => (
                         <option key={d} value={d}>Day {d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {['top-players-set1', 'top-players-set2', 'top-teams-pts', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-text-muted font-medium">Map:</span>
+                    <select
+                      value={selectedMap}
+                      onChange={(e) => setSelectedMap(e.target.value)}
+                      className="form-input py-1 px-2 text-xs"
+                      style={{ width: 130 }}
+                    >
+                      <option value="all">All Maps</option>
+                      {AVAILABLE_MAPS.map(m => (
+                        <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
                   </div>

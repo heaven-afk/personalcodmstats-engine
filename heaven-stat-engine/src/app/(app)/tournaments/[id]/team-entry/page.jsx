@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback, useMemo, Fragment, useRef } from 'rea
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, deleteTeamMatchResult, getBonusPoints, addBonusPoint, updateBonusPoint, deleteBonusPoint } from '@/lib/firestore/matchData';
-import { getTeamRegistrations } from '@/lib/firestore/tournaments';
-import { getGroups } from '@/lib/firestore/groups';
+import { getTeamRegistrations, updateTournament } from '@/lib/firestore/tournaments';
+import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import { computeDailyStandings } from '@/lib/engine/standings';
 import { getPlacementPoints } from '@/lib/engine/scoring';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -13,6 +13,8 @@ import { Save, Plus, Trash2, ChevronDown, ChevronUp, Upload, X, Check, FileSprea
 import { getAllSheetsAsCSV } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 import { cleanTeamName } from '@/lib/utils/similarity';
+import { AVAILABLE_MAPS } from '@/lib/constants/maps';
+import { getActiveMapConfig } from '@/lib/utils/mapConfig';
 
 // Distinct color per lobby slot (cycles if >6 lobbies)
 const LOBBY_COLORS = [
@@ -237,10 +239,36 @@ export default function TeamEntryPage() {
   const hasGroups = groups.length > 0;
   const selectedGroup = hasGroups ? groups.find(g => g.id === selectedGroupId) : null;
   const activeStructure = (selectedGroup?.structure) || (tournament?.structure || {});
+  const activeMapConfig = getActiveMapConfig(tournament, selectedGroup);
   const totalDays = activeStructure.totalDays || 6;
   const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
   const { scoring = {} } = tournament;
   const { killPointValue = 2, placementPoints = [], bonusTypes = [] } = scoring;
+
+  const handleFlexibleMapChange = async (lobbyNum, newMap) => {
+    const currentConfig = activeMapConfig || { mode: 'flexible', map: AVAILABLE_MAPS[0], schedule: {} };
+    const updatedSchedule = {
+      ...(currentConfig.schedule || {}),
+      [`day${day}_lobby${lobbyNum}`]: newMap,
+    };
+    const updatedMapConfig = {
+      ...currentConfig,
+      mode: currentConfig.mode || 'flexible',
+      schedule: updatedSchedule,
+    };
+
+    try {
+      if (isQualifier && selectedGroupId) {
+        await updateGroup(id, selectedGroupId, { mapConfig: updatedMapConfig });
+      } else {
+        await updateTournament(id, { mapConfig: updatedMapConfig });
+      }
+      toast.success(`Day ${day} Lobby ${lobbyNum} Map set to ${newMap}`);
+      await refresh();
+    } catch (err) {
+      toast.error('Failed to update map schedule: ' + err.message);
+    }
+  };
 
   const activeTeamRegs = useMemo(() => {
     if (!selectedGroupId) return teamRegs;
@@ -1424,6 +1452,48 @@ export default function TeamEntryPage() {
                 </div>
               </div>
             )}
+
+            {/* Map Assignment Row */}
+            <div style={{
+              padding: '12px 18px',
+              background: 'var(--bg-alt-row)',
+              borderBottom: '1px solid var(--border-md)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              flexWrap: 'wrap'
+            }}>
+              {activeMapConfig?.mode === 'flexible' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--gold)' }}>
+                    Map for Day {day}:
+                  </span>
+                  {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => {
+                    const val = activeMapConfig?.schedule?.[`day${day}_lobby${l}`] || AVAILABLE_MAPS[0];
+                    return (
+                      <div key={`lobby-map-${l}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
+                        <span style={{ fontWeight: 700, color: lc(l).text }}>L{l}:</span>
+                        <select
+                          className="form-select"
+                          style={{ fontSize: '0.78rem', padding: '3px 8px' }}
+                          value={val}
+                          onChange={e => handleFlexibleMapChange(l, e.target.value)}
+                        >
+                          {AVAILABLE_MAPS.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Map: <strong style={{ color: 'var(--gold)' }}>{activeMapConfig?.map || AVAILABLE_MAPS[0]}</strong> <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(locked — set in Tournament Configuration)</span>
+                </div>
+              )}
+            </div>
+
             <div className="data-table-scroll">
               <table className="data-table">
                 <thead>
