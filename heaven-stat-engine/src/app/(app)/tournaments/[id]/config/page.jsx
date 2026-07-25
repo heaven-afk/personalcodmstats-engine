@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { updateTournament, deleteTournament } from '@/lib/firestore/tournaments';
+import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
 import { Plus, Trash2, Check, Zap, ChevronLeft } from 'lucide-react';
@@ -288,6 +289,20 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
       }
 
       await updateTournament(id, updates);
+
+      if (tournament?.type === 'qualifier') {
+        const gList = await getGroups(id);
+        for (const g of gList) {
+          await updateGroup(id, g.id, {
+            mapConfig: {
+              mode: mapConfig?.mode || 'rigid',
+              map: mapConfig?.map || AVAILABLE_MAPS[0],
+              schedule: g.mapConfig?.schedule || mapConfig?.schedule || {},
+            }
+          });
+        }
+      }
+
       await refresh();
       toast.success('Configuration updated!');
       router.push(`/tournaments/${id}`);

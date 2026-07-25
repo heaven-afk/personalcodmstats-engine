@@ -8,8 +8,8 @@ export function getMapForMatch(mapConfig, day, lobby) {
 }
 
 export function getActiveMapConfig(tournament, group) {
-  // group is null/undefined for Standard tournaments
-  return group ? group?.mapConfig : tournament?.mapConfig;
+  if (group?.mapConfig) return group.mapConfig;
+  return tournament?.mapConfig || null;
 }
 
 export function filterResultsByMap(results, mapConfig, targetMap) {

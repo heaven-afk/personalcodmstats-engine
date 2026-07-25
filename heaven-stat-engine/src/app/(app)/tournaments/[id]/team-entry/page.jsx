@@ -160,7 +160,7 @@ function parseTeamEntryPaste(text, teamRegs, lobbiesCount) {
 
 export default function TeamEntryPage() {
   const { id } = useParams();
-  const { tournament } = useTournament();
+  const { tournament, refresh: refreshLayout } = useTournament();
   const [day, setDay] = useState(1);
   const [teamRegs, setTeamRegs] = useState([]);
   const [allResults, setAllResults] = useState([]);
@@ -219,6 +219,9 @@ export default function TeamEntryPage() {
   const ocrFileRef = useRef(null);
 
   const refresh = useCallback(async () => {
+    if (typeof refreshLayout === 'function') {
+      try { await refreshLayout(); } catch {}
+    }
     const [regs, results, bonus, gList] = await Promise.all([
       getTeamRegistrations(id),
       getTeamMatchResults(id),
@@ -232,7 +235,7 @@ export default function TeamEntryPage() {
     if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
       setSelectedGroupId(gList[0].id);
     }
-  }, [id, selectedGroupId]);
+  }, [id, selectedGroupId, refreshLayout]);
 
   useEffect(() => { refresh().finally(() => setLoading(false)); }, [refresh]);
 
