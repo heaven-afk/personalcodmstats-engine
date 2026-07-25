@@ -180,6 +180,9 @@ export default function TeamsPage() {
 
   const clans = Array.from(new Set(teams.map(t => t.clanName).filter(Boolean)));
 
+  // Only truthy when dirty names exist — button auto-hides after a successful clean run
+  const teamsNeedingClean = teams.filter(t => cleanTeamName(t.teamName) !== t.teamName);
+
   const columns = [
     {
       header: 'Team Name',
@@ -226,13 +229,15 @@ export default function TeamsPage() {
           <p className="page-subtitle">Unified registry of all teams across all tournaments</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="btn btn-secondary btn-sm"
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-            onClick={handleOpenCleanModal}
-          >
-            <Sparkles size={14} /> Clean Names
-          </button>
+          {teamsNeedingClean.length > 0 && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={handleOpenCleanModal}
+            >
+              <Sparkles size={14} /> Clean Names ({teamsNeedingClean.length})
+            </button>
+          )}
           <button
             className="btn btn-primary btn-sm"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}

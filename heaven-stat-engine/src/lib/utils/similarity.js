@@ -25,11 +25,13 @@ export function levenshteinDistance(a, b) {
 
 /**
  * Cleans leading slot numbers, rank prefixes, periods, or symbols from team names.
+ * Requires a punctuation separator (. - _ : )) after the number — bare "44 NAME" is left untouched.
  * Example: "6. BOMABA" -> "BOMABA", "4. Legion" -> "Legion", "[04] - Legion" -> "Legion"
+ * NOT matched: "44 REGENTS", "44 REAPERS" (number + space only, no punctuation separator)
  */
 export function cleanTeamName(name) {
   if (!name || typeof name !== 'string') return name || '';
-  return name.trim().replace(/^(?:\[?\d+\]?|#?\d+)[\s.\-_:)]+/, '').trim();
+  return name.trim().replace(/^(?:\[?\d+\]?|#?\d+)[.\-_:)]+\s*/, '').trim();
 }
 
 /**
