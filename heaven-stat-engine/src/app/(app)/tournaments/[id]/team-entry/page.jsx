@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { Save, Plus, Trash2, ChevronDown, ChevronUp, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Lock, Unlock } from 'lucide-react';
 import { getAllSheetsAsCSV } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
+import { cleanTeamName } from '@/lib/utils/similarity';
 
 // Distinct color per lobby slot (cycles if >6 lobbies)
 const LOBBY_COLORS = [
@@ -54,9 +55,9 @@ function parseTeamEntryPaste(text, teamRegs, lobbiesCount) {
     const cols = dataRows[rowIndex];
     if (cols.length === 0 || !cols[0]) continue;
 
-    const teamNameInput = cols[0];
+    const teamNameInput = cleanTeamName(cols[0]);
     const team = teamRegs.find(t => 
-      t.teamName.toLowerCase().replace(/\s+/g, '') === teamNameInput.toLowerCase().replace(/\s+/g, '') ||
+      cleanTeamName(t.teamName).toLowerCase().replace(/\s+/g, '') === teamNameInput.toLowerCase().replace(/\s+/g, '') ||
       t.clanName?.toLowerCase().replace(/\s+/g, '') === teamNameInput.toLowerCase().replace(/\s+/g, '')
     );
 

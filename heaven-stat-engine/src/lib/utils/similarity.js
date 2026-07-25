@@ -24,14 +24,23 @@ export function levenshteinDistance(a, b) {
 }
 
 /**
+ * Cleans leading slot numbers, rank prefixes, periods, or symbols from team names.
+ * Example: "6. BOMABA" -> "BOMABA", "4. Legion" -> "Legion", "[04] - Legion" -> "Legion"
+ */
+export function cleanTeamName(name) {
+  if (!name || typeof name !== 'string') return name || '';
+  return name.trim().replace(/^(?:\[?\d+\]?|#?\d+)[\s.\-_:)]+/, '').trim();
+}
+
+/**
  * Normalizes and calculates string similarity (0.0 to 1.0) between two team names.
  */
 export function stringSimilarity(s1, s2) {
   if (!s1 || !s2) return 0;
   
-  // Normalize strings: lowercase, remove non-alphanumeric, collapse spaces
-  const clean1 = s1.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-  const clean2 = s2.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  // Normalize strings: clean team names, lowercase, remove non-alphanumeric
+  const clean1 = cleanTeamName(s1).toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  const clean2 = cleanTeamName(s2).toLowerCase().trim().replace(/[^a-z0-9]/g, '');
 
   if (clean1 === clean2) return 1.0;
   
@@ -54,14 +63,14 @@ export function stringSimilarity(s1, s2) {
  */
 export function getSimilarTeams(newTeamName, globalTeams, threshold = 0.75) {
   if (!newTeamName || !newTeamName.trim()) return [];
-  const term = newTeamName.trim();
+  const term = cleanTeamName(newTeamName.trim());
   
   return globalTeams
     .map(team => ({
       team,
       similarity: stringSimilarity(term, team.teamName)
     }))
-    .filter(res => res.similarity >= threshold && res.team.teamName.toLowerCase() !== term.toLowerCase())
+    .filter(res => res.similarity >= threshold && cleanTeamName(res.team.teamName).toLowerCase() !== term.toLowerCase())
     .sort((a, b) => b.similarity - a.similarity)
     .map(res => res.team);
 }

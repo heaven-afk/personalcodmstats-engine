@@ -11,7 +11,7 @@ import { getGroups } from '@/lib/firestore/groups';
 import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer, deletePlayer, deleteTeam } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
 import Modal from '@/components/ui/Modal';
-import { getSimilarTeams, getSimilarPlayers } from '@/lib/utils/similarity';
+import { getSimilarTeams, getSimilarPlayers, cleanTeamName } from '@/lib/utils/similarity';
 import {
   getAllSheetsAsCSV,
   parsePlayerRegistrationCSV,

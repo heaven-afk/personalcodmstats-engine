@@ -6,6 +6,7 @@ import {
 import { db, isFirebaseConfigured } from '../firebase';
 import * as localDb from './localStorageDb';
 import { deriveRegion, deriveDevice } from '../regionDeviceLogic';
+import { cleanTeamName } from '../utils/similarity';
 
 // ─── Players ──────────────────────────────────────────────────────────────────
 export async function getPlayers() {
@@ -144,42 +145,46 @@ export async function getTeam(id) {
 
 export async function findTeamByName(teamName) {
   if (!isFirebaseConfigured) {
-    return localDb.localFindTeamByName(teamName);
+    return localDb.localFindTeamByName(cleanTeamName(teamName));
   }
-  if (!teamName?.trim()) return null;
-  const nameLower = teamName.trim().toLowerCase();
+  const cleaned = cleanTeamName(teamName);
+  if (!cleaned) return null;
+  const nameLower = cleaned.toLowerCase();
 
   // Try querying by teamNameLower first
   let snap = await getDocs(query(collection(db, 'teams'), where('teamNameLower', '==', nameLower), limit(1)));
   if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
 
   // Try querying by exact teamName
-  snap = await getDocs(query(collection(db, 'teams'), where('teamName', '==', teamName.trim()), limit(1)));
+  snap = await getDocs(query(collection(db, 'teams'), where('teamName', '==', cleaned), limit(1)));
   if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
 
   // Fallback to loading all (for legacy compatibility)
   const teams = await getTeams();
-  return teams.find((t) => t.teamName?.toLowerCase() === nameLower) || null;
+  return teams.find((t) => cleanTeamName(t.teamName).toLowerCase() === nameLower) || null;
 }
 
 export async function createTeam(data) {
+  const cleanedName = cleanTeamName(data.teamName);
+  const dataWithCleanedName = { ...data, teamName: cleanedName };
+
   if (!isFirebaseConfigured) {
-    return localDb.localCreateTeam(data);
+    return localDb.localCreateTeam(dataWithCleanedName);
   }
-  const existing = await findTeamByName(data.teamName);
+  const existing = await findTeamByName(cleanedName);
   if (existing) return existing;
 
   // Auto-create clan if clanName provided
-  if (data.clanName) {
-    await ensureClan(data.clanName);
+  if (dataWithCleanedName.clanName) {
+    await ensureClan(dataWithCleanedName.clanName);
   }
 
   const ref = await addDoc(collection(db, 'teams'), {
     teamName: '', clanName: '', tournamentIds: [], createdAt: serverTimestamp(),
-    ...data,
-    teamNameLower: (data.teamName || '').toLowerCase().trim(),
+    ...dataWithCleanedName,
+    teamNameLower: cleanedName.toLowerCase(),
   });
-  return { id: ref.id, ...data, teamNameLower: (data.teamName || '').toLowerCase().trim() };
+  return { id: ref.id, ...dataWithCleanedName, teamNameLower: cleanedName.toLowerCase() };
 }
 
 export async function updateTeam(id, data) {

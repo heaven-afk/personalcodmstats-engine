@@ -4,6 +4,7 @@
  * Uses Papa Parse for CSV, SheetJS for Excel.
  */
 import Papa from 'papaparse';
+import { cleanTeamName } from '@/lib/utils/similarity';
 
 // ─── Generic CSV parse ────────────────────────────────────────────────────────
 export function parseCSV(text) {
@@ -77,7 +78,7 @@ export function parsePlayerRegistrationCSV(text) {
         slot: int(row.slot || row.id || row.no || row.index || i + 1),
         professionalName: str(row.professionalname || row.proname || row.playername || row.name || row.fullname || ''),
         ign: str(row.ign || row.ingamename || row.playerign || row.ingame || row.igningamename || ''),
-        teamName: str(row.teamname || row.team || row.clan || ''),
+        teamName: cleanTeamName(str(row.teamname || row.team || row.clan || '')),
         clanName: str(row.clanname || row.clan || row.originalorg || row.org || ''),
         class: str(row.class || row.playerclass || row.category || row.tier || row.group || 'Class 1'),
         gender: str(row.gender || row.sex || ''),
@@ -99,7 +100,7 @@ export function parseTeamRegistrationCSV(text) {
     rows: data.map((row, i) => ({
       rowIndex: i,
       slot: int(row.slot || row.id || row.no || row.index || i + 1),
-      teamName: str(row.teamname || row.team || row.name || ''),
+      teamName: cleanTeamName(str(row.teamname || row.team || row.name || '')),
       clanName: str(row.clanname || row.clan || ''),
       tier: str(row.tier || row.class || row.group || ''),
     })),
@@ -116,7 +117,7 @@ export function parseTeamMatchCSV(text) {
       rowIndex: i,
       day: int(row.day || row.d || row.dayno || row.daynumber || 0),
       lobby: int(row.lobby || row.l || row.lobbynumber || row.lobbynum || row.lobbyno || row.match || row.matchno || row.matchnumber || row.game || row.gameno || row.gamenumber || row.round || row.roundno || row.roundnumber || 0),
-      teamName: str(row.teamname || row.team || row.name || ''),
+      teamName: cleanTeamName(str(row.teamname || row.team || row.name || '')),
       placement: int(row.placement || row.position || row.place || row.pos || row.rank || row.rnk || 0),
       kills: int(row.kills || row.kill || row.k || 0),
     })),
@@ -134,7 +135,7 @@ export function parsePlayerMatchCSV(text) {
       day: int(row.day || row.d || row.dayno || row.daynumber || 0),
       lobby: int(row.lobby || row.l || row.lobbynumber || row.lobbynum || row.lobbyno || row.match || row.matchno || row.matchnumber || row.game || row.gameno || row.gamenumber || row.round || row.roundno || row.roundnumber || 0),
       playerIGN: str(row.playerign || row.ign || row.player || row.playername || row.name || row.proname || ''),
-      teamName: str(row.teamname || row.team || ''),
+      teamName: cleanTeamName(str(row.teamname || row.team || '')),
       kills: int(row.kills || row.kill || row.k || 0),
       damage: num(row.damage || row.dmg || row.damagedealt || 0),
       accuracy: num(row.accuracy || row.acc || row.accuracypct || row.accuracypercent || 0),

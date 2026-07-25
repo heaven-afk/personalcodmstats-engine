@@ -8,7 +8,7 @@ import { createTeam, createPlayer } from '@/lib/firestore/registry';
 import { getTeamRegistrations, getPlayerRegistrations, addTeamRegistration, addPlayerRegistration } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, getPlayerMatchResults, savePlayerMatchResult, updatePlayerMatchResult } from '@/lib/firestore/matchData';
 import { parseTeamRegistrationCSV, parsePlayerRegistrationCSV, parseTeamMatchCSV, parsePlayerMatchCSV } from './csvParser';
-import { getSimilarTeams } from '@/lib/utils/similarity';
+import { getSimilarTeams, cleanTeamName } from '@/lib/utils/similarity';
 
 export async function importTeamRegistrations(tournamentId, csvText, onProgress) {
   const { rows, errors } = parseTeamRegistrationCSV(csvText);

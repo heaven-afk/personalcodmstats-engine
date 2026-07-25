@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock } from 'lucide-react';
 import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
+import { cleanTeamName } from '@/lib/utils/similarity';
 
 // ─── Smart Spreadsheet Parser ────────────────────────────────────────────────
 function parseSmartSpreadsheet(grid) {
@@ -267,7 +268,7 @@ function parseSmartSpreadsheet(grid) {
       continue;
     }
 
-    const teamName = teamCol !== -1 ? String(rowData[teamCol] || '').trim() : '';
+    const teamName = teamCol !== -1 ? cleanTeamName(String(rowData[teamCol] || '').trim()) : '';
     const slot = slotCol !== -1 ? String(rowData[slotCol] || '').trim() : '';
 
     const stats = {};
