@@ -1,17 +1,17 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getTeams } from '@/lib/firestore/registry';
+import { getTeams, updateTeam } from '@/lib/firestore/registry';
 import { getTournaments, getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
 import { computeTeamRanking } from '@/lib/engine/standings';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { Shield, Search, ExternalLink, Trophy, BarChart2, Combine } from 'lucide-react';
+import { Shield, Search, ExternalLink, Trophy, BarChart2, Combine, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
 import { mergeTeams } from '@/lib/firestore/merge';
-import { scanForDuplicates } from '@/lib/utils/similarity';
+import { scanForDuplicates, cleanTeamName } from '@/lib/utils/similarity';
 import { cleanImageUrl } from '@/lib/utils/image';
 
 export default function TeamsPage() {
@@ -27,6 +27,11 @@ export default function TeamsPage() {
   const [mergeModalOpen, setMergeModalOpen] = useState(false);
   const [mergeSource, setMergeSource] = useState('');
   const [mergeTarget, setMergeTarget] = useState('');
+
+  // Clean names states
+  const [cleanModalOpen, setCleanModalOpen] = useState(false);
+  const [cleanPreviews, setCleanPreviews] = useState([]);
+  const [cleaning, setCleaning] = useState(false);
 
   async function loadTeamsData() {
     try {
@@ -98,6 +103,38 @@ export default function TeamsPage() {
       setMergeTarget(t2.id);
     }
     setMergeModalOpen(true);
+  };
+
+  // ── Clean Team Names ──────────────────────────────────────────────────────
+  const handleOpenCleanModal = () => {
+    const previews = teams
+      .map(t => ({ team: t, cleaned: cleanTeamName(t.teamName) }))
+      .filter(({ team, cleaned }) => cleaned !== team.teamName);
+    setCleanPreviews(previews);
+    setCleanModalOpen(true);
+  };
+
+  const handleExecuteClean = async () => {
+    if (cleanPreviews.length === 0) return;
+    setCleaning(true);
+    try {
+      await Promise.all(
+        cleanPreviews.map(({ team, cleaned }) =>
+          updateTeam(team.id, {
+            teamName: cleaned,
+            teamNameLower: cleaned.toLowerCase(),
+          })
+        )
+      );
+      toast.success(`Cleaned ${cleanPreviews.length} team name(s) successfully!`);
+      setCleanModalOpen(false);
+      setCleanPreviews([]);
+      await loadTeamsData();
+    } catch (err) {
+      toast.error('Clean failed: ' + err.message);
+    } finally {
+      setCleaning(false);
+    }
   };
 
   const sourceTeamObj = teams.find(t => t.id === mergeSource);
@@ -188,13 +225,22 @@ export default function TeamsPage() {
           <h1 className="page-title">Teams</h1>
           <p className="page-subtitle">Unified registry of all teams across all tournaments</p>
         </div>
-        <button
-          className="btn btn-primary btn-sm"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          onClick={() => setMergeModalOpen(true)}
-        >
-          <Combine size={14} /> Merge Teams
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={handleOpenCleanModal}
+          >
+            <Sparkles size={14} /> Clean Names
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={() => setMergeModalOpen(true)}
+          >
+            <Combine size={14} /> Merge Teams
+          </button>
+        </div>
       </div>
 
       {/* Potential Duplicates Scanner Alert */}
@@ -369,6 +415,68 @@ export default function TeamsPage() {
                 {reloading ? 'Merging...' : 'Confirm & Merge Teams'}
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Clean Team Names Modal */}
+      {cleanModalOpen && (
+        <Modal title="Clean Team Names" onClose={() => setCleanModalOpen(false)} size="md">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {cleanPreviews.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                ✅ All team names are already clean — no numeric prefixes found.
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  The following <strong style={{ color: 'var(--text-primary)' }}>{cleanPreviews.length} team{cleanPreviews.length !== 1 ? 's' : ''}</strong> have numeric rank prefixes that will be stripped.
+                  This updates both <code>teamName</code> and <code>teamNameLower</code> in Firestore.
+                </p>
+
+                <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {cleanPreviews.map(({ team, cleaned }) => (
+                    <div
+                      key={team.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr auto 1fr',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '8px 12px',
+                        background: 'var(--bg-alt-row)',
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-muted)', textDecoration: 'line-through' }}>{team.teamName}</span>
+                      <span style={{ color: 'var(--gold)', fontWeight: 700, textAlign: 'center' }}>→</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{cleaned}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 4 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setCleanModalOpen(false)}
+                    disabled={cleaning}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    onClick={handleExecuteClean}
+                    disabled={cleaning}
+                  >
+                    <Sparkles size={13} />
+                    {cleaning ? 'Cleaning...' : `Apply to ${cleanPreviews.length} Team${cleanPreviews.length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </Modal>
       )}
