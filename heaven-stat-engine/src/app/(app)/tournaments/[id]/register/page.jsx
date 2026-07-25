@@ -1073,7 +1073,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
 }
 
 // ─── Player Registration Panel ───────────────────────────────────────────────
-function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistrations, globalPlayers, globalTeams, classes, onRefresh, setImportProgress }) {
+function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistrations, globalPlayers, globalTeams, classes, onRefresh, setImportProgress, selectedGroupId }) {
   const [addingRow, setAddingRow] = useState(false);
   const [newPlayer, setNewPlayer] = useState({ slot: '', professionalName: '', ign: '', teamName: '', category: 'Registered', gender: '', region: '', country: '', device: '', deviceModel: '' });
   const [saving, setSaving] = useState(false);
