@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTeams, getPlayers } from '@/lib/firestore/registry';
@@ -36,7 +37,9 @@ function RatingBar({ label, value, displayValue, type }) {
 
 export default function AnalyticsPage() {
   const { tournament } = useTournament();
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'deep'
+  const searchParams = useSearchParams();
+  const tabParam = searchParams ? searchParams.get('tab') : null;
+  const [activeTab, setActiveTab] = useState(tabParam === 'deep' ? 'deep' : 'overview');
   const [loading, setLoading] = useState(true);
   const [teamResults, setTeamResults] = useState([]);
   const [playerResults, setPlayerResults] = useState([]);
@@ -49,6 +52,14 @@ export default function AnalyticsPage() {
   const [compRightId, setCompRightId] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [expandedTeamId, setExpandedTeamId] = useState(null);
+
+  useEffect(() => {
+    if (tabParam === 'deep') {
+      setActiveTab('deep');
+    } else if (tabParam === 'overview') {
+      setActiveTab('overview');
+    }
+  }, [tabParam]);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -113,9 +124,6 @@ export default function AnalyticsPage() {
   const activeMapConfig = useMemo(() => getActiveMapConfig(tournament, null), [tournament]);
 
   if (loading) return <LoadingSpinner size="lg" />;
-  if (analyticsData.length === 0 && playerAnalyticsData.length === 0) return (
-    <EmptyState icon={BarChart3} title="No analytics data" text="Enter match data for multiple days to compute analytics." />
-  );
 
   // Season-level summary stats
   const avgPPM = analyticsData.length > 0 ? (analyticsData.reduce((s, t) => s + (t.analytics?.PPM || 0), 0) / analyticsData.length).toFixed(2) : '0';
@@ -167,8 +175,11 @@ export default function AnalyticsPage() {
           activeMapConfig={activeMapConfig}
         />
       ) : (
-        <>
-          {/* Season summary bar */}
+        analyticsData.length === 0 ? (
+          <EmptyState icon={BarChart3} title="No analytics data" text="Enter match data for multiple days to compute analytics." />
+        ) : (
+          <>
+            {/* Season summary bar */}
       <div className="card-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
           <div className="stat-card-icon gold"><BarChart3 size={20} /></div>
@@ -725,7 +736,8 @@ export default function AnalyticsPage() {
           </table>
         </div>
       </div>
-        </>
+          </>
+        )
       )}
     </div>
   );
