@@ -1,14 +1,18 @@
 'use client';
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useTournament } from '../layout';
-import { getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
-import { getTeams } from '@/lib/firestore/registry';
+import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
+import { getTeams, getPlayers } from '@/lib/firestore/registry';
+import { getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
+import { computePlayerStats, computePlayerAnalytics } from '@/lib/engine/playerStats';
+import { getActiveMapConfig } from '@/lib/utils/mapConfig';
+import DeepAnalysisView from '@/components/analytics/DeepAnalysisView';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { PlaystyleBadge, RatingBadge, RankBadge } from '@/components/ui/Badge';
 import MetricTooltip from '@/components/ui/MetricTooltip';
-import { BarChart3, ChevronDown, ChevronUp, TrendingUp, Shield } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronUp, TrendingUp, Shield, Sparkles } from 'lucide-react';
 import { cleanImageUrl } from '@/lib/utils/image';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line,
@@ -32,10 +36,14 @@ function RatingBar({ label, value, displayValue, type }) {
 
 export default function AnalyticsPage() {
   const { tournament } = useTournament();
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'deep'
   const [loading, setLoading] = useState(true);
   const [teamResults, setTeamResults] = useState([]);
+  const [playerResults, setPlayerResults] = useState([]);
+  const [playerRegs, setPlayerRegs] = useState([]);
   const [bonusPoints, setBonusPoints] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [playersRegistry, setPlayersRegistry] = useState([]);
   const [expandedTeam, setExpandedTeam] = useState(null);
   const [compLeftId, setCompLeftId] = useState('');
   const [compRightId, setCompRightId] = useState('');
@@ -54,13 +62,16 @@ export default function AnalyticsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [tr, bp, allTeams] = await Promise.all([
+        const [tr, pr, preg, bp, allTeams, allPlayers] = await Promise.all([
           getTeamMatchResults(tournament.id),
+          getPlayerMatchResults(tournament.id),
+          getPlayerRegistrations(tournament.id),
           getBonusPoints(tournament.id),
           getTeams(),
+          getPlayers(),
         ]);
         const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
-        const enriched = tr.map((r) => ({
+        const enrichedTr = tr.map((r) => ({
           ...r,
           teamName: teamMap[r.teamId]?.teamName || r.teamName || r.teamId,
           clanName: teamMap[r.teamId]?.clanName || '',
@@ -69,9 +80,12 @@ export default function AnalyticsPage() {
           ...b,
           teamName: teamMap[b.teamId]?.teamName || b.teamId,
         }));
-        setTeamResults(enriched);
+        setTeamResults(enrichedTr);
+        setPlayerResults(pr);
+        setPlayerRegs(preg);
         setBonusPoints(enrichedBp);
         setTeams(allTeams);
+        setPlayersRegistry(allPlayers);
       } catch (err) { console.error(err); }
       finally { setLoading(false); }
     }
@@ -83,6 +97,12 @@ export default function AnalyticsPage() {
     [teamResults, bonusPoints, scoring]
   );
 
+  const playerAnalyticsData = useMemo(() => {
+    if (!playerResults || playerResults.length === 0) return [];
+    const pStats = computePlayerStats(playerResults, playerRegs, tournament);
+    return computePlayerAnalytics(pStats, teamResults);
+  }, [playerResults, playerRegs, tournament, teamResults]);
+
   const compLeftTeam = useMemo(() => analyticsData.find(t => t.teamId === compLeftId) || null, [compLeftId, analyticsData]);
   const compRightTeam = useMemo(() => analyticsData.find(t => t.teamId === compRightId) || null, [compRightId, analyticsData]);
 
@@ -90,14 +110,16 @@ export default function AnalyticsPage() {
     return Object.fromEntries(teams.map((t) => [t.id, t]));
   }, [teams]);
 
+  const activeMapConfig = useMemo(() => getActiveMapConfig(tournament, null), [tournament]);
+
   if (loading) return <LoadingSpinner size="lg" />;
-  if (analyticsData.length === 0) return (
+  if (analyticsData.length === 0 && playerAnalyticsData.length === 0) return (
     <EmptyState icon={BarChart3} title="No analytics data" text="Enter match data for multiple days to compute analytics." />
   );
 
   // Season-level summary stats
-  const avgPPM = (analyticsData.reduce((s, t) => s + (t.analytics?.PPM || 0), 0) / analyticsData.length).toFixed(2);
-  const avgKPM = (analyticsData.reduce((s, t) => s + (t.analytics?.KPM || 0), 0) / analyticsData.length).toFixed(2);
+  const avgPPM = analyticsData.length > 0 ? (analyticsData.reduce((s, t) => s + (t.analytics?.PPM || 0), 0) / analyticsData.length).toFixed(2) : '0';
+  const avgKPM = analyticsData.length > 0 ? (analyticsData.reduce((s, t) => s + (t.analytics?.KPM || 0), 0) / analyticsData.length).toFixed(2) : '0';
   const mostConsistent = [...analyticsData].sort((a, b) => (a.analytics?.stdDevCS || 999) - (b.analytics?.stdDevCS || 999))[0];
   const highestMomentum = [...analyticsData].sort((a, b) => (b.analytics?.forwardMI || 0) - (a.analytics?.forwardMI || 0))[0];
 
@@ -114,7 +136,39 @@ export default function AnalyticsPage() {
 
   return (
     <div>
-      {/* Season summary bar */}
+      {/* Top Tab Bar: Overview vs Deep Analysis */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+        <button
+          className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setActiveTab('overview')}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.88rem' }}
+        >
+          <BarChart3 size={16} /> Overview Analytics
+        </button>
+        <button
+          className={`btn ${activeTab === 'deep' ? 'btn-gold' : 'btn-secondary'}`}
+          onClick={() => setActiveTab('deep')}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.88rem' }}
+        >
+          <Sparkles size={16} /> Deep Analysis
+        </button>
+      </div>
+
+      {activeTab === 'deep' ? (
+        <DeepAnalysisView
+          tournament={tournament}
+          teamMatchResults={teamResults}
+          playerMatchResults={playerResults}
+          bonusPoints={bonusPoints}
+          teamAnalyticsData={analyticsData}
+          playerAnalyticsData={playerAnalyticsData}
+          teamsRegistry={teams}
+          playersRegistry={playersRegistry}
+          activeMapConfig={activeMapConfig}
+        />
+      ) : (
+        <>
+          {/* Season summary bar */}
       <div className="card-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
           <div className="stat-card-icon gold"><BarChart3 size={20} /></div>
@@ -671,6 +725,8 @@ export default function AnalyticsPage() {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

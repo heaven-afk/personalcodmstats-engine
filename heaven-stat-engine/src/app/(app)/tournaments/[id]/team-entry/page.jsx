@@ -1472,20 +1472,28 @@ export default function TeamEntryPage() {
                     Map for Day {day}:
                   </span>
                   {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => {
-                    const val = activeMapConfig?.schedule?.[`day${day}_lobby${l}`] || AVAILABLE_MAPS[0];
+                    const val = activeMapConfig?.schedule?.[`day${day}_lobby${l}`] || '';
+                    const isUnset = !val;
                     return (
                       <div key={`lobby-map-${l}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                         <span style={{ fontWeight: 700, color: lc(l).text }}>L{l}:</span>
                         <select
                           className="form-select"
-                          style={{ fontSize: '0.78rem', padding: '3px 8px' }}
+                          style={{ fontSize: '0.78rem', padding: '3px 8px', borderColor: isUnset ? 'rgba(245,158,11,0.5)' : undefined }}
                           value={val}
                           onChange={e => handleFlexibleMapChange(l, e.target.value)}
                         >
+                          <option value="" disabled={val !== ''}>— Not Set —</option>
                           {AVAILABLE_MAPS.map(m => (
                             <option key={m} value={m}>{m}</option>
                           ))}
                         </select>
+                        {isUnset && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.7rem', color: '#f59e0b', background: 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }} title="Map not explicitly assigned yet">
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                            Unset
+                          </span>
+                        )}
                       </div>
                     );
                   })}
