@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Wordmark from '@/components/ui/Wordmark';
 import {
-  LayoutDashboard, Trophy, Users, Shield, BarChart3, Settings, LogOut, GitCompare, FlaskConical, X
+  LayoutDashboard, Trophy, Users, Shield, BarChart3, Settings, LogOut, GitCompare, FlaskConical, Sparkles, X
 } from 'lucide-react';
 
 const NAV = [
@@ -14,6 +14,7 @@ const NAV = [
   { href: '/teams',       label: 'Teams',       icon: Shield },
   { href: '/comparison',  label: 'Comparison',  icon: GitCompare },
   { href: '/rankings',    label: 'Rankings',    icon: BarChart3 },
+  { href: '/analysis',    label: 'Deep Analysis', icon: Sparkles },
   { href: '/simulate',    label: 'Simulate',    icon: FlaskConical },
 ];
 
