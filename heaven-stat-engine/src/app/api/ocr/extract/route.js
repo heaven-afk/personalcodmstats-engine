@@ -59,7 +59,7 @@ Response schema:
 
 // Helper to call Google Gemini Vision API with model fallback and robust JSON parsing
 async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType = 'image/jpeg') {
-  const models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
   let lastError = null;
 
   for (const model of models) {
@@ -98,9 +98,7 @@ async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, 
       if (!response.ok) {
         const errorText = await response.text();
         lastError = new Error(`Gemini API (${model}) returned ${response.status}: ${errorText}`);
-        // If model not found (404), try next model fallback
-        if (response.status === 404) continue;
-        throw lastError;
+        continue;
       }
 
       const data = await response.json();
@@ -115,10 +113,7 @@ async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, 
       return JSON.parse(rawJsonText);
     } catch (err) {
       lastError = err;
-      if (model !== models[models.length - 1] && err.message.includes('404')) {
-        continue;
-      }
-      throw err;
+      continue;
     }
   }
 
@@ -127,7 +122,7 @@ async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, 
 
 // Helper to retry with conversation history
 async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText, mimeType = 'image/jpeg') {
-  const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
   let lastError = null;
 
   for (const model of models) {
@@ -179,8 +174,7 @@ async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, ba
       if (!response.ok) {
         const errorText = await response.text();
         lastError = new Error(`Gemini API retry (${model}) returned ${response.status}: ${errorText}`);
-        if (response.status === 404) continue;
-        throw lastError;
+        continue;
       }
 
       const data = await response.json();
@@ -194,10 +188,7 @@ async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, ba
       return JSON.parse(rawJsonText);
     } catch (err) {
       lastError = err;
-      if (model !== models[models.length - 1] && err.message.includes('404')) {
-        continue;
-      }
-      throw err;
+      continue;
     }
   }
 

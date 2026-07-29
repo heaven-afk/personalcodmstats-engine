@@ -1225,7 +1225,11 @@ export default function TeamEntryPage() {
                               {item.status === 'pending' && <span style={{ color: 'var(--text-muted)' }}>Pending</span>}
                               {item.status === 'scanning' && <span style={{ color: 'var(--gold)' }}>Scanning ({item.progress}%)</span>}
                               {item.status === 'ready' && <span style={{ color: 'var(--success)' }}>Ready</span>}
-                              {item.status === 'error' && <span style={{ color: 'var(--danger)' }} title={item.errorMessage}>Failed</span>}
+                              {item.status === 'error' && (
+                                <span style={{ color: 'var(--danger)' }} title={item.errorMessage}>
+                                  Failed: {item.errorMessage}
+                                </span>
+                              )}
                             </span>
                             {item.status === 'scanning' && (
                               <LoadingSpinner size="sm" style={{ width: 12, height: 12 }} />
