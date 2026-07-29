@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { Save, Plus, Trash2, ChevronDown, ChevronUp, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Lock, Unlock } from 'lucide-react';
 import { getAllSheetsAsCSV } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
+import { matchOcrRowToTeam } from '@/lib/importers/ocrTeamMatcher';
 import { cleanTeamName } from '@/lib/utils/similarity';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig } from '@/lib/utils/mapConfig';
@@ -526,17 +527,17 @@ export default function TeamEntryPage() {
         clearInterval(progressInterval);
 
         const mappedRows = (data.rows || []).map(row => {
-          const slotStr = String(row.slot || '');
-          const match = slotStr.match(/\d+/);
-          const numericSlot = match ? parseInt(match[0]) : 0;
-          const team = activeTeamRegs.find(t => t.slot === numericSlot);
+          const matchResult = matchOcrRowToTeam(row, activeTeamRegs);
           return {
             placement: parseInt(row.rank) || 0,
-            slot: row.slot,
+            slot: row.slot || '',
+            ocrTeamName: row.teamName || '',
             kills: row.kills === null ? null : (parseInt(row.kills) || 0),
-            teamId: team?.teamId || null,
-            teamName: team?.teamName || null,
-            sourceLine: `Rank: ${row.rank}, Slot: ${row.slot}, Kills: ${row.kills}`
+            teamId: matchResult.teamId,
+            teamName: matchResult.teamName || row.teamName || row.slot || '',
+            matchMethod: matchResult.matchMethod,
+            confidence: matchResult.confidence,
+            sourceLine: `Rank: ${row.rank}, Slot: ${row.slot || ''}, Team: ${row.teamName || ''}, Kills: ${row.kills}`
           };
         });
 
@@ -584,13 +585,27 @@ export default function TeamEntryPage() {
         
         let updatedRow = { ...row, [field]: val };
         
-        if (field === 'slot') {
-          const slotStr = String(val || '');
-          const match = slotStr.match(/\d+/);
-          const numericSlot = match ? parseInt(match[0]) : 0;
-          const team = activeTeamRegs.find(t => t.slot === numericSlot);
-          updatedRow.teamId = team?.teamId || null;
-          updatedRow.teamName = team?.teamName || null;
+        if (field === 'teamId') {
+          const selectedTeam = activeTeamRegs.find(t => t.teamId === val);
+          if (selectedTeam) {
+            updatedRow.teamId = selectedTeam.teamId;
+            updatedRow.teamName = selectedTeam.teamName;
+            updatedRow.matchMethod = 'manual';
+          } else {
+            updatedRow.teamId = null;
+            updatedRow.teamName = updatedRow.ocrTeamName || updatedRow.slot || '';
+            updatedRow.matchMethod = null;
+          }
+        } else if (field === 'slot' || field === 'ocrTeamName') {
+          const matchResult = matchOcrRowToTeam(
+            { ...updatedRow, slot: updatedRow.slot, teamName: updatedRow.ocrTeamName },
+            activeTeamRegs
+          );
+          if (matchResult.teamId) {
+            updatedRow.teamId = matchResult.teamId;
+            updatedRow.teamName = matchResult.teamName;
+            updatedRow.matchMethod = matchResult.matchMethod;
+          }
         } else if (field === 'placement') {
           updatedRow.placement = parseInt(val) || 0;
         } else if (field === 'kills') {
@@ -1375,12 +1390,55 @@ export default function TeamEntryPage() {
                                         ) : (row.slot || '—')}
                                       </td>
                                       <td>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                          <span style={{ fontWeight: 600 }}>
-                                            {isUnmatched ? 'Unmatched Slot' : row.teamName}
-                                          </span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                          <select
+                                            className="editable-input"
+                                            style={{
+                                              flex: 1,
+                                              minWidth: 160,
+                                              fontSize: '0.75rem',
+                                              padding: '2px 6px',
+                                              fontWeight: 600,
+                                              color: isUnmatched ? 'var(--danger)' : 'var(--text-primary)',
+                                              borderColor: isUnmatched ? 'var(--danger)' : 'var(--border-md)',
+                                              background: isUnmatched ? 'rgba(239,68,68,0.06)' : undefined
+                                            }}
+                                            value={row.teamId || ''}
+                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'teamId', e.target.value)}
+                                          >
+                                            <option value="">-- Select Registered Team --</option>
+                                            {activeTeamRegs.map(t => (
+                                              <option key={t.teamId} value={t.teamId}>
+                                                {t.slot ? `[Slot ${t.slot}] ` : ''}{t.teamName} {t.clanName ? `(${t.clanName})` : ''}
+                                              </option>
+                                            ))}
+                                          </select>
+
+                                          {/* Match Status Badge */}
+                                          {row.matchMethod === 'slot' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: 'var(--gold)', border: '1px solid rgba(201,168,76,0.3)', fontWeight: 600 }} title="Matched by Slot Number">
+                                              Slot Match
+                                            </span>
+                                          )}
+                                          {row.matchMethod === 'exact' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 600 }} title="Matched by Exact Name">
+                                              Exact Name
+                                            </span>
+                                          )}
+                                          {row.matchMethod === 'fuzzy' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(139,92,246,0.15)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)', fontWeight: 600 }} title={`Fuzzy matched (${Math.round((row.confidence || 0) * 100)}% match)`}>
+                                              Fuzzy ({Math.round((row.confidence || 0) * 100)}%)
+                                            </span>
+                                          )}
+                                          {row.matchMethod === 'manual' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)', fontWeight: 600 }} title="Manually Selected">
+                                              Manual
+                                            </span>
+                                          )}
                                           {isUnmatched && (
-                                            <AlertCircle size={14} style={{ color: 'var(--danger)' }} title="No registered team matches this slot" />
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                              <AlertCircle size={11} /> Unmatched
+                                            </span>
                                           )}
                                         </div>
                                       </td>

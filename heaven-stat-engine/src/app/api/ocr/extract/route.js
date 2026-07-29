@@ -3,29 +3,30 @@ import { NextResponse } from 'next/server';
 const TEAM_SYSTEM_PROMPT = `You are a CODM (Call of Duty Mobile) Battle Royale scoreboard parser.
 
 You will receive one screenshot of a match results screen. Your ONLY job is to extract 
-structured player/team data from the visible scoreboard table. Ignore all UI chrome, 
+structured team data from the visible scoreboard table. Ignore all UI chrome, 
 watermarks, logos, background art, HUD elements, and decorative text that is not part 
 of the results table.
 
 For each visible row in the results table extract:
 - rank: placement number (integer)
-- kills: kill count shown for that row (integer, use 0 if blank or not visible). Be very careful to look specifically for the team kills count column (typically a single or double-digit integer). DO NOT confuse it with the Match Score (typically a 4-digit number like 1500, 2400) or other metrics.
-- slot: the team name/label or squad slot shown in the row next to the rank (string, e.g. "TEAM1", "TEAM 3", etc., or null if not present)
+- kills: total team kill count shown for that row (integer, use 0 if blank or not visible). Be very careful to look specifically for the team kills count column (typically a single or double-digit integer). DO NOT confuse it with the Match Score (typically a 4-digit number like 1500, 2400) or Damage.
+- slot: squad slot label/number shown in the row next to rank if present (string, e.g., "TEAM 1", "Slot 3", "04", or null if not present)
+- teamName: the full team name, clan name, or team tag visible in that row (string, e.g., "Elevate", "Red Reapers", "BOMABA", or null if not present)
 
 Rules:
 - Return ONLY valid JSON, no explanation, no markdown, no preamble
 - If a field is unreadable or genuinely ambiguous, return null for that field only — do not guess
 - rank values should be sequential integers starting at 1
 - If the image is not a CODM scoreboard return: { "error": "not a scoreboard" }
-- Deduplicate by team: If a team slot appears more than once in the scoreboard (due to overlaps or duplicates), pick exactly ONE row (the one with the correct/highest kills or most complete data) and discard the other duplicate row(s). Do NOT drop both rows; you MUST include exactly one row for that team slot.
+- Deduplicate by team: If a team slot or team name appears more than once in the scoreboard (due to overlaps or duplicates), pick exactly ONE row (the one with the most complete data or higher kills) and discard duplicate rows.
 - Ensure the kills count matches the correct team row. Do not repeat or shift numbers between rows.
 
 Response schema:
 {
   "lobby": <lobby_number passed in via the user message>,
   "rows": [
-    { "rank": 1, "kills": 5, "slot": "TEAM1" },
-    { "rank": 2, "kills": 3, "slot": "TEAM3" }
+    { "rank": 1, "kills": 5, "slot": "TEAM 1", "teamName": "Elevate Esports" },
+    { "rank": 2, "kills": 3, "slot": "TEAM 3", "teamName": "Red Reapers" }
   ]
 }`;
 
@@ -56,111 +57,151 @@ Response schema:
   ]
 }`;
 
-// Helper to call Google Gemini Vision API
-async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [
-          { text: systemPrompt }
-        ]
-      },
-      contents: [
-        {
-          parts: [
-            { text: userText },
+// Helper to call Google Gemini Vision API with model fallback and robust JSON parsing
+async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType = 'image/jpeg') {
+  const models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [
+              { text: systemPrompt }
+            ]
+          },
+          contents: [
             {
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: base64Image
-              }
+              parts: [
+                { text: userText },
+                {
+                  inlineData: {
+                    mimeType: mimeType || 'image/jpeg',
+                    data: base64Image
+                  }
+                }
+              ]
             }
-          ]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        lastError = new Error(`Gemini API (${model}) returned ${response.status}: ${errorText}`);
+        // If model not found (404), try next model fallback
+        if (response.status === 404) continue;
+        throw lastError;
       }
-    })
-  });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API returned ${response.status}: ${errorText}`);
+      const data = await response.json();
+      let rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawJsonText) {
+        throw new Error('Gemini Vision API returned empty message content');
+      }
+
+      // Clean markdown code fence formatting if present
+      rawJsonText = rawJsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+
+      return JSON.parse(rawJsonText);
+    } catch (err) {
+      lastError = err;
+      if (model !== models[models.length - 1] && err.message.includes('404')) {
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const data = await response.json();
-  const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawJsonText) {
-    throw new Error('Gemini Vision API returned an empty message content');
-  }
-
-  return JSON.parse(rawJsonText);
+  throw lastError || new Error('Gemini API call failed across all models');
 }
 
 // Helper to retry with conversation history
-async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [
-          { text: systemPrompt }
-        ]
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: userText },
+async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText, mimeType = 'image/jpeg') {
+  const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [
+              { text: systemPrompt }
+            ]
+          },
+          contents: [
             {
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: base64Image
-              }
+              role: "user",
+              parts: [
+                { text: userText },
+                {
+                  inlineData: {
+                    mimeType: mimeType || 'image/jpeg',
+                    data: base64Image
+                  }
+                }
+              ]
+            },
+            {
+              role: "model",
+              parts: [
+                { text: firstAssistantMsg }
+              ]
+            },
+            {
+              role: "user",
+              parts: [
+                { text: followUpText }
+              ]
             }
-          ]
-        },
-        {
-          role: "model",
-          parts: [
-            { text: firstAssistantMsg }
-          ]
-        },
-        {
-          role: "user",
-          parts: [
-            { text: followUpText }
-          ]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        lastError = new Error(`Gemini API retry (${model}) returned ${response.status}: ${errorText}`);
+        if (response.status === 404) continue;
+        throw lastError;
       }
-    })
-  });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API retry returned ${response.status}: ${errorText}`);
+      const data = await response.json();
+      let rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawJsonText) {
+        throw new Error('Gemini Vision API retry returned empty message content');
+      }
+
+      rawJsonText = rawJsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+
+      return JSON.parse(rawJsonText);
+    } catch (err) {
+      lastError = err;
+      if (model !== models[models.length - 1] && err.message.includes('404')) {
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const data = await response.json();
-  const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawJsonText) {
-    throw new Error('Gemini Vision API retry returned an empty message content');
-  }
-
-  return JSON.parse(rawJsonText);
+  throw lastError || new Error('Gemini API retry failed across all models');
 }
 
 // Check if ranks have duplicates or are not sequential (allowing starting at any number)
@@ -217,9 +258,11 @@ export async function POST(req) {
     const systemPrompt = type === 'player' ? PLAYER_SYSTEM_PROMPT : TEAM_SYSTEM_PROMPT;
     const userText = `This is Lobby ${lobbyNumber}. Extract the scoreboard data.`;
 
+    const mimeType = file.type || 'image/jpeg';
+
     let extractedData;
     try {
-      extractedData = await callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image);
+      extractedData = await callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType);
     } catch (err) {
       return NextResponse.json({ error: 'gemini_failed', message: err.message }, { status: 500 });
     }
@@ -244,7 +287,8 @@ export async function POST(req) {
           userText,
           base64Image,
           JSON.stringify(extractedData),
-          followUpText
+          followUpText,
+          mimeType
         );
         rows = extractedData.rows || [];
         totalRows = rows.length;

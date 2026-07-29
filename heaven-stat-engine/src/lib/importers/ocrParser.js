@@ -1,10 +1,14 @@
-import Tesseract from 'tesseract.js';
-
 /**
- * Runs OCR on an uploaded image file and returns raw extracted text.
- * Used by both team-entry and player-entry OCR flows.
+ * Runs client-side OCR on an uploaded image file using Tesseract.js if available.
  */
 export async function extractTextFromImage(file, onProgress) {
+  let Tesseract;
+  try {
+    Tesseract = (await import('tesseract.js')).default;
+  } catch (err) {
+    throw new Error('Client-side Tesseract.js is not installed. Please use the Gemini Vision API backend endpoint.');
+  }
+
   const result = await Tesseract.recognize(file, 'eng', {
     logger: (m) => {
       if (m.status === 'recognizing text' && onProgress) {
