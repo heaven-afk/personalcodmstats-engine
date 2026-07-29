@@ -994,18 +994,18 @@ export default function PlayerEntryPage() {
     }));
 
     const promises = pendingItems.map(async (item) => {
+      let progressInterval = null;
       try {
-        const progressInterval = setInterval(() => {
+        progressInterval = setInterval(() => {
           setOcrQueue(prev => prev.map(qi => {
-            if (qi.id === item.id && qi.status === 'scanning' && qi.progress < 90) {
-              return { ...qi, progress: qi.progress + 15 };
+            if (qi.id === item.id && qi.status === 'scanning') {
+              return { ...qi, progress: Math.min(85, qi.progress + 15) };
             }
             return qi;
           }));
-        }, 1000);
+        }, 800);
 
         const data = await uploadAndParseImage(item.file, item.lobby, 'player');
-        clearInterval(progressInterval);
 
         const mappedRows = (data.rows || []).map(row => {
           const nameInput = row.name || '';
@@ -1025,7 +1025,7 @@ export default function PlayerEntryPage() {
             ign: player?.ign || nameInput,
             teamName: player?.teamName || '',
             matchType: player ? matchType : null,
-            kills: row.kills === null ? null : (parseInt(row.kills) || 0),
+            kills: row.kills === null || row.kills === undefined ? null : (parseInt(row.kills) || 0),
             originalParsedName: nameInput,
             sourceLine: `Name: ${row.name}, Kills: ${row.kills}`
           };
@@ -1058,6 +1058,8 @@ export default function PlayerEntryPage() {
           }
           return qi;
         }));
+      } finally {
+        if (progressInterval) clearInterval(progressInterval);
       }
     });
 
@@ -1212,19 +1214,29 @@ export default function PlayerEntryPage() {
   };
 
   function mergePlayerLobbyRows(rowsList) {
+    if (!rowsList || rowsList.length === 0) return [];
+
+    const getQualityScore = (row) => {
+      let score = 0;
+      if (row.playerId) score += 50;
+      if (row.kills !== null && row.kills !== undefined) score += 30;
+      if (row.matchType === 'ign') score += 20;
+      else if (row.matchType === 'proName') score += 10;
+      return score;
+    };
+
     const mergedMap = new Map();
 
     rowsList.forEach(row => {
-      const key = row.playerId || row.originalParsedName;
+      const key = row.playerId
+        ? `pid_${row.playerId}`
+        : `name_${(row.originalParsedName || row.playerName || '').toLowerCase().replace(/\s+/g, '')}`;
+
       if (!mergedMap.has(key)) {
         mergedMap.set(key, row);
       } else {
         const existing = mergedMap.get(key);
-        
-        const existingNullCount = (existing.kills === null ? 1 : 0) + (!existing.playerId ? 1 : 0);
-        const rowNullCount = (row.kills === null ? 1 : 0) + (!row.playerId ? 1 : 0);
-
-        if (rowNullCount < existingNullCount) {
+        if (getQualityScore(row) > getQualityScore(existing)) {
           mergedMap.set(key, row);
         }
       }

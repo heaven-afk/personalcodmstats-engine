@@ -513,18 +513,18 @@ export default function TeamEntryPage() {
     }));
 
     const promises = pendingItems.map(async (item) => {
+      let progressInterval = null;
       try {
-        const progressInterval = setInterval(() => {
+        progressInterval = setInterval(() => {
           setOcrQueue(prev => prev.map(qi => {
-            if (qi.id === item.id && qi.status === 'scanning' && qi.progress < 90) {
-              return { ...qi, progress: qi.progress + 15 };
+            if (qi.id === item.id && qi.status === 'scanning') {
+              return { ...qi, progress: Math.min(85, qi.progress + 15) };
             }
             return qi;
           }));
-        }, 1000);
+        }, 800);
 
         const data = await uploadAndParseImage(item.file, item.lobby, 'team');
-        clearInterval(progressInterval);
 
         const mappedRows = (data.rows || []).map(row => {
           const matchResult = matchOcrRowToTeam(row, activeTeamRegs);
@@ -532,7 +532,7 @@ export default function TeamEntryPage() {
             placement: parseInt(row.rank) || 0,
             slot: row.slot || '',
             ocrTeamName: row.teamName || '',
-            kills: row.kills === null ? null : (parseInt(row.kills) || 0),
+            kills: row.kills === null || row.kills === undefined ? null : (parseInt(row.kills) || 0),
             teamId: matchResult.teamId,
             teamName: matchResult.teamName || row.teamName || row.slot || '',
             matchMethod: matchResult.matchMethod,
@@ -568,6 +568,8 @@ export default function TeamEntryPage() {
           }
           return qi;
         }));
+      } finally {
+        if (progressInterval) clearInterval(progressInterval);
       }
     });
 
@@ -725,25 +727,57 @@ export default function TeamEntryPage() {
   };
 
   function mergeLobbyRows(rowsList) {
-    const mergedMap = new Map();
+    if (!rowsList || rowsList.length === 0) return [];
 
+    // Helper to calculate quality score for picking the clearer entry
+    const getQualityScore = (row) => {
+      let score = 0;
+      if (row.teamId) score += 50;
+      if (row.kills !== null && row.kills !== undefined) score += 30;
+      if (row.placement > 0) score += 20;
+      if (row.confidence) score += Math.round((row.confidence || 0) * 10);
+      return score;
+    };
+
+    // Stage 1: Deduplicate by teamId / slot / teamName
+    const teamMap = new Map();
     rowsList.forEach(row => {
-      const rankKey = row.placement;
-      if (!mergedMap.has(rankKey)) {
-        mergedMap.set(rankKey, row);
-      } else {
-        const existing = mergedMap.get(rankKey);
-        
-        const existingNullCount = (existing.kills === null ? 1 : 0) + (!existing.teamId ? 1 : 0);
-        const rowNullCount = (row.kills === null ? 1 : 0) + (!row.teamId ? 1 : 0);
+      const teamKey = row.teamId
+        ? `team_${row.teamId}`
+        : (row.slot ? `slot_${row.slot.toLowerCase().trim()}` : (row.ocrTeamName ? `name_${row.ocrTeamName.toLowerCase().trim()}` : null));
 
-        if (rowNullCount < existingNullCount) {
-          mergedMap.set(rankKey, row);
+      if (!teamKey) {
+        teamMap.set(`unmatched_${Math.random()}`, row);
+        return;
+      }
+
+      if (!teamMap.has(teamKey)) {
+        teamMap.set(teamKey, row);
+      } else {
+        const existing = teamMap.get(teamKey);
+        if (getQualityScore(row) > getQualityScore(existing)) {
+          teamMap.set(teamKey, row);
         }
       }
     });
 
-    return Array.from(mergedMap.values()).sort((a, b) => a.placement - b.placement);
+    // Stage 2: Deduplicate by placement rank if multiple entries claim the same rank
+    const rankMap = new Map();
+    Array.from(teamMap.values()).forEach(row => {
+      const rankKey = row.placement;
+      if (rankKey <= 0) {
+        rankMap.set(`norank_${Math.random()}`, row);
+      } else if (!rankMap.has(rankKey)) {
+        rankMap.set(rankKey, row);
+      } else {
+        const existing = rankMap.get(rankKey);
+        if (getQualityScore(row) > getQualityScore(existing)) {
+          rankMap.set(rankKey, row);
+        }
+      }
+    });
+
+    return Array.from(rankMap.values()).sort((a, b) => (a.placement || 999) - (b.placement || 999));
   }
 
   // Reactivity to update and merge lobbyPreviews automatically
