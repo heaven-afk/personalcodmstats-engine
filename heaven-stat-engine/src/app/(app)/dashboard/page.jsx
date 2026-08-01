@@ -6,8 +6,7 @@ import { getPlayers } from '@/lib/firestore/registry';
 import { getTeams } from '@/lib/firestore/registry';
 import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star, Sparkles, ArrowRight, Flame } from 'lucide-react';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
@@ -34,7 +33,6 @@ export default function DashboardPage() {
         const setup = tourneys.filter(t => t.status === 'setup');
         const completed = tourneys.filter(t => t.status === 'completed' || t.status === 'archived');
 
-        // Calculate stats
         setStats({
           totalTournaments: tourneys.length,
           activeTournaments: active.length,
@@ -45,10 +43,6 @@ export default function DashboardPage() {
         setActiveTourneys([...active, ...setup]);
         setRecentTourneys(completed.slice(0, 5));
 
-        // Let's compute mini player leaderboard. Since players list contains career stats if they exist, or we can sum kills from their data.
-        // Wait, for this dashboard we'll sort players by a career kills field (or calculate if stored, or just mock/simulate based on players registry data)
-        // Let's see: standard player object has careerKills, careerMatches, or we can sort them by a calculated value.
-        // For now, if players have tournamentIds or other fields, let's sort by careerKills if present, or simulate.
         const sortedPlayers = [...players]
           .sort((a, b) => (b.careerKills || 0) - (a.careerKills || 0))
           .slice(0, 5);
@@ -64,134 +58,318 @@ export default function DashboardPage() {
     loadDashboard();
   }, []);
 
-  if (loading) return <LoadingSpinner size="lg" text="Loading dashboard data..." />;
+  if (loading) return <LoadingSpinner size="lg" text="Loading dashboard hub..." />;
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Overview of your tournament stats and database</p>
+    <div className="space-y-8">
+      {/* Liquid Hero Header */}
+      <div style={{
+        position: 'relative',
+        overflow: 'hidden',
+        borderRadius: '20px',
+        padding: '28px 32px',
+        background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.12) 0%, rgba(14, 165, 233, 0.08) 50%, rgba(15, 23, 42, 0.95) 100%)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border: '1px solid rgba(251, 191, 36, 0.25)',
+        boxShadow: '0 12px 40px -10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '20px',
+      }}>
+        {/* Ambient Light Orbs */}
+        <div style={{
+          position: 'absolute',
+          top: '-40px',
+          left: '-40px',
+          width: '180px',
+          height: '180px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(201, 168, 76, 0.25) 0%, rgba(201, 168, 76, 0) 70%)',
+          pointerEvents: 'none',
+          filter: 'blur(24px)',
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: '-40px',
+          right: '10%',
+          width: '180px',
+          height: '180px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0) 70%)',
+          pointerEvents: 'none',
+          filter: 'blur(24px)',
+        }} />
+
+        <div style={{ zIndex: 1 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: '20px', background: 'rgba(201, 168, 76, 0.15)', border: '1px solid rgba(201, 168, 76, 0.3)', fontSize: '0.72rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+            <Sparkles size={12} /> Live Tournament Engine
+          </div>
+          <h1 className="page-title" style={{ fontSize: '1.8rem', fontWeight: 900, color: '#FFFFFF', letterSpacing: '-0.02em', margin: 0 }}>
+            Esports Command Dashboard
+          </h1>
+          <p className="page-subtitle" style={{ fontSize: '0.88rem', color: '#94A3B8', marginTop: 4, margin: 0 }}>
+            Real-time standings, player stats analytics, and tournament administration hub
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, zIndex: 1 }}>
+          <Link href="/tournaments/new" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px', boxShadow: '0 4px 16px rgba(201, 168, 76, 0.3)' }}>
+            <Zap size={16} /> New Tournament
+          </Link>
         </div>
       </div>
 
-      {/* Stats Bar */}
-      <div className="card-grid">
-        <div className="stat-card">
-          <div className="stat-card-icon gold">
-            <Trophy size={20} />
+      {/* Infused Liquid Stats Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Stat 1 */}
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '20px',
+          background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(201, 168, 76, 0.3)',
+          boxShadow: 'inset 0 0 20px rgba(201, 168, 76, 0.08), 0 8px 24px rgba(0, 0, 0, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.3) 0%, rgba(201, 168, 76, 0.1) 100%)',
+            border: '1px solid rgba(201, 168, 76, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(201, 168, 76, 0.25)',
+            flexShrink: 0,
+          }}>
+            <Trophy size={22} style={{ color: '#FBBF24' }} />
           </div>
           <div>
-            <div className="stat-card-value">{stats.totalTournaments}</div>
-            <div className="stat-card-label">Total Tournaments</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#FFFFFF', fontFamily: 'var(--font-mono)', lineHeight: 1.1 }}>
+              {stats.totalTournaments}
+            </div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+              Total Tournaments
+            </div>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-card-icon cyan">
-            <Play size={20} />
+        {/* Stat 2 */}
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '20px',
+          background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(56, 189, 248, 0.3)',
+          boxShadow: 'inset 0 0 20px rgba(14, 165, 233, 0.08), 0 8px 24px rgba(0, 0, 0, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(14, 165, 233, 0.1) 100%)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(14, 165, 233, 0.25)',
+            flexShrink: 0,
+          }}>
+            <Play size={22} style={{ color: '#38BDF8' }} />
           </div>
           <div>
-            <div className="stat-card-value">{stats.activeTournaments}</div>
-            <div className="stat-card-label">Active Tournaments</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#FFFFFF', fontFamily: 'var(--font-mono)', lineHeight: 1.1 }}>
+              {stats.activeTournaments}
+            </div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+              Active Events
+            </div>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-card-icon red">
-            <Users size={20} />
+        {/* Stat 3 */}
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '20px',
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(248, 113, 113, 0.3)',
+          boxShadow: 'inset 0 0 20px rgba(239, 68, 68, 0.08), 0 8px 24px rgba(0, 0, 0, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(239, 68, 68, 0.1) 100%)',
+            border: '1px solid rgba(248, 113, 113, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(239, 68, 68, 0.25)',
+            flexShrink: 0,
+          }}>
+            <Users size={22} style={{ color: '#F87171' }} />
           </div>
           <div>
-            <div className="stat-card-value">{stats.totalPlayers}</div>
-            <div className="stat-card-label">Total Players</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#FFFFFF', fontFamily: 'var(--font-mono)', lineHeight: 1.1 }}>
+              {stats.totalPlayers}
+            </div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+              Total Players
+            </div>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-card-icon blue">
-            <Shield size={20} />
+        {/* Stat 4 */}
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '20px',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(52, 211, 153, 0.3)',
+          boxShadow: 'inset 0 0 20px rgba(16, 185, 129, 0.08), 0 8px 24px rgba(0, 0, 0, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+        }}>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.1) 100%)',
+            border: '1px solid rgba(52, 211, 153, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)',
+            flexShrink: 0,
+          }}>
+            <Shield size={22} style={{ color: '#34D399' }} />
           </div>
           <div>
-            <div className="stat-card-value">{stats.totalTeams}</div>
-            <div className="stat-card-label">Total Teams</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#FFFFFF', fontFamily: 'var(--font-mono)', lineHeight: 1.1 }}>
+              {stats.totalTeams}
+            </div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+              Total Teams
+            </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Active & Setup Tournaments */}
+        {/* Active & Setup Tournaments Column */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="card">
-            <div className="flex-between mb-4">
-              <h2 className="card-title flex items-center gap-2">
-                <Zap size={18} className="text-gold" />
+          <div className="card" style={{
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '16px',
+            padding: '24px',
+          }}>
+            <div className="flex-between mb-5">
+              <h2 className="card-title flex items-center gap-2" style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF', margin: 0 }}>
+                <Zap size={20} className="text-gold" />
                 Active & Setup Tournaments
               </h2>
-              <Link href="/tournaments/new" className="btn btn-sm btn-primary">
-                New Tournament
+              <Link href="/tournaments/new" className="btn btn-sm btn-primary" style={{ fontSize: '0.78rem', borderRadius: '8px' }}>
+                + New Tournament
               </Link>
             </div>
 
             {activeTourneys.length === 0 ? (
-              <div className="text-center py-8 text-text-muted text-sm border border-dashed border-border rounded-lg">
-                No active or setup tournaments. Start by creating one!
+              <div className="text-center py-10 text-text-muted text-sm border border-dashed border-border/60 rounded-xl" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
+                No active or setup tournaments currently. Click above to create one!
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {activeTourneys.map((tourney) => {
                   const bannerSrc = tourney.banner || tourney.bannerUrl;
                   return (
-                    <div key={tourney.id} className="tourney-square-card">
+                    <div key={tourney.id} className="tourney-square-card" style={{
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '14px',
+                      overflow: 'hidden',
+                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+                      transition: 'all 0.25s ease',
+                    }}>
                       {/* Banner area */}
                       {bannerSrc ? (
-                        <img src={bannerSrc} alt="" className="tourney-card-banner" referrerPolicy="no-referrer" />
+                        <img src={bannerSrc} alt="" className="tourney-card-banner" style={{ height: '110px', objectFit: 'cover' }} referrerPolicy="no-referrer" />
                       ) : (
                         <div className="tourney-card-banner" style={{
-                          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                          height: '110px',
+                          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           position: 'relative',
-                          overflow: 'hidden'
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
                         }}>
-                          <div style={{ position: 'absolute', inset: 0, opacity: 0.05, backgroundImage: 'radial-gradient(var(--gold) 1px, transparent 0)', backgroundSize: '12px 12px' }}></div>
-                          <Trophy size={32} className="text-gold" style={{ opacity: 0.7 }} />
+                          <div style={{ position: 'absolute', inset: 0, opacity: 0.08, backgroundImage: 'radial-gradient(var(--gold) 1px, transparent 0)', backgroundSize: '12px 12px' }}></div>
+                          <Trophy size={36} className="text-gold" style={{ opacity: 0.85, filter: 'drop-shadow(0 4px 12px rgba(201, 168, 76, 0.4))' }} />
                         </div>
                       )}
 
-                      <div className="tourney-card-content">
+                      <div className="tourney-card-content" style={{ padding: '16px' }}>
                         <div style={{ width: '100%' }}>
                           <div className="flex-between mb-2">
-                            <span className="text-xs text-text-muted font-semibold tracking-wider uppercase">Season {tourney.season || '—'}</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <StatusBadge status={tourney.status} />
-                            </div>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                              Season {tourney.season || '—'}
+                            </span>
+                            <StatusBadge status={tourney.status} />
                           </div>
-                          <h3 className="text-md font-semibold text-text-primary line-clamp-1">{tourney.name}</h3>
-                          <p className="text-xs text-text-secondary mt-1 line-clamp-2" style={{ minHeight: '32px' }}>
+                          <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {tourney.name}
+                          </h3>
+                          <p style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: 4, lineClamp: 2, minHeight: '34px' }}>
                             {tourney.description || 'No description provided.'}
                           </p>
                         </div>
 
-                        <div style={{ width: '100%', marginTop: '12px' }}>
-                          <div className="grid grid-cols-3 gap-1 pt-2 border-t border-border text-center text-xs">
-                            <Link href={`/tournaments/${tourney.id}/team-entry`} className="p-2 hover:bg-gold/10 hover:text-gold rounded flex flex-col items-center gap-1 transition text-text-secondary">
+                        <div style={{ width: '100%', marginTop: '14px' }}>
+                          <div className="grid grid-cols-3 gap-1.5 pt-3 border-t border-border/60 text-center text-xs">
+                            <Link href={`/tournaments/${tourney.id}/team-entry`} className="p-2 hover:bg-gold/15 hover:text-gold rounded-lg flex flex-col items-center gap-1 transition text-text-secondary">
                               <ClipboardList size={14} />
-                              <span>Team Entry</span>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>Team Entry</span>
                             </Link>
-                            <Link href={`/tournaments/${tourney.id}/player-entry`} className="p-2 hover:bg-cyan/10 hover:text-cyan rounded flex flex-col items-center gap-1 transition text-text-secondary">
+                            <Link href={`/tournaments/${tourney.id}/player-entry`} className="p-2 hover:bg-cyan/15 hover:text-cyan rounded-lg flex flex-col items-center gap-1 transition text-text-secondary">
                               <Zap size={14} />
-                              <span>Player Entry</span>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>Player Entry</span>
                             </Link>
-                            <Link href={`/tournaments/${tourney.id}/standings`} className="p-2 hover:bg-green-500/10 hover:text-green-400 rounded flex flex-col items-center gap-1 transition text-text-secondary">
+                            <Link href={`/tournaments/${tourney.id}/standings`} className="p-2 hover:bg-green-500/15 hover:text-green-400 rounded-lg flex flex-col items-center gap-1 transition text-text-secondary">
                               <BarChart2 size={14} />
-                              <span>Standings</span>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>Standings</span>
                             </Link>
                           </div>
 
-                          <Link href={`/tournaments/${tourney.id}`} className="btn btn-sm btn-secondary w-full text-center flex items-center justify-center gap-1.5 mt-3">
-                            Go to Hub <ExternalLink size={12} />
+                          <Link href={`/tournaments/${tourney.id}`} className="btn btn-sm btn-secondary w-full text-center flex items-center justify-center gap-1.5 mt-3" style={{ borderRadius: '8px', fontSize: '0.78rem' }}>
+                            Go to Hub <ArrowRight size={13} />
                           </Link>
                         </div>
                       </div>
@@ -203,20 +381,26 @@ export default function DashboardPage() {
           </div>
 
           {/* Recent Completed Tournaments */}
-          <div className="card">
-            <h2 className="card-title mb-4 flex items-center gap-2">
-              <Trophy size={18} className="text-cyan" />
+          <div className="card" style={{
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '16px',
+            padding: '24px',
+          }}>
+            <h2 className="card-title mb-4 flex items-center gap-2" style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF' }}>
+              <Trophy size={20} className="text-cyan" />
               Recent Completed Tournaments
             </h2>
 
             {recentTourneys.length === 0 ? (
               <div className="text-center py-6 text-text-muted text-sm">
-                No completed tournaments yet.
+                No completed tournaments recorded yet.
               </div>
             ) : (
               <div className="space-y-3">
                 {recentTourneys.map((tourney) => (
-                  <div key={tourney.id} className="flex-between p-3.5 bg-bg-alt-row/40 hover:bg-bg-alt-row/70 rounded-lg border border-border transition">
+                  <div key={tourney.id} className="flex-between p-3.5 bg-bg-alt-row/40 hover:bg-bg-alt-row/80 rounded-xl border border-border/50 transition">
                     <div>
                       <h4 className="font-semibold text-sm text-text-primary">{tourney.name}</h4>
                       <p className="text-xs text-text-muted mt-0.5">Season {tourney.season} · Completed {tourney.completedAt ? (
@@ -227,7 +411,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <StatusBadge status={tourney.status} />
-                      <Link href={`/tournaments/${tourney.id}`} className="text-text-muted hover:text-gold p-1 transition">
+                      <Link href={`/tournaments/${tourney.id}`} className="text-text-muted hover:text-gold p-1.5 rounded-lg hover:bg-white/5 transition">
                         <ExternalLink size={16} />
                       </Link>
                     </div>
@@ -238,45 +422,74 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Mini Leaderboard */}
+        {/* Mini Leaderboard Column */}
         <div>
-          <div className="card h-full">
-            <h2 className="card-title mb-4 flex items-center gap-2">
-              <Star size={18} className="text-gold fill-gold" />
+          <div className="card h-full" style={{
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '16px',
+            padding: '24px',
+          }}>
+            <h2 className="card-title mb-2 flex items-center gap-2" style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF' }}>
+              <Star size={20} className="text-gold fill-gold" />
               Career Kill Leaderboard
             </h2>
-            <p className="text-xs text-text-muted mb-4">Top players ranked by career kills across all tournaments.</p>
+            <p className="text-xs text-text-muted mb-5">Top players ranked by total kills across all tournaments.</p>
 
             {topPlayers.length === 0 ? (
-              <div className="text-center py-12 text-text-muted text-sm">
+              <div className="text-center py-12 text-text-muted text-sm border border-dashed border-border/50 rounded-xl">
                 No player statistics available.
               </div>
             ) : (
-              <div className="space-y-4">
-                {topPlayers.map((player, index) => (
-                  <div key={player.id} className="flex items-center justify-between p-3 bg-bg-alt-row/30 hover:bg-bg-alt-row/60 rounded-lg border border-border/50 transition">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                        index === 0 ? 'bg-gold text-black' : index === 1 ? 'bg-zinc-400 text-black' : index === 2 ? 'bg-amber-700 text-white' : 'bg-bg-header text-text-muted'
-                      }`}>
-                        {index + 1}
+              <div className="space-y-3.5">
+                {topPlayers.map((player, index) => {
+                  const rankStyles = [
+                    { bg: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)', text: '#000000', label: '1st' },
+                    { bg: 'linear-gradient(135deg, #94A3B8 0%, #64748B 100%)', text: '#000000', label: '2nd' },
+                    { bg: 'linear-gradient(135deg, #B45309 0%, #78350F 100%)', text: '#FFFFFF', label: '3rd' },
+                  ];
+                  const currentStyle = rankStyles[index] || { bg: 'rgba(255, 255, 255, 0.1)', text: '#94A3B8', label: `${index + 1}` };
+
+                  return (
+                    <div key={player.id} className="flex items-center justify-between p-3.5 bg-bg-alt-row/30 hover:bg-bg-alt-row/70 rounded-xl border border-border/50 transition">
+                      <div className="flex items-center gap-3.5">
+                        <div style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '8px',
+                          background: currentStyle.bg,
+                          color: currentStyle.text,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '0.78rem',
+                          fontWeight: 900,
+                          boxShadow: index < 3 ? '0 2px 8px rgba(0,0,0,0.3)' : 'none',
+                          flexShrink: 0,
+                        }}>
+                          {index + 1}
+                        </div>
+                        <div>
+                          <Link href={`/players/${player.id}`} className="font-semibold text-sm hover:text-gold transition text-text-primary block line-clamp-1">
+                            {player.professionalName || player.ign}
+                          </Link>
+                          <div className="text-xs text-text-muted mt-0.5">IGN: <span className="font-mono text-text-secondary">{player.ign || '—'}</span></div>
+                        </div>
                       </div>
-                      <div>
-                        <Link href={`/players/${player.id}`} className="font-semibold text-sm hover:text-gold transition">
-                          {player.professionalName}
-                        </Link>
-                        <div className="text-xs text-text-muted">IGN: {player.ign}</div>
+                      <div className="text-right">
+                        <div className="font-mono text-sm font-black text-gold flex items-center justify-end gap-1">
+                          <Flame size={12} className="text-gold" />
+                          {player.careerKills || 0}
+                        </div>
+                        <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Kills</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-mono text-sm font-bold text-text-primary">{player.careerKills || 0}</div>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wider">Kills</div>
-                    </div>
-                  </div>
-                ))}
-                
-                <Link href="/rankings" className="btn btn-secondary w-full text-center mt-4 flex items-center justify-center gap-1.5 text-xs py-2">
-                  View Full Rankings <ExternalLink size={12} />
+                  );
+                })}
+
+                <Link href="/rankings" className="btn btn-secondary w-full text-center mt-5 flex items-center justify-center gap-2 text-xs py-2.5 rounded-xl border border-border/80 hover:border-gold/50 transition">
+                  View Full Career Rankings <ExternalLink size={13} />
                 </Link>
               </div>
             )}

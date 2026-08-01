@@ -6,7 +6,7 @@ import html2canvas from 'html2canvas';
 import {
   Shield, User, Download, Sparkles, TrendingUp, TrendingDown,
   Trophy, Target, ChevronDown, ChevronUp, MapPin, BarChart2,
-  Calendar, Flame, Award, AlertCircle
+  Calendar, Flame, Award, AlertCircle, AlertTriangle
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -477,25 +477,26 @@ function TournamentSummaryOverview({
   const mapPerformers = useMemo(() => {
     if (!teamMatchResults || teamMatchResults.length === 0) return [];
 
+    // Helper to resolve map name for a match row
+    const getMatchMap = (r) => {
+      const explicitMap = r.map || r.mapName || r.map_name || getMapForMatch(activeMapConfig, r.day, r.lobby);
+      if (explicitMap && explicitMap !== '—') return explicitMap;
+      if (activeMapConfig?.map) return activeMapConfig.map;
+      return 'Isolated'; // Standard fallback map for CoDM Battle Royale
+    };
+
     // Collect all maps that have recorded results
     const playedMapNames = new Set();
     teamMatchResults.forEach(r => {
-      const mapName = r.map || getMapForMatch(activeMapConfig, r.day, r.lobby);
-      if (mapName && mapName !== '—') {
-        playedMapNames.add(mapName);
-      }
+      playedMapNames.add(getMatchMap(r));
     });
 
-    // Fallback to AVAILABLE_MAPS if no explicit map stored
-    const mapList = playedMapNames.size > 0 ? Array.from(playedMapNames) : AVAILABLE_MAPS;
+    const mapList = Array.from(playedMapNames);
 
     const list = [];
     mapList.forEach(mapName => {
       // Filter matches for this map
-      const mapMatches = teamMatchResults.filter(r => {
-        const m = r.map || getMapForMatch(activeMapConfig, r.day, r.lobby);
-        return m === mapName;
-      });
+      const mapMatches = teamMatchResults.filter(r => getMatchMap(r) === mapName);
 
       if (mapMatches.length === 0) return;
 
@@ -893,43 +894,161 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
       {/* 2c. Best & Worst Highlights */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         {/* Best Match */}
-        <div className="card" style={{ borderLeft: '4px solid var(--success)', padding: '14px 18px' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--success)', letterSpacing: '0.05em', marginBottom: 6 }}>
-            BEST MATCH
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '18px 22px',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(6, 78, 59, 0.35) 45%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(52, 211, 153, 0.35)',
+          boxShadow: 'inset 0 0 24px rgba(16, 185, 129, 0.12), 0 10px 30px -5px rgba(0, 0, 0, 0.4)',
+          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+        }}>
+          {/* Liquid Ambient Glow Orb */}
+          <div style={{
+            position: 'absolute',
+            top: '-30px',
+            right: '-30px',
+            width: '120px',
+            height: '120px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(52, 211, 153, 0.3) 0%, rgba(16, 185, 129, 0) 70%)',
+            pointerEvents: 'none',
+            filter: 'blur(20px)',
+          }} />
+
+          {/* Header Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: '20px',
+              background: 'rgba(16, 185, 129, 0.22)',
+              border: '1px solid rgba(52, 211, 153, 0.4)',
+              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              color: '#34D399',
+              textTransform: 'uppercase',
+            }}>
+              <Trophy size={13} style={{ color: '#34D399' }} />
+              BEST MATCH
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.6)', fontWeight: 600 }}>
+              Peak Performance
+            </span>
           </div>
+
           {bestMatch ? (
             <div>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.01em' }}>
                 Day {bestMatch.day}, Lobby {bestMatch.lobby}
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-                🏆 Place #{bestMatch.placement} · {bestMatch.kills} kills
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.85)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  🏆 Place #{bestMatch.placement}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  ⚡ {bestMatch.kills} kills
+                </span>
               </div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
+              <div style={{
+                marginTop: 12,
+                fontSize: '1.4rem',
+                fontWeight: 900,
+                fontFamily: 'var(--font-mono)',
+                background: 'linear-gradient(90deg, #F59E0B 0%, #FBBF24 50%, #34D399 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                display: 'inline-block',
+              }}>
                 {bestMatch.totalPts ?? (bestMatch.kills * 2 + (bestMatch.placementPts || 0))} pts
               </div>
             </div>
-          ) : <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No match data</div>}
+          ) : <div style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.8rem', fontStyle: 'italic' }}>No match data available</div>}
         </div>
 
         {/* Worst Match */}
-        <div className="card" style={{ borderLeft: '4px solid var(--danger)', padding: '14px 18px' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--danger)', letterSpacing: '0.05em', marginBottom: 6 }}>
-            WORST MATCH
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '18px 22px',
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.18) 0%, rgba(153, 27, 27, 0.35) 45%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(248, 113, 113, 0.35)',
+          boxShadow: 'inset 0 0 24px rgba(239, 68, 68, 0.12), 0 10px 30px -5px rgba(0, 0, 0, 0.4)',
+          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+        }}>
+          {/* Liquid Ambient Glow Orb */}
+          <div style={{
+            position: 'absolute',
+            top: '-30px',
+            right: '-30px',
+            width: '120px',
+            height: '120px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(248, 113, 113, 0.3) 0%, rgba(239, 68, 68, 0) 70%)',
+            pointerEvents: 'none',
+            filter: 'blur(20px)',
+          }} />
+
+          {/* Header Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: '20px',
+              background: 'rgba(239, 68, 68, 0.22)',
+              border: '1px solid rgba(248, 113, 113, 0.4)',
+              boxShadow: '0 2px 8px rgba(239, 68, 68, 0.25)',
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              color: '#F87171',
+              textTransform: 'uppercase',
+            }}>
+              <AlertTriangle size={13} style={{ color: '#F87171' }} />
+              WORST MATCH
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.6)', fontWeight: 600 }}>
+              Low Score
+            </span>
           </div>
+
           {worstMatch ? (
             <div>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.01em' }}>
                 Day {worstMatch.day}, Lobby {worstMatch.lobby}
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-                😐 Place #{worstMatch.placement} · {worstMatch.kills} kills
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.85)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  📉 Place #{worstMatch.placement}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  ⚡ {worstMatch.kills} kills
+                </span>
               </div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
+              <div style={{
+                marginTop: 12,
+                fontSize: '1.4rem',
+                fontWeight: 900,
+                fontFamily: 'var(--font-mono)',
+                color: '#94A3B8',
+                display: 'inline-block',
+              }}>
                 {worstMatch.totalPts ?? (worstMatch.kills * 2 + (worstMatch.placementPts || 0))} pts
               </div>
             </div>
-          ) : <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No match data</div>}
+          ) : <div style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.8rem', fontStyle: 'italic' }}>No match data available</div>}
         </div>
       </div>
 
@@ -1174,43 +1293,155 @@ function TournamentPlayerView({ player, tournamentField, playerMatchResults, tea
       {/* 3c & 3d. Best/Worst Highlights & Kill Histogram */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         {/* Best Match */}
-        <div className="card" style={{ borderLeft: '4px solid var(--success)', padding: '14px 18px' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--success)', letterSpacing: '0.05em', marginBottom: 6 }}>
-            BEST KILLS MATCH
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '18px 22px',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(6, 78, 59, 0.35) 45%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(52, 211, 153, 0.35)',
+          boxShadow: 'inset 0 0 24px rgba(16, 185, 129, 0.12), 0 10px 30px -5px rgba(0, 0, 0, 0.4)',
+          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+        }}>
+          {/* Liquid Ambient Glow Orb */}
+          <div style={{
+            position: 'absolute',
+            top: '-30px',
+            right: '-30px',
+            width: '120px',
+            height: '120px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(52, 211, 153, 0.3) 0%, rgba(16, 185, 129, 0) 70%)',
+            pointerEvents: 'none',
+            filter: 'blur(20px)',
+          }} />
+
+          {/* Header Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: '20px',
+              background: 'rgba(16, 185, 129, 0.22)',
+              border: '1px solid rgba(52, 211, 153, 0.4)',
+              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              color: '#34D399',
+              textTransform: 'uppercase',
+            }}>
+              <Flame size={13} style={{ color: '#34D399' }} />
+              BEST KILLS MATCH
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.6)', fontWeight: 600 }}>
+              Frag Peak
+            </span>
           </div>
+
           {bestMatch ? (
             <div>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.01em' }}>
                 Day {bestMatch.day}, Lobby {bestMatch.lobby}
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-                Team Place: #{bestMatch.teamPlacement}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.85)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  Team Place: #{bestMatch.teamPlacement}
+                </span>
               </div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
-                🔥 {bestMatch.kills} kills ({bestMatch.damage || 0} damage)
+              <div style={{
+                marginTop: 12,
+                fontSize: '1.3rem',
+                fontWeight: 900,
+                fontFamily: 'var(--font-mono)',
+                background: 'linear-gradient(90deg, #F59E0B 0%, #FBBF24 50%, #34D399 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                display: 'inline-block',
+              }}>
+                🔥 {bestMatch.kills} kills <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)', WebkitTextFillColor: 'initial' }}>({bestMatch.damage || 0} dmg)</span>
               </div>
             </div>
-          ) : <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No match data</div>}
+          ) : <div style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.8rem', fontStyle: 'italic' }}>No match data available</div>}
         </div>
 
         {/* Worst Match */}
-        <div className="card" style={{ borderLeft: '4px solid var(--danger)', padding: '14px 18px' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--danger)', letterSpacing: '0.05em', marginBottom: 6 }}>
-            LOWEST KILLS MATCH
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          padding: '18px 22px',
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.18) 0%, rgba(153, 27, 27, 0.35) 45%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid rgba(248, 113, 113, 0.35)',
+          boxShadow: 'inset 0 0 24px rgba(239, 68, 68, 0.12), 0 10px 30px -5px rgba(0, 0, 0, 0.4)',
+          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+        }}>
+          {/* Liquid Ambient Glow Orb */}
+          <div style={{
+            position: 'absolute',
+            top: '-30px',
+            right: '-30px',
+            width: '120px',
+            height: '120px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(248, 113, 113, 0.3) 0%, rgba(239, 68, 68, 0) 70%)',
+            pointerEvents: 'none',
+            filter: 'blur(20px)',
+          }} />
+
+          {/* Header Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderRadius: '20px',
+              background: 'rgba(239, 68, 68, 0.22)',
+              border: '1px solid rgba(248, 113, 113, 0.4)',
+              boxShadow: '0 2px 8px rgba(239, 68, 68, 0.25)',
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              color: '#F87171',
+              textTransform: 'uppercase',
+            }}>
+              <AlertTriangle size={13} style={{ color: '#F87171' }} />
+              LOWEST KILLS MATCH
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.6)', fontWeight: 600 }}>
+              Low Frag
+            </span>
           </div>
+
           {worstMatch ? (
             <div>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.01em' }}>
                 Day {worstMatch.day}, Lobby {worstMatch.lobby}
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-                Team Place: #{worstMatch.teamPlacement}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.85)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  Team Place: #{worstMatch.teamPlacement}
+                </span>
               </div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 6 }}>
-                😐 {worstMatch.kills} kills ({worstMatch.damage || 0} damage)
+              <div style={{
+                marginTop: 12,
+                fontSize: '1.3rem',
+                fontWeight: 900,
+                fontFamily: 'var(--font-mono)',
+                color: '#94A3B8',
+                display: 'inline-block',
+              }}>
+                😐 {worstMatch.kills} kills <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>({worstMatch.damage || 0} dmg)</span>
               </div>
             </div>
-          ) : <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No match data</div>}
+          ) : <div style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.8rem', fontStyle: 'italic' }}>No match data available</div>}
         </div>
 
         {/* 3d. Kill Distribution Histogram */}
@@ -1546,23 +1777,45 @@ function ExpandedTournamentMiniDive({ row, entityType }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
         {/* Best Match */}
-        <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8, borderLeft: '3px solid var(--success)' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--success)', textTransform: 'uppercase' }}>BEST MATCH</div>
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          padding: '12px 16px',
+          borderRadius: 12,
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(6, 78, 59, 0.35) 45%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(52, 211, 153, 0.35)',
+          boxShadow: 'inset 0 0 16px rgba(16, 185, 129, 0.12)',
+        }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#34D399', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+            <Trophy size={12} /> BEST MATCH
+          </div>
           {bestMatch ? (
-            <div style={{ fontSize: '0.8rem', marginTop: 4 }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#FFFFFF' }}>
               Day {bestMatch.day}, Lobby {bestMatch.lobby} — {entityType === 'team' ? `🏆 Place #${bestMatch.placement}` : `🔥 ${bestMatch.kills} kills`}
             </div>
-          ) : <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>—</div>}
+          ) : <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.5)' }}>—</div>}
         </div>
 
         {/* Worst Match */}
-        <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8, borderLeft: '3px solid var(--danger)' }}>
-          <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--danger)', textTransform: 'uppercase' }}>WORST MATCH</div>
+        <div style={{
+          position: 'relative',
+          overflow: 'hidden',
+          padding: '12px 16px',
+          borderRadius: 12,
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.18) 0%, rgba(153, 27, 27, 0.35) 45%, rgba(15, 23, 42, 0.85) 100%)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(248, 113, 113, 0.35)',
+          boxShadow: 'inset 0 0 16px rgba(239, 68, 68, 0.12)',
+        }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: 800, color: '#F87171', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+            <AlertTriangle size={12} /> WORST MATCH
+          </div>
           {worstMatch ? (
-            <div style={{ fontSize: '0.8rem', marginTop: 4 }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#FFFFFF' }}>
               Day {worstMatch.day}, Lobby {worstMatch.lobby} — {entityType === 'team' ? `Place #${worstMatch.placement}` : `😐 ${worstMatch.kills} kills`}
             </div>
-          ) : <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>—</div>}
+          ) : <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.5)' }}>—</div>}
         </div>
 
         {/* Map Breakdown Mini */}
