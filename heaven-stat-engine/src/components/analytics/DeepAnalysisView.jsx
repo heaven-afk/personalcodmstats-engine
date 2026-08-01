@@ -1088,7 +1088,7 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
       </div>
 
       {/* 2d. Per-Map Breakdown */}
-      {activeMapConfig ? (
+      {matches?.length > 0 || activeMapConfig ? (
         <div className="card" style={{ marginBottom: 20, padding: 18 }}>
           <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             <MapPin size={16} className="text-gold" /> Per-Map Breakdown
@@ -1500,7 +1500,7 @@ function TournamentPlayerView({ player, tournamentField, playerMatchResults, tea
       </div>
 
       {/* 3e. Per-Map Breakdown */}
-      {activeMapConfig ? (
+      {matches?.length > 0 || activeMapConfig ? (
         <div className="card" style={{ marginBottom: 20, padding: 18 }}>
           <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             <MapPin size={16} className="text-gold" /> Per-Map Player Breakdown
@@ -1821,7 +1821,7 @@ function ExpandedTournamentMiniDive({ row, entityType }) {
         {/* Map Breakdown Mini */}
         <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8 }}>
           <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', marginBottom: 4 }}>MAP BREAKDOWN</div>
-          {mapConfig ? (
+          {rawMatches?.length > 0 || mapConfig ? (
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
               {AVAILABLE_MAPS.map(m => {
                 const count = filterResultsByMap(rawMatches, mapConfig, m).length;
