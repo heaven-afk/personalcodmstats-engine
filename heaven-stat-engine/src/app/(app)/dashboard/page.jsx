@@ -8,6 +8,8 @@ import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star, Sparkles, ArrowRight, Flame } from 'lucide-react';
 
+import { formatEventDates } from '@/lib/utils/dateUtils';
+
 export default function DashboardPage() {
   const [stats, setStats] = useState({
     totalTournaments: 0,
@@ -281,7 +283,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Active & Setup Tournaments Column */}
         <div className="lg:col-span-2 space-y-6">
           <div className="card" style={{
@@ -309,6 +311,7 @@ export default function DashboardPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {activeTourneys.map((tourney) => {
                   const bannerSrc = tourney.banner || tourney.bannerUrl;
+                  const dateRange = formatEventDates(tourney.eventStartDate, tourney.eventEndDate);
                   return (
                     <div key={tourney.id} className="tourney-square-card" style={{
                       background: 'rgba(15, 23, 42, 0.85)',
@@ -347,6 +350,11 @@ export default function DashboardPage() {
                           <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {tourney.name}
                           </h3>
+                          {dateRange && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 600, marginTop: 2 }}>
+                              {dateRange}
+                            </div>
+                          )}
                           <p style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: 4, lineClamp: 2, minHeight: '34px' }}>
                             {tourney.description || 'No description provided.'}
                           </p>
@@ -424,7 +432,7 @@ export default function DashboardPage() {
 
         {/* Mini Leaderboard Column */}
         <div>
-          <div className="card h-full" style={{
+          <div className="card" style={{
             background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
             backdropFilter: 'blur(16px)',
             border: '1px solid rgba(255, 255, 255, 0.1)',
