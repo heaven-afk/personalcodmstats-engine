@@ -91,6 +91,8 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
   const [name, setName] = useState(tournament.name || '');
   const [season, setSeason] = useState(tournament.season || '');
   const [description, setDescription] = useState(tournament.description || '');
+  const [eventStartDate, setEventStartDate] = useState(tournament.eventStartDate || '');
+  const [eventEndDate, setEventEndDate] = useState(tournament.eventEndDate || '');
   const [totalDays, setTotalDays] = useState(tournament.structure?.totalDays || 6);
   const [lobbiesPerDay, setLobbiesPerDay] = useState(tournament.structure?.lobbiesPerDay || 4);
   const [playerClasses, setPlayerClasses] = useState(tournament.structure?.playerClasses || []);
@@ -266,6 +268,8 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
         name: name.trim(),
         season: season.trim(),
         description: description.trim(),
+        eventStartDate: eventStartDate || null,
+        eventEndDate: eventEndDate || null,
         banner: bannerSource === 'upload' ? banner : '',
         bannerUrl: bannerSource === 'url' ? bannerUrl.trim() : '',
         mapConfig: {
@@ -346,6 +350,16 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
           <div className="form-field">
             <label className="form-label">Season</label>
             <input className="form-input" value={season} onChange={e => setSeason(e.target.value)} placeholder="e.g. 2026 Season 1" />
+          </div>
+          <div className="grid-2">
+            <div className="form-field">
+              <label className="form-label">Event Start Date</label>
+              <input type="date" className="form-input" value={eventStartDate} onChange={e => setEventStartDate(e.target.value)} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Event End Date</label>
+              <input type="date" className="form-input" value={eventEndDate} onChange={e => setEventEndDate(e.target.value)} />
+            </div>
           </div>
           <div className="form-field">
             <label className="form-label">Description</label>

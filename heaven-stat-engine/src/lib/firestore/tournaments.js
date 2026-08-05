@@ -29,6 +29,8 @@ export async function createTournament(data) {
   const payload = {
     name: '', season: '', description: '', status: 'setup',
     type: data.type || 'standard',
+    eventStartDate: data.eventStartDate || null,
+    eventEndDate: data.eventEndDate || null,
     createdAt: serverTimestamp(), completedAt: null,
     scoring: { killPointValue: 2, placementPoints: [], bonusTypes: [] },
     ...data,

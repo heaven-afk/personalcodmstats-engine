@@ -195,6 +195,8 @@ export function localCreateTournament(data) {
     id,
     name: '', season: '', description: '', status: 'setup',
     type: data.type || 'standard',
+    eventStartDate: data.eventStartDate || null,
+    eventEndDate: data.eventEndDate || null,
     createdAt: mockTimestamp(), completedAt: null,
     scoring: { killPointValue: 2, placementPoints: [], bonusTypes: [] },
     ...data

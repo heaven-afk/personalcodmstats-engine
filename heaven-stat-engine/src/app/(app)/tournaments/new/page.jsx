@@ -53,6 +53,8 @@ export default function CreateTournamentPage() {
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
   const [description, setDescription] = useState('');
+  const [eventStartDate, setEventStartDate] = useState('');
+  const [eventEndDate, setEventEndDate] = useState('');
   
   // Banner options
   const [bannerSource, setBannerSource] = useState('upload'); // 'upload' | 'url'
@@ -168,6 +170,8 @@ export default function CreateTournamentPage() {
         name: name.trim(),
         season: season.trim(),
         description: description.trim(),
+        eventStartDate: eventStartDate || null,
+        eventEndDate: eventEndDate || null,
         type: tournamentType,
         banner: bannerSource === 'upload' ? banner : '',
         bannerUrl: bannerSource === 'url' ? bannerUrl.trim() : '',
@@ -425,6 +429,16 @@ export default function CreateTournamentPage() {
             <div className="form-field">
               <label className="form-label">Season</label>
               <input className="form-input" value={season} onChange={e => setSeason(e.target.value)} placeholder="e.g. 2026 Season 1" />
+            </div>
+            <div className="grid-2">
+              <div className="form-field">
+                <label className="form-label">Event Start Date</label>
+                <input type="date" className="form-input" value={eventStartDate} onChange={e => setEventStartDate(e.target.value)} />
+              </div>
+              <div className="form-field">
+                <label className="form-label">Event End Date</label>
+                <input type="date" className="form-input" value={eventEndDate} onChange={e => setEventEndDate(e.target.value)} />
+              </div>
             </div>
             <div className="form-field">
               <label className="form-label">Description</label>

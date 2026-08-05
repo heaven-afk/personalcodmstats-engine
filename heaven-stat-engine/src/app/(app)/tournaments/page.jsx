@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getTournaments, deleteTournament } from '@/lib/firestore/tournaments';
+import { formatEventDates } from '@/lib/utils/dateUtils';
 import DataTable from '@/components/ui/DataTable';
 import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -70,6 +71,7 @@ export default function TournamentsListPage() {
       accessor: 'name',
       render: (t) => {
         const bannerSrc = t.banner || t.bannerUrl;
+        const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
         return (
           <Link href={`/tournaments/${t.id}`} className="text-gold" style={{ fontWeight: 600 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -80,7 +82,14 @@ export default function TournamentsListPage() {
                   <Trophy size={11} className="text-gold" style={{ opacity: 0.8 }} />
                 </div>
               )}
-              <span>{t.name}</span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span>{t.name}</span>
+                {dateRange && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                    {dateRange}
+                  </span>
+                )}
+              </div>
             </div>
           </Link>
         );

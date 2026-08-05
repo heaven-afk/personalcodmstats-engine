@@ -2,6 +2,7 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getTournament } from '@/lib/firestore/tournaments';
+import { formatEventDates } from '@/lib/utils/dateUtils';
 import TournamentSubNav from '@/components/layout/TournamentSubNav';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
@@ -38,13 +39,21 @@ export default function TournamentLayout({ children }) {
   if (loading) return <LoadingSpinner size="lg" />;
   if (!tournament) return <LoadingSpinner size="lg" />; // Brief spinner while redirecting
 
+  const dateRange = formatEventDates(tournament.eventStartDate, tournament.eventEndDate);
+
   return (
     <div>
       {/* Tournament header */}
       <div className="page-header">
         <div>
           <h1 className="page-title">{tournament.name}</h1>
-          <p className="page-subtitle">Season {tournament.season} · {tournament.status}</p>
+          <p className="page-subtitle">
+            {[
+              tournament.season ? `Season ${tournament.season}` : null,
+              dateRange,
+              tournament.status
+            ].filter(Boolean).join(' · ')}
+          </p>
         </div>
       </div>
 
