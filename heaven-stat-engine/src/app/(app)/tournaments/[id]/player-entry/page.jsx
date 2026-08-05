@@ -2,18 +2,28 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTournament } from '../layout';
 import {
-  getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
+  getPlayerMatchResults, getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
 } from '@/lib/firestore/matchData';
 import { getPlayerRegistrations, getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { getGroups } from '@/lib/firestore/groups';
 import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { ClassBadge } from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
 import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock } from 'lucide-react';
 import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 import { cleanTeamName } from '@/lib/utils/similarity';
+
+// Distinct color per lobby slot
+const LOBBY_COLORS = [
+  { text: '#C9A84C', bg: 'rgba(201,168,76,0.12)',  border: 'rgba(201,168,76,0.4)'  }, // L1 Gold
+  { text: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)'  }, // L2 Blue
+  { text: '#10b981', bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.4)'  }, // L3 Emerald
+  { text: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  border: 'rgba(139,92,246,0.4)'  }, // L4 Purple
+  { text: '#ef4444', bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.4)'   }, // L5 Red
+  { text: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.4)'  }, // L6 Amber
+];
+const getLobbyColor = (n) => LOBBY_COLORS[(n - 1) % LOBBY_COLORS.length];
 
 // ─── Smart Spreadsheet Parser ────────────────────────────────────────────────
 function parseSmartSpreadsheet(grid) {
@@ -464,14 +474,13 @@ function parsePlayerEntryPaste(text, playerRegs) {
 export default function PlayerEntryPage() {
   const { tournament } = useTournament();
   const [day, setDay] = useState(1);
-  const [lobby, setLobby] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [playerRegs, setPlayerRegs] = useState([]);
   const [players, setPlayers] = useState([]);
 
-  // Lock state — persisted per tournament + day + lobby in localStorage
-  const lockKey = tournament?.id ? `lock_player_${tournament.id}_day${day}_lobby${lobby}` : null;
+  // Lock state — persisted per tournament + day in localStorage
+  const lockKey = tournament?.id ? `lock_player_${tournament.id}_day${day}` : null;
   const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
@@ -482,20 +491,24 @@ export default function PlayerEntryPage() {
   const handleLock = async () => {
     setSaving(true);
     try {
-      for (const pid of Object.keys(formData)) await saveRow(pid);
+      for (const pid of Object.keys(formData)) {
+        for (let l = 1; l <= maxLobbies; l++) {
+          await saveRow(pid, l);
+        }
+      }
     } catch {}
     setSaving(false);
     try { localStorage.setItem(lockKey, 'true'); } catch {}
     setIsLocked(true);
-    toast.success(`Day ${day} · Lobby ${lobby} locked 🔒`);
+    toast.success(`Day ${day} data locked 🔒`);
   };
 
   const handleUnlock = () => {
     try { localStorage.removeItem(lockKey); } catch {}
     setIsLocked(false);
-    toast.success(`Day ${day} · Lobby ${lobby} unlocked 🔓`);
+    toast.success(`Day ${day} unlocked 🔓`);
   };
-  const [section, setSection] = useState('kills'); // 'kills' | 'damage' | 'rosterUpdate'
+  const [section, setSection] = useState('kills'); // 'kills' | 'damage'
 
   // Paste / File Upload States
   const [showPaste, setShowPaste] = useState(false);
@@ -665,11 +678,7 @@ export default function PlayerEntryPage() {
       return;
     }
 
-    // Attempt to parse automatically using smart spreadsheet importer
     const delimiter = pasteText.includes('\t') ? '\t' : (pasteText.includes(',') ? ',' : (pasteText.includes(';') ? ';' : ' '));
-    // IMPORTANT: Do NOT trim each line before splitting — trailing empty cells are represented
-    // as trailing tab/comma characters. Trimming strips them, making the header row shorter
-    // than data rows and causing the last lobby's sub-columns to be skipped.
     const grid = pasteText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
       .filter(l => l.trim().length > 0)
       .map(r => r.split(delimiter).map(cell => cell.trim()));
@@ -696,14 +705,12 @@ export default function PlayerEntryPage() {
         setSmartImportRows(previewRows);
         setSmartImportFileName('Pasted Data');
       } else {
-        // Fallback to legacy single-lobby paste preview if smart headers are not present
         const { results, errors } = parsePlayerEntryPaste(pasteText, playerRegs);
         setParsedPreview(results);
         setPasteErrors(errors);
       }
     } catch (err) {
       console.error("Auto smart import parse error:", err);
-      // Fallback
       const { results, errors } = parsePlayerEntryPaste(pasteText, playerRegs);
       setParsedPreview(results);
       setPasteErrors(errors);
@@ -720,22 +727,10 @@ export default function PlayerEntryPage() {
   const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
   const totalDays = activeStructure.totalDays || 6;
   const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
-  const playerClasses = activeStructure.playerClasses || [];
   const maxLobbies = lobbiesPerDay; // L1, L2, L3...
 
-  // formData: playerId → { kills: {L1,L2,L3,...}, damage: {L1,L2,...}, accuracy: {L1,L2,...}, existingId }
+  // formData: playerId → { playerId, slot, playerName, ign, teamName, lobbies: { 1: {kills, damage, accuracy, existingId}, ... } }
   const [formData, setFormData] = useState({});
-
-  // Roster update form (Class 2 on Days 3–5) — separate from regular
-  // RU data structure: playerId → { ruDay1: {L1,L2,...}, ruDay2: {...}, ruDay3: {...} }
-  const [ruData, setRuData] = useState({});
-
-  const getRUDays = useCallback(() => {
-    const cls2 = playerClasses.find((c) => c.className?.includes('2') || c.badgeColor === '#00B0F0');
-    if (!cls2) return [];
-    // Map active days starting at Day 3 (RU days are 3,4,5 by default)
-    return cls2.activeDays.filter((d) => d >= 3).sort();
-  }, [playerClasses]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -743,7 +738,7 @@ export default function PlayerEntryPage() {
       const [regs, allPlayers, results, teamRegs, gList] = await Promise.all([
         getPlayerRegistrations(tournament.id),
         getPlayers(),
-        getPlayerMatchResultsByDayLobby(tournament.id, day, lobby),
+        getPlayerMatchResults(tournament.id),
         getTeamRegistrations(tournament.id),
         getGroups(tournament.id),
       ]);
@@ -768,37 +763,67 @@ export default function PlayerEntryPage() {
       setPlayerRegs(enrichedRegs);
       setPlayers(allPlayers);
 
+      const dayResults = results.filter((r) => r.day === day);
+      const activeStruct = (selectedGroupId && gList.find(g => g.id === selectedGroupId)?.structure) || (tournament?.structure || {});
+      const numLobbies = activeStruct.lobbiesPerDay || 4;
+
       const fd = {};
       for (const reg of enrichedRegs) {
         const globalPlayer = allPlayers.find((p) => p.id === reg.playerId);
-        const existing = results.find((r) => r.playerId === reg.playerId);
+        const playerDayResults = dayResults.filter((r) => r.playerId === reg.playerId);
+
+        const lobbies = {};
+        for (let l = 1; l <= numLobbies; l++) {
+          const existing = playerDayResults.find((r) => r.lobby === l);
+          lobbies[l] = {
+            kills: existing?.kills ?? '',
+            damage: existing?.damage ?? '',
+            accuracy: existing?.accuracy ?? '',
+            existingId: existing?.id || null,
+          };
+        }
+
         fd[reg.playerId] = {
           playerId: reg.playerId,
           slot: reg.slot,
           playerName: globalPlayer?.professionalName || reg.ign || reg.playerId,
           ign: reg.ign || globalPlayer?.ign || '',
           teamName: reg.teamName || '',
-          class: reg.class || '',
-          kills: existing?.kills ?? '',
-          damage: existing?.damage ?? '',
-          accuracy: existing?.accuracy ?? '',
-          existingId: existing?.id || null,
+          lobbies,
         };
       }
       setFormData(fd);
     } catch (err) { toast.error('Load failed'); console.error(err); }
     finally { setLoading(false); }
-  }, [tournament.id, day, lobby, isQualifier, selectedGroupId]);
+  }, [tournament.id, day, isQualifier, selectedGroupId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleChange = (playerId, field, val) => {
-    setFormData((prev) => ({ ...prev, [playerId]: { ...prev[playerId], [field]: val } }));
+  const handleChange = (playerId, lobbyNum, field, val) => {
+    setFormData((prev) => {
+      const pForm = prev[playerId] || {};
+      const pLobbies = pForm.lobbies || {};
+      const curLobby = pLobbies[lobbyNum] || { kills: '', damage: '', accuracy: '', existingId: null };
+      return {
+        ...prev,
+        [playerId]: {
+          ...pForm,
+          lobbies: {
+            ...pLobbies,
+            [lobbyNum]: {
+              ...curLobby,
+              [field]: val
+            }
+          }
+        }
+      };
+    });
   };
 
-  const saveRow = async (playerId) => {
-    const row = formData[playerId];
-    if (!row) return;
+  const saveRow = async (playerId, lobbyNum) => {
+    const pForm = formData[playerId];
+    if (!pForm || !pForm.lobbies || !pForm.lobbies[lobbyNum]) return;
+    const row = pForm.lobbies[lobbyNum];
 
     const isKillsEmpty = row.kills === '' || row.kills === null || row.kills === undefined;
     const isDamageEmpty = row.damage === '' || row.damage === null || row.damage === undefined;
@@ -808,26 +833,48 @@ export default function PlayerEntryPage() {
       if (row.existingId) {
         try {
           await deletePlayerMatchResult(tournament.id, row.existingId);
-          setFormData((prev) => ({ ...prev, [playerId]: { ...prev[playerId], existingId: null, kills: '', damage: '', accuracy: '' } }));
+          setFormData((prev) => ({
+            ...prev,
+            [playerId]: {
+              ...prev[playerId],
+              lobbies: {
+                ...prev[playerId].lobbies,
+                [lobbyNum]: { ...prev[playerId].lobbies[lobbyNum], existingId: null, kills: '', damage: '', accuracy: '' }
+              }
+            }
+          }));
         } catch (err) { console.error('Auto-delete error', err); }
       }
       return;
     }
 
     const payload = {
-      playerId: row.playerId, playerName: row.playerName, teamName: row.teamName,
-      day, lobby,
+      playerId: pForm.playerId,
+      playerName: pForm.playerName,
+      teamName: pForm.teamName,
+      day,
+      lobby: lobbyNum,
       kills: isKillsEmpty ? null : (parseInt(row.kills) ?? 0),
       damage: isDamageEmpty ? null : (parseFloat(row.damage) ?? 0),
       accuracy: isAccuracyEmpty ? null : (parseFloat(row.accuracy) ?? 0),
       ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {}),
     };
+
     try {
       if (row.existingId) {
         await updatePlayerMatchResult(tournament.id, row.existingId, payload);
       } else {
         const saved = await savePlayerMatchResult(tournament.id, payload);
-        setFormData((prev) => ({ ...prev, [playerId]: { ...prev[playerId], existingId: saved.id } }));
+        setFormData((prev) => ({
+          ...prev,
+          [playerId]: {
+            ...prev[playerId],
+            lobbies: {
+              ...prev[playerId].lobbies,
+              [lobbyNum]: { ...prev[playerId].lobbies[lobbyNum], existingId: saved.id }
+            }
+          }
+        }));
       }
     } catch (err) { console.error('Auto-save error', err); }
   };
@@ -835,8 +882,12 @@ export default function PlayerEntryPage() {
   const handleBulkSave = async () => {
     setSaving(true);
     try {
-      for (const pid of Object.keys(formData)) await saveRow(pid);
-      toast.success(`Day ${day} · Lobby ${lobby} player data saved`);
+      for (const pid of Object.keys(formData)) {
+        for (let l = 1; l <= maxLobbies; l++) {
+          await saveRow(pid, l);
+        }
+      }
+      toast.success(`Day ${day} player data saved`);
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
   };
@@ -852,13 +903,14 @@ export default function PlayerEntryPage() {
       let addedCount = 0;
 
       for (const item of parsedPreview) {
-        const existing = formData[item.playerId]?.existingId;
+        const targetLobby = 1;
+        const existing = formData[item.playerId]?.lobbies?.[targetLobby]?.existingId;
         const payload = {
           playerId: item.playerId,
           playerName: item.playerName,
           teamName: item.teamName,
           day,
-          lobby,
+          lobby: targetLobby,
           kills: item.kills,
           damage: item.damage,
           accuracy: item.accuracy
@@ -1314,10 +1366,6 @@ export default function PlayerEntryPage() {
     };
   }, [lobbyPreviews]);
 
-  // Check if Roster Update section should be shown
-  const ruDays = getRUDays();
-  const showRU = ruDays.includes(day);
-
   const rows = useMemo(() => {
     return Object.values(formData).sort((a, b) => a.slot - b.slot);
   }, [formData]);
@@ -1340,32 +1388,8 @@ export default function PlayerEntryPage() {
     });
   }, [playersByTeam]);
 
-  const class2PlayersByTeam = useMemo(() => {
-    const groups = {};
-    const class2 = Object.values(formData).filter((p) => p.class?.includes('2')).sort((a, b) => a.slot - b.slot);
-    class2.forEach(p => {
-      const team = p.teamName || 'Unassigned';
-      if (!groups[team]) groups[team] = [];
-      groups[team].push(p);
-    });
-    return groups;
-  }, [formData]);
-
-  const class2Teams = useMemo(() => {
-    return Object.keys(class2PlayersByTeam).sort((a, b) => {
-      if (a === 'Unassigned') return 1;
-      if (b === 'Unassigned') return -1;
-      return a.localeCompare(b);
-    });
-  }, [class2PlayersByTeam]);
-
   // Helpers
-  const getClass2Players = () => Object.values(formData).filter((p) => p.class?.includes('2')).sort((a, b) => a.slot - b.slot);
   const getAllPlayers = () => Object.values(formData).sort((a, b) => a.slot - b.slot);
-  const isClass2ActiveToday = (p) => {
-    const cls = playerClasses.find((c) => c.className === p.class);
-    return cls ? cls.activeDays.includes(day) : true;
-  };
 
   if (loading) return <LoadingSpinner size="lg" />;
 
@@ -1451,7 +1475,7 @@ export default function PlayerEntryPage() {
                 <button
                   key={g.id}
                   type="button"
-                  onClick={() => { setSelectedGroupId(g.id); setDay(1); setLobby(1); }}
+                  onClick={() => { setSelectedGroupId(g.id); setDay(1); }}
                   className={`btn btn-sm ${selectedGroupId === g.id ? 'btn-primary' : 'btn-secondary'}`}
                   style={{ fontWeight: selectedGroupId === g.id ? 700 : 500 }}
                 >
@@ -1473,18 +1497,9 @@ export default function PlayerEntryPage() {
             ))}
           </div>
         </div>
-        <div className="form-field">
-          <label className="form-label">Lobby</label>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map((l) => (
-              <button key={l} className={`btn btn-sm ${l === lobby ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setLobby(l)}>L{l}</button>
-            ))}
-          </div>
-        </div>
         <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
           <button className={`btn btn-sm ${section === 'kills' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSection('kills')}>Section A · Kills</button>
           <button className={`btn btn-sm ${section === 'damage' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSection('damage')}>Section B · Damage/Acc</button>
-          {showRU && <button className={`btn btn-sm ${section === 'rosterUpdate' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSection('rosterUpdate')}>Roster Update</button>}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isLocked && (
@@ -1537,7 +1552,7 @@ export default function PlayerEntryPage() {
         <div className="card" style={{ marginBottom: 24, border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)' }}>
           <div className="flex-between" style={{ marginBottom: 10 }}>
             <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>
-              Paste or Upload Player Stats (Day {day} · Lobby {lobby})
+              Paste or Upload Player Stats (Day {day})
             </span>
             <button onClick={() => { setShowPaste(false); setPasteText(''); handleOcrClear(); }} style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
               <X size={15} />
@@ -2011,7 +2026,7 @@ export default function PlayerEntryPage() {
                 onClick={handlePasteImport}
                 disabled={parsing}
               >
-                {parsing ? 'Saving stats...' : `Save stats to Lobby ${lobby}`}
+                {parsing ? 'Saving stats...' : `Save stats to Day ${day}`}
               </button>
             )}
             <button
@@ -2222,12 +2237,11 @@ export default function PlayerEntryPage() {
       )}
 
       {/* ── SECTION A: Kills ─────────────────────────────── */}
-      {/* ── SECTION A: Kills ─────────────────────────────── */}
       {section === 'kills' && smartImportRows.length === 0 && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-          gap: '12px',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+          gap: '14px',
           marginTop: '16px'
         }}>
           {teams.map(teamName => {
@@ -2260,54 +2274,94 @@ export default function PlayerEntryPage() {
                     {teamPlayers.length} PL
                   </span>
                 </div>
+
+                {/* Table Header */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderBottom: '1px solid var(--border-md)',
+                  paddingBottom: '4px',
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  color: 'var(--text-muted)'
+                }}>
+                  <span style={{ width: '18px', textAlign: 'center' }}>#</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>PLAYER</span>
+                  {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
+                    const col = getLobbyColor(l);
+                    return (
+                      <span key={l} style={{
+                        width: '46px',
+                        textAlign: 'center',
+                        color: col.text,
+                        background: col.bg,
+                        border: `1px solid ${col.border}`,
+                        borderRadius: '4px',
+                        padding: '1px 0',
+                        fontSize: '0.65rem',
+                        fontWeight: 700
+                      }}>
+                        L{l}
+                      </span>
+                    );
+                  })}
+                  <span style={{ width: '45px', textAlign: 'right', color: 'var(--gold)' }}>TOT</span>
+                </div>
                 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {teamPlayers.map(row => {
-                    const active = isClass2ActiveToday(row);
-                    const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
-                    const killsVal = hasKills ? parseInt(row.kills) : 0;
+                    const totalKills = Array.from({ length: maxLobbies }, (_, i) => i + 1).reduce((acc, l) => {
+                      const k = row.lobbies?.[l]?.kills;
+                      return acc + (k !== null && k !== undefined && k !== '' ? parseInt(k) || 0 : 0);
+                    }, 0);
+                    const hasAnyKills = Array.from({ length: maxLobbies }, (_, i) => i + 1).some(l => {
+                      const k = row.lobbies?.[l]?.kills;
+                      return k !== null && k !== undefined && k !== '';
+                    });
+
                     return (
                       <div key={row.playerId} style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
-                        opacity: active ? 1 : 0.45,
+                        gap: '6px',
                         padding: '4px 0',
                         borderBottom: '1px dashed var(--border)'
                       }}>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', width: '18px', textAlign: 'center' }}>
                           {row.slot}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {row.playerName}
-                          </span>
+                          </div>
                           {row.ign && row.ign !== row.playerName && (
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 400 }}>
-                              · {row.ign}
-                            </span>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {row.ign}
+                            </div>
                           )}
                         </div>
-                        <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
-                          <ClassBadge playerClass={row.class} />
-                        </div>
-                        <div style={{ width: '70px' }}>
-                          {active ? (
-                            isLocked ? (
-                              <span style={{ display: 'block', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                {hasKills ? killsVal : '—'}
+
+                        {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => (
+                          <div key={l} style={{ width: '46px' }}>
+                            {isLocked ? (
+                              <span style={{ display: 'block', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                {row.lobbies?.[l]?.kills !== '' && row.lobbies?.[l]?.kills !== null && row.lobbies?.[l]?.kills !== undefined
+                                  ? row.lobbies[l].kills
+                                  : '—'}
                               </span>
                             ) : (
                               <PlayerStatInput
-                                value={row.kills}
-                                onSave={(v) => { handleChange(row.playerId, 'kills', v); saveRow(row.playerId); }}
-                                inputStyle={{ width: '100%', padding: '4px 6px', fontSize: '0.8rem', textAlign: 'center' }}
+                                value={row.lobbies?.[l]?.kills}
+                                onSave={(v) => { handleChange(row.playerId, l, 'kills', v); saveRow(row.playerId, l); }}
+                                inputStyle={{ width: '100%', padding: '3px 2px', fontSize: '0.78rem', textAlign: 'center' }}
                               />
-                            )
-                          ) : <span style={{ color: 'var(--text-muted)', display: 'block', textAlign: 'center', fontSize: '0.8rem' }}>—</span>}
-                        </div>
-                        <div style={{ width: '50px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                          {hasKills ? killsVal : '—'}
+                            )}
+                          </div>
+                        ))}
+
+                        <div style={{ width: '45px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: hasAnyKills ? 'var(--gold)' : 'var(--text-muted)' }}>
+                          {hasAnyKills ? totalKills : '—'}
                         </div>
                       </div>
                     );
@@ -2320,12 +2374,11 @@ export default function PlayerEntryPage() {
       )}
 
       {/* ── SECTION B: Damage & Accuracy ────────────────── */}
-      {/* ── SECTION B: Damage & Accuracy ────────────────── */}
       {section === 'damage' && smartImportRows.length === 0 && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-          gap: '12px',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))',
+          gap: '14px',
           marginTop: '16px'
         }}>
           {teams.map(teamName => {
@@ -2341,7 +2394,7 @@ export default function PlayerEntryPage() {
                 background: 'var(--bg-card)',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '8px'
+                gap: '10px'
               }}>
                 <div style={{
                   display: 'flex',
@@ -2358,76 +2411,111 @@ export default function PlayerEntryPage() {
                     {teamPlayers.length} PL
                   </span>
                 </div>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {teamPlayers.map(row => {
-                    const active = isClass2ActiveToday(row);
-                    const hasDmg = row.damage !== null && row.damage !== undefined && row.damage !== '';
-                    const hasAcc = row.accuracy !== null && row.accuracy !== undefined && row.accuracy !== '';
-                    const dmgVal = hasDmg ? parseFloat(row.damage) : 0;
-                    const accVal = hasAcc ? parseFloat(row.accuracy) : 0;
+                    let totDmg = 0;
+                    let hasDmgCount = 0;
+                    let accSum = 0;
+                    let hasAccCount = 0;
+
+                    for (let l = 1; l <= maxLobbies; l++) {
+                      const d = row.lobbies?.[l]?.damage;
+                      const a = row.lobbies?.[l]?.accuracy;
+                      if (d !== null && d !== undefined && d !== '') {
+                        totDmg += parseFloat(d) || 0;
+                        hasDmgCount++;
+                      }
+                      if (a !== null && a !== undefined && a !== '') {
+                        accSum += parseFloat(a) || 0;
+                        hasAccCount++;
+                      }
+                    }
+
+                    const avgAcc = hasAccCount > 0 ? (accSum / hasAccCount) : 0;
+
                     return (
                       <div key={row.playerId} style={{
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '4px',
-                        opacity: active ? 1 : 0.45,
+                        gap: '6px',
                         padding: '6px 0',
                         borderBottom: '1px dashed var(--border)'
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                              #{row.slot}
+                            </span>
                             <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {row.playerName}
                             </span>
                             {row.ign && row.ign !== row.playerName && (
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 · {row.ign}
                               </span>
                             )}
                           </div>
-                          <ClassBadge playerClass={row.class} />
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                            Tot: <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{hasDmgCount > 0 ? Math.round(totDmg) : '—'}</span> | Avg Acc: <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>{hasAccCount > 0 ? `${avgAcc.toFixed(1)}%` : '—'}</span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} DMG</span>
-                            {active ? (
-                              isLocked ? (
-                                <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                                  {hasDmg ? Math.round(dmgVal) : '—'}
-                                </span>
-                              ) : (
-                                <PlayerStatInput
-                                  value={row.damage}
-                                  step={1}
-                                  onSave={(v) => { handleChange(row.playerId, 'damage', v); saveRow(row.playerId); }}
-                                  inputStyle={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
-                                />
-                              )
-                            ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} ACC%</span>
-                            {active ? (
-                              isLocked ? (
-                                <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                                  {hasAcc ? `${accVal.toFixed(1)}%` : '—'}
-                                </span>
-                              ) : (
-                                <PlayerStatInput
-                                  value={row.accuracy}
-                                  step={0.1}
-                                  max={100}
-                                  onSave={(v) => { handleChange(row.playerId, 'accuracy', v); saveRow(row.playerId); }}
-                                  inputStyle={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
-                                />
-                              )
-                            ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
-                          </div>
-                          <div style={{ width: '90px', textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.2' }}>
-                            <div>Tot: {hasDmg ? Math.round(dmgVal) : '—'}</div>
-                            <div>Acc: {hasAcc ? `${accVal.toFixed(1)}%` : '—'}</div>
-                          </div>
+
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                          {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
+                            const col = getLobbyColor(l);
+                            return (
+                              <div key={l} style={{
+                                flex: 1,
+                                minWidth: '95px',
+                                background: 'var(--bg-alt-row)',
+                                border: `1px solid ${col.border}`,
+                                borderRadius: '6px',
+                                padding: '6px 8px'
+                              }}>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: col.text, marginBottom: '4px', textAlign: 'center' }}>
+                                  LOBBY {l}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div>
+                                    <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: '1px' }}>DMG</span>
+                                    {isLocked ? (
+                                      <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                        {row.lobbies?.[l]?.damage !== '' && row.lobbies?.[l]?.damage !== null && row.lobbies?.[l]?.damage !== undefined
+                                          ? Math.round(parseFloat(row.lobbies[l].damage))
+                                          : '—'}
+                                      </span>
+                                    ) : (
+                                      <PlayerStatInput
+                                        value={row.lobbies?.[l]?.damage}
+                                        step={1}
+                                        onSave={(v) => { handleChange(row.playerId, l, 'damage', v); saveRow(row.playerId, l); }}
+                                        inputStyle={{ width: '100%', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }}
+                                      />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: '1px' }}>ACC %</span>
+                                    {isLocked ? (
+                                      <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                        {row.lobbies?.[l]?.accuracy !== '' && row.lobbies?.[l]?.accuracy !== null && row.lobbies?.[l]?.accuracy !== undefined
+                                          ? `${parseFloat(row.lobbies[l].accuracy).toFixed(1)}%`
+                                          : '—'}
+                                      </span>
+                                    ) : (
+                                      <PlayerStatInput
+                                        value={row.lobbies?.[l]?.accuracy}
+                                        step={0.1}
+                                        max={100}
+                                        onSave={(v) => { handleChange(row.playerId, l, 'accuracy', v); saveRow(row.playerId, l); }}
+                                        inputStyle={{ width: '100%', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }}
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -2436,122 +2524,6 @@ export default function PlayerEntryPage() {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* ── ROSTER UPDATE (Class 2, Days 3-5) ───────────── */}
-      {section === 'rosterUpdate' && showRU && smartImportRows.length === 0 && (
-        <div className="card">
-          <h3 className="card-title" style={{ marginBottom: 16, color: 'var(--cyan)' }}>
-            ROSTER UPDATE — Day {day} (Class 2 Players)
-          </h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-            Kills and damage/accuracy for Class 2 players on their active days (Days {ruDays.join(', ')}).
-          </p>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-            gap: '12px',
-            marginTop: '16px'
-          }}>
-            {class2Teams.map(teamName => {
-              const teamPlayers = class2PlayersByTeam[teamName] || [];
-              if (teamPlayers.length === 0) return null;
-
-              return (
-                <div key={teamName} className="card" style={{
-                  margin: 0,
-                  padding: '14px 16px',
-                  border: '1px solid var(--cyan)',
-                  borderRadius: '8px',
-                  background: 'var(--bg-card)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px'
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    borderBottom: '1px solid var(--border)',
-                    paddingBottom: '6px',
-                    marginBottom: '4px'
-                  }}>
-                    <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--cyan)', letterSpacing: '0.03em' }}>
-                      {teamName.toUpperCase()}
-                    </span>
-                    <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem', color: 'var(--cyan)', borderColor: 'var(--cyan)' }}>
-                      {teamPlayers.length} PL
-                    </span>
-                  </div>
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {teamPlayers.map(row => {
-                      const hasKills = row.kills !== null && row.kills !== undefined && row.kills !== '';
-                      const killsVal = hasKills ? parseInt(row.kills) : 0;
-                      return (
-                        <div key={row.playerId} style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px',
-                          padding: '6px 0',
-                          borderBottom: '1px dashed var(--border)'
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
-                              <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {row.playerName}
-                              </span>
-                              {row.ign && row.ign !== row.playerName && (
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  · {row.ign}
-                                </span>
-                              )}
-                            </div>
-                            <ClassBadge playerClass={row.class} />
-                          </div>
-                          
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
-                            <div style={{ flex: 1 }}>
-                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} KILLS</span>
-                              <input type="number" min={0} className="editable-input" 
-                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
-                                value={row.kills} placeholder="—"
-                                onChange={(e) => handleChange(row.playerId, 'kills', e.target.value)}
-                                onBlur={() => saveRow(row.playerId)}
-                              />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} DMG</span>
-                              <input type="number" min={0} className="editable-input" 
-                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
-                                value={row.damage} placeholder="—"
-                                onChange={(e) => handleChange(row.playerId, 'damage', e.target.value)}
-                                onBlur={() => saveRow(row.playerId)}
-                              />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>L{lobby} ACC%</span>
-                              <input type="number" min={0} max={100} step={0.1} className="editable-input" 
-                                style={{ width: '100%', padding: '3px 6px', fontSize: '0.75rem', textAlign: 'center' }}
-                                value={row.accuracy} placeholder="—"
-                                onChange={(e) => handleChange(row.playerId, 'accuracy', e.target.value)}
-                                onBlur={() => saveRow(row.playerId)}
-                              />
-                            </div>
-                            <div style={{ width: '60px', textAlign: 'right', fontSize: '0.72rem', color: 'var(--cyan)', lineHeight: '1.2' }}>
-                              <div>K: {hasKills ? killsVal : '—'}</div>
-                              <div>E: {hasKills ? 1 : '—'}</div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
     </div>
