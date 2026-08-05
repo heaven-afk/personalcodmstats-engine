@@ -46,6 +46,21 @@ export function detectTeamInsights(team, tournamentField = [], careerHistory = [
     });
   }
 
+  // Global Form insight
+  if (team.globalForm && team.globalForm.confidence !== 'unranked') {
+    if (team.globalForm.trend === 'up') {
+      insights.push({
+        type: 'global_form_rising',
+        data: { name, decayedForm: team.globalForm.decayedForm, matchesUsed: team.globalForm.matchesUsed },
+      });
+    } else if (team.globalForm.trend === 'down') {
+      insights.push({
+        type: 'global_form_falling',
+        data: { name, decayedForm: team.globalForm.decayedForm, matchesUsed: team.globalForm.matchesUsed },
+      });
+    }
+  }
+
   // 2. Driver analysis: placement vs power
   const placementScore = team.scores.PLACEMENT || 0;
   const powerScore = team.scores.POWER || 0;
@@ -140,6 +155,21 @@ export function detectPlayerInsights(player, tournamentField = [], careerHistory
     });
   }
 
+  // Global Form insight
+  if (player.globalForm && player.globalForm.confidence !== 'unranked') {
+    if (player.globalForm.trend === 'up') {
+      insights.push({
+        type: 'global_form_rising',
+        data: { name, decayedForm: player.globalForm.decayedForm, matchesUsed: player.globalForm.matchesUsed },
+      });
+    } else if (player.globalForm.trend === 'down') {
+      insights.push({
+        type: 'global_form_falling',
+        data: { name, decayedForm: player.globalForm.decayedForm, matchesUsed: player.globalForm.matchesUsed },
+      });
+    }
+  }
+
   // 2. Driver analysis
   const powerScore = player.scores.POWER || 0;
   const placementScore = player.scores.PLACEMENT ?? 50;
@@ -224,6 +254,12 @@ export function generateDeterministicTemplate(insights, entityName = 'The team')
       case 'momentum_negative':
       case 'player_momentum_negative':
         sentences.push(`${d.name || entityName} saw a ${d.declinePct}% drop in output during second-half lobbies.`);
+        break;
+      case 'global_form_rising':
+        sentences.push(`${d.name || entityName} is carrying upward cross-event momentum (Global Form: ${d.decayedForm} over ${d.matchesUsed} matches).`);
+        break;
+      case 'global_form_falling':
+        sentences.push(`${d.name || entityName} shows cooling cross-event form (Global Form: ${d.decayedForm} over ${d.matchesUsed} matches).`);
         break;
       case 'placement_driven':
         sentences.push(`${d.name || entityName}'s performance was driven primarily by high placement efficiency (Placement Score: ${d.placementScore}).`);

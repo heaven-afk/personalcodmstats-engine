@@ -2,12 +2,13 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
-import { getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
+import { getTournaments, getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getPlayerMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
 import { getGroups } from '@/lib/firestore/groups';
 import { computeTeamRanking, computeClanRanking, computeDailyStandings } from '@/lib/engine/standings';
 import { computePlayerStats } from '@/lib/engine/playerStats';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
+import { computeTeamGlobalForm, computePlayerGlobalForm } from '@/lib/engine/globalForm';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -21,6 +22,8 @@ const PRESETS = [
   { id: 'top-players-set2', name: 'Top Players (Class 2)', desc: 'Players in Class 2 sorted by total kills.' },
   { id: 'top-teams-pts',    name: 'Top Teams by Points',    desc: 'Team season standings ranked by total points + tiebreakers.' },
   { id: 'clan-rankings',    name: 'Clan Rankings',         desc: 'Clan standings based on active team member point aggregates.' },
+  { id: 'global-form-teams', name: 'Global Form (Teams)',   desc: 'Cross-tournament rolling form, recency-decayed scores, confidence, and trend for teams.' },
+  { id: 'global-form-players', name: 'Global Form (Players)', desc: 'Cross-tournament rolling form, recency-decayed scores, confidence, and trend for players.' },
   { id: 'player-roster',    name: 'Full Player Roster',     desc: 'List of all registered players and their setup details.' },
   { id: 'team-registry',    name: 'Full Team Registry',     desc: 'List of all registered teams and their setup details.' },
   { id: 'team-analytics',   name: 'Full Team Analytics',    desc: 'Enriched analytics including PPM, KPM, consistency, rating and playstyle labels.' },
@@ -47,17 +50,19 @@ export default function ExtractionPage() {
   const [teamResults, setTeamResults] = useState([]);
   const [playerResults, setPlayerResults] = useState([]);
   const [bonusPoints, setBonusPoints] = useState([]);
+  const [allTournamentsData, setAllTournamentsData] = useState({ tournaments: [], teamRes: {}, playerRes: {} });
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [tReg, pReg, tRes, pRes, bPts, gList] = await Promise.all([
+        const [tReg, pReg, tRes, pRes, bPts, gList, allT] = await Promise.all([
           getTeamRegistrations(tournamentId),
           getPlayerRegistrations(tournamentId),
           getTeamMatchResults(tournamentId),
           getPlayerMatchResults(tournamentId),
           getBonusPoints(tournamentId),
           getGroups(tournamentId),
+          getTournaments(),
         ]);
         setTeamRegs(tReg);
         setPlayerRegs(pReg);
@@ -65,6 +70,16 @@ export default function ExtractionPage() {
         setPlayerResults(pRes);
         setBonusPoints(bPts);
         setGroups(gList || []);
+
+        const allTTeamRes = await Promise.all(allT.map(t => getTeamMatchResults(t.id)));
+        const allTPlayerRes = await Promise.all(allT.map(t => getPlayerMatchResults(t.id)));
+        const tResMap = {};
+        const pResMap = {};
+        allT.forEach((t, i) => {
+          tResMap[t.id] = allTTeamRes[i] || [];
+          pResMap[t.id] = allTPlayerRes[i] || [];
+        });
+        setAllTournamentsData({ tournaments: allT, teamRes: tResMap, playerRes: pResMap });
       } catch (err) {
         toast.error('Failed to load raw tournament data: ' + err.message);
       } finally {
@@ -256,6 +271,90 @@ export default function ExtractionPage() {
             { header: 'Matches', accessor: 'Matches' },
             { header: 'Total Pts', accessor: 'Total Pts' },
             { header: 'Best Member Rank', accessor: 'Best Rank' },
+          ],
+        };
+      }
+
+      case 'global-form-teams': {
+        const forms = activeTeamRegs.map(r => {
+          const gf = computeTeamGlobalForm(r.teamId, allTournamentsData.tournaments, allTournamentsData.teamRes);
+          return {
+            teamId: r.teamId,
+            teamName: r.teamName,
+            clanName: r.clanName || '—',
+            ...gf,
+          };
+        });
+        forms.sort((a, b) => (b.decayedForm || 0) - (a.decayedForm || 0));
+        const sliced = limit > 0 ? forms.slice(0, limit) : forms;
+        const mapped = sliced.map((t, i) => ({
+          Rank: i + 1,
+          Team: t.teamName,
+          Clan: t.clanName,
+          'Global Form': t.decayedForm ?? '—',
+          'Raw Form': t.rawForm ?? '—',
+          Trend: t.trend,
+          Confidence: t.confidence,
+          'Matches Used': t.matchesUsed,
+          'Days Inactive': t.daysInactive,
+        }));
+        return {
+          rows: mapped,
+          columns: [
+            { header: 'Rank', accessor: 'Rank', width: 60 },
+            { header: 'Team Name', accessor: 'Team' },
+            { header: 'Clan', accessor: 'Clan' },
+            { header: 'Global Form', accessor: 'Global Form' },
+            { header: 'Raw Form', accessor: 'Raw Form' },
+            { header: 'Trend', accessor: 'Trend' },
+            { header: 'Confidence', accessor: 'Confidence' },
+            { header: 'Matches Used', accessor: 'Matches Used' },
+            { header: 'Days Inactive', accessor: 'Days Inactive' },
+          ],
+        };
+      }
+
+      case 'global-form-players': {
+        const forms = activePlayerRegs.map(r => {
+          const gf = computePlayerGlobalForm(r.playerId, allTournamentsData.tournaments, allTournamentsData.playerRes);
+          return {
+            playerId: r.playerId,
+            playerName: r.playerName || r.ign,
+            ign: r.ign,
+            teamName: r.teamName || '—',
+            class: r.class || 'Class 1',
+            ...gf,
+          };
+        });
+        forms.sort((a, b) => (b.decayedForm || 0) - (a.decayedForm || 0));
+        const sliced = limit > 0 ? forms.slice(0, limit) : forms;
+        const mapped = sliced.map((p, i) => ({
+          Rank: i + 1,
+          'Pro Name': p.playerName,
+          IGN: p.ign,
+          Team: p.teamName,
+          Class: p.class,
+          'Global Form': p.decayedForm ?? '—',
+          'Raw Form': p.rawForm ?? '—',
+          Trend: p.trend,
+          Confidence: p.confidence,
+          'Matches Used': p.matchesUsed,
+          'Days Inactive': p.daysInactive,
+        }));
+        return {
+          rows: mapped,
+          columns: [
+            { header: 'Rank', accessor: 'Rank', width: 60 },
+            { header: 'Pro Name', accessor: 'Pro Name' },
+            { header: 'IGN', accessor: 'IGN' },
+            { header: 'Team', accessor: 'Team' },
+            { header: 'Class', accessor: 'Class' },
+            { header: 'Global Form', accessor: 'Global Form' },
+            { header: 'Raw Form', accessor: 'Raw Form' },
+            { header: 'Trend', accessor: 'Trend' },
+            { header: 'Confidence', accessor: 'Confidence' },
+            { header: 'Matches Used', accessor: 'Matches Used' },
+            { header: 'Days Inactive', accessor: 'Days Inactive' },
           ],
         };
       }

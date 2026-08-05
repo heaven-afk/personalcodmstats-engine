@@ -27,6 +27,7 @@ import { detectTeamInsights, detectPlayerInsights, computePercentile, formatPerc
 import { getTournaments, getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTeams, getPlayers } from '@/lib/firestore/registry';
+import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 // ─── Local Narrative Cache Helper ─────────────────────────────────────────────
 function getCachedNarrative(cacheKey) {
@@ -216,9 +217,9 @@ export default function DeepAnalysisView({
     }
   };
 
-  // Cross-tournament SWR query for Career Scope
+  // Cross-tournament SWR query for Global Form & Career Data
   const { data: careerGlobalData, isLoading: careerLoading } = useSWR(
-    scope === 'career' ? 'deep-analysis-career-global' : null,
+    'deep-analysis-career-global',
     async () => {
       const [allTournaments, registryTeams, registryPlayers] = await Promise.all([
         getTournaments(), getTeams(), getPlayers(),
@@ -230,6 +231,14 @@ export default function DeepAnalysisView({
         Promise.all(allTournaments.map(t => getTeamRegistrations(t.id))),
         Promise.all(allTournaments.map(t => getPlayerRegistrations(t.id))),
       ]);
+
+      const teamMatchResultsByTournament = {};
+      const playerMatchResultsByTournament = {};
+      allTournaments.forEach((t, idx) => {
+        teamMatchResultsByTournament[t.id] = allTeamRes[idx] || [];
+        playerMatchResultsByTournament[t.id] = allPlayerRes[idx] || [];
+      });
+
       return {
         allTournaments,
         registryTeams,
@@ -239,10 +248,30 @@ export default function DeepAnalysisView({
         allPlayerRes,
         allTeamRegs,
         allPlayerRegs,
+        teamMatchResultsByTournament,
+        playerMatchResultsByTournament,
       };
     },
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
+
+  const teamGlobalForm = useMemo(() => {
+    if (!careerGlobalData || !currentTeam?.teamId) return null;
+    return computeTeamGlobalForm(
+      currentTeam.teamId,
+      careerGlobalData.allTournaments,
+      careerGlobalData.teamMatchResultsByTournament
+    );
+  }, [careerGlobalData, currentTeam]);
+
+  const playerGlobalForm = useMemo(() => {
+    if (!careerGlobalData || !currentPlayer?.playerId) return null;
+    return computePlayerGlobalForm(
+      currentPlayer.playerId,
+      careerGlobalData.allTournaments,
+      careerGlobalData.playerMatchResultsByTournament
+    );
+  }, [careerGlobalData, currentPlayer]);
 
   // Compute Career History for selected entity
   const careerHistory = useMemo(() => {
@@ -420,6 +449,7 @@ export default function DeepAnalysisView({
                 teamMatchResults={teamMatchResults}
                 activeMapConfig={activeMapConfig}
                 teamReg={teamRegMap[currentTeam?.teamId]}
+                globalForm={teamGlobalForm}
               />
             ) : (
               <TournamentPlayerView
@@ -429,6 +459,7 @@ export default function DeepAnalysisView({
                 teamMatchResults={teamMatchResults}
                 activeMapConfig={activeMapConfig}
                 playerReg={playerRegMap[currentPlayer?.playerId]}
+                globalForm={playerGlobalForm}
               />
             )}
           </>
@@ -815,7 +846,7 @@ function TournamentSummaryOverview({
 }
 
 // ─── 1. TOURNAMENT SCOPED - TEAM VIEW ─────────────────────────────────────────
-function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMapConfig, teamReg }) {
+function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMapConfig, teamReg, globalForm }) {
   if (!team) {
     return <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Select a team to view deep analysis.</div>;
   }
@@ -884,6 +915,12 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Win Rate</div>
               <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.winRate}%</div>
             </div>
+            {globalForm && globalForm.confidence !== 'unranked' && (
+              <div style={{ textAlign: 'center', padding: '8px 14px', background: 'rgba(201, 168, 76, 0.1)', borderRadius: 8, border: '1px solid var(--border-gold)' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', fontWeight: 700 }}>Global Form</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{globalForm.decayedForm}</div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1196,7 +1233,7 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
 }
 
 // ─── 2. TOURNAMENT SCOPED - PLAYER VIEW ───────────────────────────────────────
-function TournamentPlayerView({ player, tournamentField, playerMatchResults, teamMatchResults, activeMapConfig, playerReg }) {
+function TournamentPlayerView({ player, tournamentField, playerMatchResults, teamMatchResults, activeMapConfig, playerReg, globalForm }) {
   if (!player) {
     return <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Select a player to view deep analysis.</div>;
   }
@@ -1273,16 +1310,22 @@ function TournamentPlayerView({ player, tournamentField, playerMatchResults, tea
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--bg-header)', borderRadius: 8 }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>KPM</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{player.analytics?.KPM}</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#38BDF8', fontFamily: 'var(--font-mono)' }}>{player.analytics?.KPM}</div>
             </div>
             <div style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--bg-header)', borderRadius: 8 }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>DPM</div>
               <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{player.analytics?.DPM}</div>
             </div>
             <div style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--bg-header)', borderRadius: 8 }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Kills</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{player.totalKills}</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Win Rate</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{player.analytics?.winRate}%</div>
             </div>
+            {globalForm && globalForm.confidence !== 'unranked' && (
+              <div style={{ textAlign: 'center', padding: '8px 14px', background: 'rgba(201, 168, 76, 0.1)', borderRadius: 8, border: '1px solid var(--border-gold)' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', fontWeight: 700 }}>Global Form</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{globalForm.decayedForm}</div>
+              </div>
+            )}
           </div>
         </div>
       </div>

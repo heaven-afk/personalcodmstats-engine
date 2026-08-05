@@ -89,10 +89,15 @@ const DEFINITIONS = {
     measures: 'Measures a team\'s recent trend and consistency throughout the event.',
     interpretation: 'Indicates team momentum and stability of performance.'
   },
+  global_form: {
+    name: 'Global Form',
+    measures: 'Cross-tournament rolling momentum calculated from the last 8 matches across all events, weighted by recency and decayed for inactivity.',
+    interpretation: 'Always-current momentum signal that reflects current form across all past tournaments.'
+  },
   momentum_index: {
     name: 'Momentum Index',
-    measures: 'Tracks whether a team\'s performance is improving or declining over time.',
-    interpretation: 'Positive values indicate improvement, while negative values indicate a downward trend.'
+    measures: 'Tracks whether a team\'s performance is improving or declining within a single tournament over time.',
+    interpretation: 'Positive values indicate within-event improvement, while negative values indicate a downward trajectory.'
   },
   consistency_score: {
     name: 'Consistency Score',
@@ -223,6 +228,38 @@ const LABELS = {
     name: 'Poor',
     measures: 'Conversion Label',
     interpretation: 'Rarely converts opportunities into wins.'
+  },
+
+  // Global Form Labels
+  'red hot': {
+    name: 'Red Hot',
+    measures: 'Global Form Label',
+    interpretation: 'Significant upward scoring momentum well above field average over the last 8 matches.'
+  },
+  'in form': {
+    name: 'In Form',
+    measures: 'Global Form Label',
+    interpretation: 'Upward scoring trajectory over recent matches.'
+  },
+  'steady high': {
+    name: 'Steady High',
+    measures: 'Global Form Label',
+    interpretation: 'Stable scoring performance consistently above field average.'
+  },
+  'cooling off': {
+    name: 'Cooling Off',
+    measures: 'Global Form Label',
+    interpretation: 'Downward trend in scoring efficiency over recent matches.'
+  },
+  'cold': {
+    name: 'Cold',
+    measures: 'Global Form Label',
+    interpretation: 'Downward trend with performance significantly below field average.'
+  },
+  'unranked': {
+    name: 'Unranked',
+    measures: 'Global Form Label',
+    interpretation: 'Insufficient match sample size (fewer than 3 matches played).'
   },
   'excellent': {
     name: 'Excellent',

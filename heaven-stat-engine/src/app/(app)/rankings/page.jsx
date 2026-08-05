@@ -1,17 +1,23 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { getPlayers } from '@/lib/firestore/registry';
-import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tournaments';
-import { getPlayerMatchResults } from '@/lib/firestore/matchData';
-import { ClassBadge, RankBadge } from '@/components/ui/Badge';
+import { getPlayers, getTeams } from '@/lib/firestore/registry';
+import { getTournaments, getPlayerRegistrations, getTeamRegistrations } from '@/lib/firestore/tournaments';
+import { getPlayerMatchResults, getTeamMatchResults } from '@/lib/firestore/matchData';
+import { ClassBadge, RankBadge, StatusBadge } from '@/components/ui/Badge';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { BarChart3, Search, Star, Trophy, Users, Shield } from 'lucide-react';
+import MetricTooltip from '@/components/ui/MetricTooltip';
+import { BarChart3, Search, Star, Trophy, Users, Shield, TrendingUp, TrendingDown, Minus, Sparkles, Flame, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 export default function RankingsPage() {
+  const [activeTab, setActiveTab] = useState('career'); // 'career' | 'teamForm' | 'playerForm'
+
   const [leaderboard, setLeaderboard] = useState([]);
+  const [teamFormList, setTeamFormList] = useState([]);
+  const [playerFormList, setPlayerFormList] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -22,17 +28,29 @@ export default function RankingsPage() {
   useEffect(() => {
     async function loadRankingsData() {
       try {
-        const [allPlayers, allTourneys] = await Promise.all([
+        const [allPlayers, allTeams, allTourneys] = await Promise.all([
           getPlayers(),
+          getTeams(),
           getTournaments()
         ]);
 
-        const regsPromises = allTourneys.map(t => getPlayerRegistrations(t.id));
-        const resPromises = allTourneys.map(t => getPlayerMatchResults(t.id));
+        const playerRegsPromises = allTourneys.map(t => getPlayerRegistrations(t.id));
+        const playerResPromises  = allTourneys.map(t => getPlayerMatchResults(t.id));
+        const teamResPromises    = allTourneys.map(t => getTeamMatchResults(t.id));
 
-        const allRegs = await Promise.all(regsPromises);
-        const allRes = await Promise.all(resPromises);
+        const allPlayerRegs = await Promise.all(playerRegsPromises);
+        const allPlayerRes  = await Promise.all(playerResPromises);
+        const allTeamRes    = await Promise.all(teamResPromises);
 
+        const playerMatchResultsByTournament = {};
+        const teamMatchResultsByTournament   = {};
+
+        allTourneys.forEach((t, index) => {
+          playerMatchResultsByTournament[t.id] = allPlayerRes[index] || [];
+          teamMatchResultsByTournament[t.id]   = allTeamRes[index] || [];
+        });
+
+        // 1. Career Player Leaderboard
         const playerStatsMap = {};
         allPlayers.forEach(p => {
           playerStatsMap[p.id] = {
@@ -55,16 +73,9 @@ export default function RankingsPage() {
         });
 
         allTourneys.forEach((t, index) => {
-          const tRegs = allRegs[index];
-          const tRes = allRes[index];
+          const tRegs = allPlayerRegs[index];
+          const tRes  = allPlayerRes[index];
 
-          // Map registrations for player id
-          const regMap = {};
-          tRegs.forEach(r => {
-            regMap[r.playerId] = r;
-          });
-
-          // Accumulate stats
           tRes.forEach(res => {
             const pid = res.playerId;
             if (playerStatsMap[pid]) {
@@ -78,7 +89,6 @@ export default function RankingsPage() {
             }
           });
 
-          // Record tournament participation
           tRegs.forEach(r => {
             const pid = r.playerId;
             if (playerStatsMap[pid]) {
@@ -90,26 +100,73 @@ export default function RankingsPage() {
           });
         });
 
-        // Compute averages
         const computedLeaderboard = Object.values(playerStatsMap).map(p => {
-          const avgDamage = p.totalMatches > 0 ? Math.round(p.totalDamage / p.totalMatches) : 0;
-          const avgAccuracy = p.accuracyCount > 0 ? Math.round((p.totalAccuracySum / p.accuracyCount) * 100) / 100 : 0;
+          const avgDamage     = p.totalMatches > 0 ? Math.round(p.totalDamage / p.totalMatches) : 0;
+          const avgAccuracy   = p.accuracyCount > 0 ? Math.round((p.totalAccuracySum / p.accuracyCount) * 100) / 100 : 0;
           const killsPerMatch = p.totalMatches > 0 ? Math.round((p.totalKills / p.totalMatches) * 100) / 100 : 0;
           const killsPerEvent = p.totalEvents > 0 ? Math.round((p.totalKills / p.totalEvents) * 100) / 100 : 0;
 
+          return { ...p, avgDamage, avgAccuracy, killsPerMatch, killsPerEvent };
+        });
+
+        computedLeaderboard.sort((a, b) => b.totalKills - a.totalKills);
+        setLeaderboard(computedLeaderboard);
+
+        // 2. Team Global Form
+        const rawTeamForm = allTeams.map(t => {
+          const gf = computeTeamGlobalForm(t.id, allTourneys, teamMatchResultsByTournament);
           return {
-            ...p,
-            avgDamage,
-            avgAccuracy,
-            killsPerMatch,
-            killsPerEvent,
+            ...t,
+            globalForm: gf,
           };
         });
 
-        // Sort by total kills descending as default
-        computedLeaderboard.sort((a, b) => b.totalKills - a.totalKills);
+        const rankedTeamForms = rawTeamForm.filter(t => t.globalForm.confidence !== 'unranked');
+        const fieldAvgTeamForm = rankedTeamForms.length > 0
+          ? rankedTeamForms.reduce((sum, t) => sum + (t.globalForm.decayedForm || 0), 0) / rankedTeamForms.length
+          : 0;
 
-        setLeaderboard(computedLeaderboard);
+        const processedTeamForm = rawTeamForm.map(t => {
+          const label = globalFormLabel(t.globalForm.decayedForm, t.globalForm.trend, t.globalForm.confidence, fieldAvgTeamForm);
+          return { ...t, formLabel: label };
+        });
+
+        processedTeamForm.sort((a, b) => {
+          if (a.globalForm.confidence === 'unranked' && b.globalForm.confidence !== 'unranked') return 1;
+          if (a.globalForm.confidence !== 'unranked' && b.globalForm.confidence === 'unranked') return -1;
+          return (b.globalForm.decayedForm || 0) - (a.globalForm.decayedForm || 0);
+        });
+        setTeamFormList(processedTeamForm);
+
+        // 3. Player Global Form
+        const rawPlayerForm = allPlayers.map(p => {
+          const gf = computePlayerGlobalForm(p.id, allTourneys, playerMatchResultsByTournament);
+          const meta = playerStatsMap[p.id] || {};
+          return {
+            ...p,
+            lastTeam: meta.lastTeam || '—',
+            lastClass: meta.lastClass || 'Class 1',
+            globalForm: gf,
+          };
+        });
+
+        const rankedPlayerForms = rawPlayerForm.filter(p => p.globalForm.confidence !== 'unranked');
+        const fieldAvgPlayerForm = rankedPlayerForms.length > 0
+          ? rankedPlayerForms.reduce((sum, p) => sum + (p.globalForm.decayedForm || 0), 0) / rankedPlayerForms.length
+          : 0;
+
+        const processedPlayerForm = rawPlayerForm.map(p => {
+          const label = globalFormLabel(p.globalForm.decayedForm, p.globalForm.trend, p.globalForm.confidence, fieldAvgPlayerForm);
+          return { ...p, formLabel: label };
+        });
+
+        processedPlayerForm.sort((a, b) => {
+          if (a.globalForm.confidence === 'unranked' && b.globalForm.confidence !== 'unranked') return 1;
+          if (a.globalForm.confidence !== 'unranked' && b.globalForm.confidence === 'unranked') return -1;
+          return (b.globalForm.decayedForm || 0) - (a.globalForm.decayedForm || 0);
+        });
+        setPlayerFormList(processedPlayerForm);
+
       } catch (err) {
         toast.error('Failed to load rankings: ' + err.message);
       } finally {
@@ -119,25 +176,51 @@ export default function RankingsPage() {
     loadRankingsData();
   }, []);
 
-  // Filter leaderboard
-  const filteredRankings = leaderboard.filter(p => {
-    const q = search.toLowerCase();
-    const matchSearch =
-      p.professionalName?.toLowerCase().includes(q) ||
-      p.ign?.toLowerCase().includes(q) ||
-      p.lastTeam?.toLowerCase().includes(q) ||
-      p.clanName?.toLowerCase().includes(q);
+  // Filter career leaderboard
+  const filteredRankings = useMemo(() => {
+    return leaderboard.filter(p => {
+      const q = search.toLowerCase();
+      const matchSearch =
+        p.professionalName?.toLowerCase().includes(q) ||
+        p.ign?.toLowerCase().includes(q) ||
+        p.lastTeam?.toLowerCase().includes(q) ||
+        p.clanName?.toLowerCase().includes(q);
 
-    const matchRegion = regionFilter ? p.region === regionFilter : true;
-    const matchClass = classFilter ? p.lastClass === classFilter : true;
+      const matchRegion = regionFilter ? p.region === regionFilter : true;
+      const matchClass  = classFilter ? p.lastClass === classFilter : true;
 
-    return matchSearch && matchRegion && matchClass;
-  });
+      return matchSearch && matchRegion && matchClass;
+    });
+  }, [leaderboard, search, regionFilter, classFilter]);
+
+  // Filter team form list
+  const filteredTeamForm = useMemo(() => {
+    return teamFormList.filter(t => {
+      const q = search.toLowerCase();
+      return t.teamName?.toLowerCase().includes(q) || t.clanName?.toLowerCase().includes(q);
+    });
+  }, [teamFormList, search]);
+
+  // Filter player form list
+  const filteredPlayerForm = useMemo(() => {
+    return playerFormList.filter(p => {
+      const q = search.toLowerCase();
+      const matchSearch =
+        p.professionalName?.toLowerCase().includes(q) ||
+        p.ign?.toLowerCase().includes(q) ||
+        p.lastTeam?.toLowerCase().includes(q);
+
+      const matchRegion = regionFilter ? p.region === regionFilter : true;
+      const matchClass  = classFilter ? p.lastClass === classFilter : true;
+
+      return matchSearch && matchRegion && matchClass;
+    });
+  }, [playerFormList, search, regionFilter, classFilter]);
 
   const regions = Array.from(new Set(leaderboard.map(p => p.region).filter(Boolean)));
   const classes = Array.from(new Set(leaderboard.map(p => p.lastClass).filter(Boolean)));
 
-  const columns = [
+  const careerColumns = [
     {
       header: 'Rank',
       key: 'rank',
@@ -170,23 +253,219 @@ export default function RankingsPage() {
     { header: 'Avg Accuracy', accessor: 'avgAccuracy', render: (row) => <span>{row.avgAccuracy}%</span> },
   ];
 
-  if (loading) return <LoadingSpinner size="lg" text="Calculating global player rankings..." />;
+  const renderTrendIcon = (trend) => {
+    switch (trend) {
+      case 'up':   return <span title="Rising Form" style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 700 }}><TrendingUp size={15} /> Up</span>;
+      case 'down': return <span title="Declining Form" style={{ color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 700 }}><TrendingDown size={15} /> Down</span>;
+      case 'flat': return <span title="Steady Form" style={{ color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 2 }}><Minus size={15} /> Flat</span>;
+      default:     return <span title="New Entry" style={{ color: 'var(--cyan)', display: 'inline-flex', alignItems: 'center', gap: 2 }}><Sparkles size={14} /> New</span>;
+    }
+  };
+
+  const teamFormColumns = [
+    {
+      header: 'Rank',
+      key: 'rank',
+      width: 65,
+      render: (row, i) => row.globalForm.confidence === 'unranked' ? '—' : <RankBadge rank={i + 1} />,
+    },
+    {
+      header: 'Team',
+      accessor: 'teamName',
+      render: (row) => (
+        <div>
+          <Link href={`/teams/${row.id}`} className="font-semibold text-text-primary hover:text-gold transition">
+            {row.teamName}
+          </Link>
+          <div className="text-[10px] text-text-muted">{row.clanName ? `Clan: ${row.clanName}` : ''}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Global Form',
+      accessor: 'decayedForm',
+      render: (row) => row.globalForm.decayedForm != null ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>
+            {row.globalForm.decayedForm}
+          </span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            (raw: {row.globalForm.rawForm})
+          </span>
+        </div>
+      ) : <span style={{ color: 'var(--text-muted)' }}>—</span>,
+    },
+    {
+      header: 'Status Label',
+      accessor: 'formLabel',
+      render: (row) => (
+        <MetricTooltip metricKey={row.formLabel.toLowerCase()}>
+          <span className="badge" style={{
+            background: row.formLabel === 'Red Hot' ? 'rgba(239, 68, 68, 0.2)' : row.formLabel === 'In Form' ? 'rgba(34, 197, 94, 0.2)' : row.formLabel === 'Cold' ? 'rgba(14, 165, 233, 0.2)' : 'var(--bg-alt-row)',
+            color: row.formLabel === 'Red Hot' ? 'var(--danger)' : row.formLabel === 'In Form' ? 'var(--success)' : row.formLabel === 'Cold' ? 'var(--cyan)' : 'var(--text-secondary)',
+            border: '1px solid currentColor',
+          }}>
+            {row.formLabel}
+          </span>
+        </MetricTooltip>
+      ),
+    },
+    {
+      header: 'Trend',
+      accessor: 'trend',
+      render: (row) => renderTrendIcon(row.globalForm.trend),
+    },
+    {
+      header: 'Confidence',
+      accessor: 'confidence',
+      render: (row) => (
+        <span className="badge" style={{ textTransform: 'capitalize', fontSize: '0.7rem' }}>
+          {row.globalForm.confidence}
+        </span>
+      ),
+    },
+    {
+      header: 'Matches Used',
+      accessor: 'matchesUsed',
+      render: (row) => <span>{row.globalForm.matchesUsed} / 8</span>,
+    },
+    {
+      header: 'Last Match',
+      accessor: 'daysInactive',
+      render: (row) => row.globalForm.lastMatchDate ? (
+        <span style={{ fontSize: '0.78rem', color: row.globalForm.daysInactive > 7 ? 'var(--warning)' : 'var(--text-secondary)' }}>
+          {row.globalForm.daysInactive === 0 ? 'Today' : `${row.globalForm.daysInactive}d ago`}
+        </span>
+      ) : '—',
+    },
+  ];
+
+  const playerFormColumns = [
+    {
+      header: 'Rank',
+      key: 'rank',
+      width: 65,
+      render: (row, i) => row.globalForm.confidence === 'unranked' ? '—' : <RankBadge rank={i + 1} />,
+    },
+    {
+      header: 'Player',
+      accessor: 'professionalName',
+      render: (row) => (
+        <div>
+          <Link href={`/players/${row.id}`} className="font-semibold text-text-primary hover:text-gold transition">
+            {row.professionalName}
+          </Link>
+          <div className="text-[10px] text-text-muted">IGN: {row.ign}</div>
+        </div>
+      ),
+    },
+    { header: 'Team', accessor: 'lastTeam' },
+    {
+      header: 'Class',
+      accessor: 'lastClass',
+      render: (row) => <ClassBadge playerClass={row.lastClass} />,
+    },
+    {
+      header: 'Global Form (Kills/Match)',
+      accessor: 'decayedForm',
+      render: (row) => row.globalForm.decayedForm != null ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>
+            {row.globalForm.decayedForm}
+          </span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            (raw: {row.globalForm.rawForm})
+          </span>
+        </div>
+      ) : <span style={{ color: 'var(--text-muted)' }}>—</span>,
+    },
+    {
+      header: 'Status Label',
+      accessor: 'formLabel',
+      render: (row) => (
+        <MetricTooltip metricKey={row.formLabel.toLowerCase()}>
+          <span className="badge" style={{
+            background: row.formLabel === 'Red Hot' ? 'rgba(239, 68, 68, 0.2)' : row.formLabel === 'In Form' ? 'rgba(34, 197, 94, 0.2)' : row.formLabel === 'Cold' ? 'rgba(14, 165, 233, 0.2)' : 'var(--bg-alt-row)',
+            color: row.formLabel === 'Red Hot' ? 'var(--danger)' : row.formLabel === 'In Form' ? 'var(--success)' : row.formLabel === 'Cold' ? 'var(--cyan)' : 'var(--text-secondary)',
+            border: '1px solid currentColor',
+          }}>
+            {row.formLabel}
+          </span>
+        </MetricTooltip>
+      ),
+    },
+    {
+      header: 'Trend',
+      accessor: 'trend',
+      render: (row) => renderTrendIcon(row.globalForm.trend),
+    },
+    {
+      header: 'Confidence',
+      accessor: 'confidence',
+      render: (row) => (
+        <span className="badge" style={{ textTransform: 'capitalize', fontSize: '0.7rem' }}>
+          {row.globalForm.confidence}
+        </span>
+      ),
+    },
+    {
+      header: 'Matches Used',
+      accessor: 'matchesUsed',
+      render: (row) => <span>{row.globalForm.matchesUsed} / 8</span>,
+    },
+    {
+      header: 'Last Match',
+      accessor: 'daysInactive',
+      render: (row) => row.globalForm.lastMatchDate ? (
+        <span style={{ fontSize: '0.78rem', color: row.globalForm.daysInactive > 7 ? 'var(--warning)' : 'var(--text-secondary)' }}>
+          {row.globalForm.daysInactive === 0 ? 'Today' : `${row.globalForm.daysInactive}d ago`}
+        </span>
+      ) : '—',
+    },
+  ];
+
+  if (loading) return <LoadingSpinner size="lg" text="Calculating global leaderboards & rolling form..." />;
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Global Rankings</h1>
-          <p className="page-subtitle">Cross-tournament player leaderboard compiled from all historical data</p>
+          <h1 className="page-title">Global Rankings & Rolling Form</h1>
+          <p className="page-subtitle">Cross-tournament career standings and always-current 8-match rolling momentum</p>
         </div>
+      </div>
+
+      {/* Main Tab bar */}
+      <div className="tab-bar">
+        <button
+          className={`tab ${activeTab === 'career' ? 'active' : ''}`}
+          onClick={() => setActiveTab('career')}
+        >
+          <Trophy size={15} style={{ display: 'inline', marginRight: 6 }} />
+          Career Rankings (Players)
+        </button>
+        <button
+          className={`tab ${activeTab === 'teamForm' ? 'active' : ''}`}
+          onClick={() => setActiveTab('teamForm')}
+        >
+          <Shield size={15} style={{ display: 'inline', marginRight: 6 }} />
+          Global Team Form
+        </button>
+        <button
+          className={`tab ${activeTab === 'playerForm' ? 'active' : ''}`}
+          onClick={() => setActiveTab('playerForm')}
+        >
+          <Flame size={15} style={{ display: 'inline', marginRight: 6 }} />
+          Global Player Form
+        </button>
       </div>
 
       {/* Filter and Search Bar */}
       <div className="card">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="md:col-span-2">
-            <label className="form-label">Search Players</label>
+            <label className="form-label">Search</label>
             <div className="search-input-wrap" style={{ marginTop: 4 }}>
               <Search size={16} className="search-icon" />
               <input
@@ -199,48 +478,118 @@ export default function RankingsPage() {
             </div>
           </div>
 
-          <div>
-            <label className="form-label">Filter Region</label>
-            <select
-              className="form-input"
-              style={{ marginTop: 4 }}
-              value={regionFilter}
-              onChange={e => setRegionFilter(e.target.value)}
-            >
-              <option value="">All Regions</option>
-              {regions.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
+          {activeTab !== 'teamForm' && (
+            <>
+              <div>
+                <label className="form-label">Filter Region</label>
+                <select
+                  className="form-input"
+                  style={{ marginTop: 4 }}
+                  value={regionFilter}
+                  onChange={e => setRegionFilter(e.target.value)}
+                >
+                  <option value="">All Regions</option>
+                  {regions.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
 
-          <div>
-            <label className="form-label">Filter Class</label>
-            <select
-              className="form-input"
-              style={{ marginTop: 4 }}
-              value={classFilter}
-              onChange={e => setClassFilter(e.target.value)}
-            >
-              <option value="">All Classes</option>
-              {classes.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
+              <div>
+                <label className="form-label">Filter Class</label>
+                <select
+                  className="form-input"
+                  style={{ marginTop: 4 }}
+                  value={classFilter}
+                  onChange={e => setClassFilter(e.target.value)}
+                >
+                  <option value="">All Classes</option>
+                  {classes.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Rankings Leaderboard */}
-      <div className="card overflow-hidden">
-        <DataTable
-          columns={columns}
-          data={filteredRankings}
-          searchable={false}
-          emptyMessage="No players found matching your criteria"
-          pageSize={50}
-        />
-      </div>
+      {/* Tab 1: Career Player Rankings */}
+      {activeTab === 'career' && (
+        <div className="card overflow-hidden">
+          <DataTable
+            columns={careerColumns}
+            data={filteredRankings}
+            searchable={false}
+            emptyMessage="No players found matching your criteria"
+            pageSize={50}
+          />
+        </div>
+      )}
+
+      {/* Tab 2: Team Global Form */}
+      {activeTab === 'teamForm' && (
+        <div className="space-y-4">
+          <div className="card" style={{ background: 'rgba(201, 168, 76, 0.06)', border: '1px solid var(--border-gold)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
+              <MetricTooltip metricKey="global_form">
+                <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
+              </MetricTooltip>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                Cross-tournament rolling momentum calculated from each team's <strong>last 8 matches</strong> across all events, weighted by recency with a 7-day inactivity grace period.
+              </span>
+            </div>
+          </div>
+
+          <div className="card overflow-hidden">
+            <DataTable
+              columns={teamFormColumns}
+              data={filteredTeamForm}
+              searchable={false}
+              emptyMessage="No teams found matching your criteria"
+              pageSize={50}
+            />
+          </div>
+
+          {filteredTeamForm.some(t => t.globalForm.hasUndatedTournaments) && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertCircle size={13} /> Note: Some teams have history originating from tournaments without explicit start dates. Sorting uses creation timestamps as fallback.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Tab 3: Player Global Form */}
+      {activeTab === 'playerForm' && (
+        <div className="space-y-4">
+          <div className="card" style={{ background: 'rgba(201, 168, 76, 0.06)', border: '1px solid var(--border-gold)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
+              <MetricTooltip metricKey="global_form">
+                <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
+              </MetricTooltip>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                Cross-tournament rolling fragging momentum calculated from each player's <strong>last 8 matches (kills/match)</strong> across all events.
+              </span>
+            </div>
+          </div>
+
+          <div className="card overflow-hidden">
+            <DataTable
+              columns={playerFormColumns}
+              data={filteredPlayerForm}
+              searchable={false}
+              emptyMessage="No players found matching your criteria"
+              pageSize={50}
+            />
+          </div>
+
+          {filteredPlayerForm.some(p => p.globalForm.hasUndatedTournaments) && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertCircle size={13} /> Note: Some players have history originating from tournaments without explicit start dates. Sorting uses creation timestamps as fallback.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

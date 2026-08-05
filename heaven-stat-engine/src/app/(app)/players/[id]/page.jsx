@@ -11,8 +11,10 @@ import { getActiveMapConfig, getMapForMatch } from '@/lib/utils/mapConfig';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
 import { ClassBadge } from '@/components/ui/Badge';
-import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star } from 'lucide-react';
+import MetricTooltip from '@/components/ui/MetricTooltip';
+import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { computePlayerGlobalForm } from '@/lib/engine/globalForm';
 
 export default function PlayerProfilePage() {
   const { id } = useParams();
@@ -29,6 +31,7 @@ export default function PlayerProfilePage() {
     avgAccuracy: 0,
   });
   const [mapCounts, setMapCounts] = useState({ Isolated: 0, Blackout: 0, 'Rebirth Island': 0 });
+  const [globalForm, setGlobalForm] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,6 +55,14 @@ export default function PlayerProfilePage() {
         const allRegs = await Promise.all(tRegsPromises);
         const allRes = await Promise.all(tResPromises);
         const allGroupsList = await Promise.all(tGroupsPromises);
+
+        const playerMatchResultsByTournament = {};
+        allTourneys.forEach((tourney, idx) => {
+          playerMatchResultsByTournament[tourney.id] = allRes[idx] || [];
+        });
+
+        const gf = computePlayerGlobalForm(id, allTourneys, playerMatchResultsByTournament);
+        setGlobalForm(gf);
 
         const participationHistory = [];
         let totalKills = 0;
@@ -170,7 +181,24 @@ export default function PlayerProfilePage() {
             <ChevronLeft size={16} />
           </button>
           <div>
-            <h1 className="page-title">{player.professionalName}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h1 className="page-title">{player.professionalName}</h1>
+              {globalForm && globalForm.confidence !== 'unranked' && (
+                <MetricTooltip metricKey="global_form">
+                  <span className="badge" style={{
+                    background: 'rgba(201, 168, 76, 0.15)',
+                    color: 'var(--gold)',
+                    border: '1px solid var(--border-gold)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    fontSize: '0.75rem',
+                  }}>
+                    <Flame size={12} /> Global Form: {globalForm.decayedForm} ({globalForm.trend === 'up' ? '↑' : globalForm.trend === 'down' ? '↓' : '→'})
+                  </span>
+                </MetricTooltip>
+              )}
+            </div>
             <p className="page-subtitle">IGN: {player.ign || '—'} · Region: {player.region || '—'}</p>
           </div>
         </div>
