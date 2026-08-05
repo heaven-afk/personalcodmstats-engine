@@ -9,7 +9,7 @@ import { ClassBadge, RankBadge, StatusBadge } from '@/components/ui/Badge';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MetricTooltip from '@/components/ui/MetricTooltip';
-import { BarChart3, Search, Star, Trophy, Users, Shield, TrendingUp, TrendingDown, Minus, Sparkles, Flame, AlertCircle, Download, Copy, CheckSquare, Square } from 'lucide-react';
+import { BarChart3, Search, Star, Trophy, Users, Shield, TrendingUp, TrendingDown, Minus, Sparkles, Flame, AlertCircle, Download, Copy, Info, HelpCircle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
 import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
@@ -24,6 +24,9 @@ export default function RankingsPage() {
   const [teamFormList, setTeamFormList] = useState([]);
   const [playerFormList, setPlayerFormList] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal state for Global Form (i) calculation & sample walkthrough
+  const [showInfoModal, setShowInfoModal] = useState(false);
 
   // Selection states for export
   const [selectedTeamIds, setSelectedTeamIds] = useState([]);
@@ -699,6 +702,29 @@ export default function RankingsPage() {
                 <MetricTooltip metricKey="global_form">
                   <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
                 </MetricTooltip>
+                <button
+                  type="button"
+                  onClick={() => setShowInfoModal(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '50%',
+                    background: 'rgba(201, 168, 76, 0.25)',
+                    color: 'var(--gold)',
+                    border: '1px solid var(--border-gold)',
+                    fontWeight: 900,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  className="hover:scale-110"
+                  title="Click for explicit calculation formula & sample data walkthrough"
+                >
+                  i
+                </button>
                 <span style={{ color: 'var(--text-secondary)' }}>
                   Cross-tournament rolling momentum calculated from each team's <strong>last 8 matches</strong> across all events.
                 </span>
@@ -767,6 +793,29 @@ export default function RankingsPage() {
                 <MetricTooltip metricKey="global_form">
                   <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
                 </MetricTooltip>
+                <button
+                  type="button"
+                  onClick={() => setShowInfoModal(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '50%',
+                    background: 'rgba(201, 168, 76, 0.25)',
+                    color: 'var(--gold)',
+                    border: '1px solid var(--border-gold)',
+                    fontWeight: 900,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  className="hover:scale-110"
+                  title="Click for explicit calculation formula & sample data walkthrough"
+                >
+                  i
+                </button>
                 <span style={{ color: 'var(--text-secondary)' }}>
                   Cross-tournament rolling fragging momentum calculated from each player's <strong>last 8 matches (kills/match)</strong> across all events.
                 </span>
@@ -815,6 +864,208 @@ export default function RankingsPage() {
               <AlertCircle size={13} /> Note: Some players have history originating from tournaments without explicit start dates. Sorting uses creation timestamps as fallback.
             </p>
           )}
+        </div>
+      )}
+
+      {/* Explicit Calculation & Sample Data Walkthrough Modal */}
+      {showInfoModal && (
+        <div className="modal-backdrop" onClick={() => setShowInfoModal(false)}>
+          <div
+            className="modal-box modal-lg"
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#0F172A',
+              border: '1px solid var(--border-gold)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.7)',
+            }}
+          >
+            <div className="modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: 'rgba(201,168,76,0.15)',
+                  border: '1px solid var(--border-gold)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--gold)',
+                  fontWeight: 900,
+                }}>
+                  i
+                </div>
+                <div>
+                  <h3 className="modal-title" style={{ fontSize: '1.15rem', color: '#FFFFFF', margin: 0 }}>
+                    Global Form Calculation & Worked Sample Walkthrough
+                  </h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Cross-tournament rolling momentum engine specification
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="modal-close" onClick={() => setShowInfoModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 24, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
+              {/* Section 1: Core Principles */}
+              <div style={{ background: 'rgba(30, 41, 59, 0.6)', padding: 18, borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+                <h4 style={{ fontSize: '0.95rem', color: 'var(--gold)', fontWeight: 800, marginTop: 0, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sparkles size={16} /> 1. Core Mechanics & Formulas
+                </h4>
+                <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, color: '#CBD5E1' }}>
+                  <li><strong>Chronological Ordering</strong>: Matches across all tournaments are sorted by event start date (`eventStartDate` or fallback creation timestamp).</li>
+                  <li><strong>8-Match Rolling Window</strong>: Evaluates up to the most recent 8 matches (N ≤ 8). Linear weights [1, 2, 3, 4, 5, 6, 7, 8] are assigned (Match 8 = newest).</li>
+                  <li><strong>Raw Form Score Formula</strong>:
+                    <div style={{ fontFamily: 'var(--font-mono)', background: 'rgba(15, 23, 42, 0.8)', padding: '8px 12px', borderRadius: 6, marginTop: 4, color: 'var(--gold)', fontSize: '0.82rem' }}>
+                      Raw Form = Σ (Match Value × Weight) ÷ Σ Weights
+                    </div>
+                  </li>
+                  <li><strong>Inactivity Decay</strong>: 7-day grace period after the last played match. Beyond 7 days, a <strong>4% daily penalty</strong> reduces the Raw Form.
+                    <div style={{ fontFamily: 'var(--font-mono)', background: 'rgba(15, 23, 42, 0.8)', padding: '8px 12px', borderRadius: 6, marginTop: 4, color: '#38BDF8', fontSize: '0.82rem' }}>
+                      Decayed Form = Raw Form × max(0, 1 - 0.04 × (Days Inactive - 7))
+                    </div>
+                  </li>
+                  <li><strong>Confidence Ratings</strong>: <code>Full</code> (≥8 matches), <code>Provisional</code> (3–7 matches), <code>Unranked</code> (&lt;3 matches).</li>
+                </ul>
+              </div>
+
+              {/* Section 2: Sample Data Table */}
+              <div>
+                <h4 style={{ fontSize: '0.95rem', color: 'var(--gold)', fontWeight: 800, marginTop: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <BarChart3 size={16} /> 2. Worked Example with Sample Match Data
+                </h4>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Here is a step-by-step example for a team with 8 matches played across 3 tournaments:
+                </p>
+
+                <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-header)', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '10px 12px' }}>Match #</th>
+                        <th style={{ padding: '10px 12px' }}>Event / Lobby</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'center' }}>Points (PPM)</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'center' }}>Recency Weight</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Weighted Points</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>1 (Oldest)</td>
+                        <td style={{ padding: '8px 12px', color: '#94A3B8' }}>Season 1 - Day 1 Lobby 1</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>10</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 1</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>10</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>2</td>
+                        <td style={{ padding: '8px 12px', color: '#94A3B8' }}>Season 1 - Day 1 Lobby 2</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>12</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 2</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>24</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>3</td>
+                        <td style={{ padding: '8px 12px', color: '#94A3B8' }}>Season 1 - Day 2 Lobby 1</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>8</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 3</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>24</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>4</td>
+                        <td style={{ padding: '8px 12px', color: '#94A3B8' }}>Season 2 - Day 1 Lobby 1</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>15</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 4</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>60</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>5</td>
+                        <td style={{ padding: '8px 12px', color: '#94A3B8' }}>Season 2 - Day 1 Lobby 2</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>18</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 5</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>90</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>6</td>
+                        <td style={{ padding: '8px 12px', color: '#94A3B8' }}>Season 3 - Day 1 Lobby 1</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>14</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 6</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>84</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 700 }}>7</td>
+                        <td style={{ padding: '8px 12px', color: '#94A3B8' }}>Season 3 - Day 2 Lobby 1</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>22</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 7</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>154</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--gold)', fontWeight: 800 }}>
+                        <td style={{ padding: '8px 12px' }}>8 (Latest)</td>
+                        <td style={{ padding: '8px 12px' }}>Season 3 - Day 2 Lobby 2</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)' }}>25</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>× 8</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>200</td>
+                      </tr>
+                      <tr style={{ background: 'rgba(201,168,76,0.12)', fontWeight: 900 }}>
+                        <td colSpan={3} style={{ padding: '10px 12px', color: '#FFFFFF' }}>Total Sums</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--gold)' }}>36</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>646</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Section 3: Calculation Walkthrough */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.8)', padding: 18, borderRadius: 12, border: '1px solid rgba(201,168,76,0.2)' }}>
+                <h4 style={{ fontSize: '0.92rem', color: '#FFFFFF', fontWeight: 800, marginTop: 0, marginBottom: 10 }}>
+                  Calculation Step-by-Step Output:
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>1. Raw Form</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--gold)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                      17.94
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 2 }}>646 ÷ 36 = 17.94</div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>2. Days Inactive Penalty</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#38BDF8', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                      -12% <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>(0.88×)</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 2 }}>10 days inactive (3d past 7d grace)</div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>3. Decayed Global Form</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--gold)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                      15.79
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 2 }}>17.94 × 0.88 = 15.79</div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>4. Status & Trend</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--danger)', marginTop: 2 }}>
+                      🔥 Red Hot <span style={{ fontSize: '0.8rem', color: 'var(--success)' }}>(↑ Up)</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 2 }}>Confidence: Full (8/8)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowInfoModal(false)}>
+                Close Walkthrough
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
