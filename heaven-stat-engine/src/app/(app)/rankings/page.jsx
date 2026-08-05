@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { getPlayers, getTeams } from '@/lib/firestore/registry';
 import { getTournaments, getPlayerRegistrations, getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayerMatchResults, getTeamMatchResults } from '@/lib/firestore/matchData';
@@ -8,11 +9,15 @@ import { ClassBadge, RankBadge, StatusBadge } from '@/components/ui/Badge';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MetricTooltip from '@/components/ui/MetricTooltip';
-import { BarChart3, Search, Star, Trophy, Users, Shield, TrendingUp, TrendingDown, Minus, Sparkles, Flame, AlertCircle } from 'lucide-react';
+import { BarChart3, Search, Star, Trophy, Users, Shield, TrendingUp, TrendingDown, Minus, Sparkles, Flame, AlertCircle, Download, Copy, CheckSquare, Square } from 'lucide-react';
 import toast from 'react-hot-toast';
+import Papa from 'papaparse';
 import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 export default function RankingsPage() {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams ? searchParams.get('tab') : null;
+
   const [activeTab, setActiveTab] = useState('career'); // 'career' | 'teamForm' | 'playerForm'
 
   const [leaderboard, setLeaderboard] = useState([]);
@@ -20,10 +25,24 @@ export default function RankingsPage() {
   const [playerFormList, setPlayerFormList] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Selection states for export
+  const [selectedTeamIds, setSelectedTeamIds] = useState([]);
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
+
   // Filters
   const [search, setSearch] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
+
+  useEffect(() => {
+    if (tabParam === 'teamForm' || tabParam === 'team') {
+      setActiveTab('teamForm');
+    } else if (tabParam === 'playerForm' || tabParam === 'player') {
+      setActiveTab('playerForm');
+    } else if (tabParam === 'career') {
+      setActiveTab('career');
+    }
+  }, [tabParam]);
 
   useEffect(() => {
     async function loadRankingsData() {
@@ -220,6 +239,96 @@ export default function RankingsPage() {
   const regions = Array.from(new Set(leaderboard.map(p => p.region).filter(Boolean)));
   const classes = Array.from(new Set(leaderboard.map(p => p.lastClass).filter(Boolean)));
 
+  // Team Form Export Handlers
+  const handleExportTeamFormCSV = () => {
+    const targets = selectedTeamIds.length > 0
+      ? filteredTeamForm.filter(t => selectedTeamIds.includes(t.id))
+      : filteredTeamForm;
+
+    if (targets.length === 0) {
+      toast.error('No team form records available to export.');
+      return;
+    }
+
+    const rows = targets.map((t, idx) => ({
+      Rank: t.globalForm.confidence === 'unranked' ? 'Unranked' : idx + 1,
+      'Team Name': t.teamName,
+      Clan: t.clanName || '—',
+      'Global Form Score': t.globalForm.decayedForm ?? '—',
+      'Raw Form Score': t.globalForm.rawForm ?? '—',
+      'Status Label': t.formLabel,
+      Trend: t.globalForm.trend,
+      Confidence: t.globalForm.confidence,
+      'Matches Used': `${t.globalForm.matchesUsed}/8`,
+      'Days Inactive': t.globalForm.daysInactive ?? '—',
+      'Last Match Date': t.globalForm.lastMatchDate ? new Date(t.globalForm.lastMatchDate).toLocaleDateString() : '—',
+    }));
+
+    const csv = Papa.unparse(rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `global_team_form_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${targets.length} team form records to CSV`);
+  };
+
+  const handleCopyTeamFormSummary = () => {
+    const targets = selectedTeamIds.length > 0
+      ? filteredTeamForm.filter(t => selectedTeamIds.includes(t.id))
+      : filteredTeamForm;
+
+    if (targets.length === 0) {
+      toast.error('No team form records available');
+      return;
+    }
+
+    const lines = targets.map((t, idx) =>
+      `#${t.globalForm.confidence === 'unranked' ? '—' : idx + 1} ${t.teamName} | Global Form: ${t.globalForm.decayedForm ?? '—'} (${t.formLabel}) | Trend: ${t.globalForm.trend} | Matches: ${t.globalForm.matchesUsed}/8`
+    );
+    navigator.clipboard.writeText(lines.join('\n'));
+    toast.success(`Copied ${targets.length} team form summaries to clipboard`);
+  };
+
+  // Player Form Export Handlers
+  const handleExportPlayerFormCSV = () => {
+    const targets = selectedPlayerIds.length > 0
+      ? filteredPlayerForm.filter(p => selectedPlayerIds.includes(p.id))
+      : filteredPlayerForm;
+
+    if (targets.length === 0) {
+      toast.error('No player form records available to export.');
+      return;
+    }
+
+    const rows = targets.map((p, idx) => ({
+      Rank: p.globalForm.confidence === 'unranked' ? 'Unranked' : idx + 1,
+      'Pro Name': p.professionalName,
+      IGN: p.ign,
+      Team: p.lastTeam,
+      Class: p.lastClass,
+      'Global Form Score (Kills/Match)': p.globalForm.decayedForm ?? '—',
+      'Raw Form Score': p.globalForm.rawForm ?? '—',
+      'Status Label': p.formLabel,
+      Trend: p.globalForm.trend,
+      Confidence: p.globalForm.confidence,
+      'Matches Used': `${p.globalForm.matchesUsed}/8`,
+      'Days Inactive': p.globalForm.daysInactive ?? '—',
+    }));
+
+    const csv = Papa.unparse(rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `global_player_form_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${targets.length} player form records to CSV`);
+  };
+
   const careerColumns = [
     {
       header: 'Rank',
@@ -263,6 +372,33 @@ export default function RankingsPage() {
   };
 
   const teamFormColumns = [
+    {
+      header: () => (
+        <input
+          type="checkbox"
+          checked={filteredTeamForm.length > 0 && selectedTeamIds.length === filteredTeamForm.length}
+          onChange={e => {
+            if (e.target.checked) setSelectedTeamIds(filteredTeamForm.map(t => t.id));
+            else setSelectedTeamIds([]);
+          }}
+          style={{ accentColor: 'var(--gold)', cursor: 'pointer', width: 15, height: 15 }}
+          title="Select / Deselect All Teams"
+        />
+      ),
+      key: 'select',
+      width: 40,
+      render: (row) => (
+        <input
+          type="checkbox"
+          checked={selectedTeamIds.includes(row.id)}
+          onChange={e => {
+            if (e.target.checked) setSelectedTeamIds(prev => [...prev, row.id]);
+            else setSelectedTeamIds(prev => prev.filter(id => id !== row.id));
+          }}
+          style={{ accentColor: 'var(--gold)', cursor: 'pointer', width: 15, height: 15 }}
+        />
+      ),
+    },
     {
       header: 'Rank',
       key: 'rank',
@@ -341,6 +477,33 @@ export default function RankingsPage() {
   ];
 
   const playerFormColumns = [
+    {
+      header: () => (
+        <input
+          type="checkbox"
+          checked={filteredPlayerForm.length > 0 && selectedPlayerIds.length === filteredPlayerForm.length}
+          onChange={e => {
+            if (e.target.checked) setSelectedPlayerIds(filteredPlayerForm.map(p => p.id));
+            else setSelectedPlayerIds([]);
+          }}
+          style={{ accentColor: 'var(--gold)', cursor: 'pointer', width: 15, height: 15 }}
+          title="Select / Deselect All Players"
+        />
+      ),
+      key: 'select',
+      width: 40,
+      render: (row) => (
+        <input
+          type="checkbox"
+          checked={selectedPlayerIds.includes(row.id)}
+          onChange={e => {
+            if (e.target.checked) setSelectedPlayerIds(prev => [...prev, row.id]);
+            else setSelectedPlayerIds(prev => prev.filter(id => id !== row.id));
+          }}
+          style={{ accentColor: 'var(--gold)', cursor: 'pointer', width: 15, height: 15 }}
+        />
+      ),
+    },
     {
       header: 'Rank',
       key: 'rank',
@@ -531,13 +694,49 @@ export default function RankingsPage() {
       {activeTab === 'teamForm' && (
         <div className="space-y-4">
           <div className="card" style={{ background: 'rgba(201, 168, 76, 0.06)', border: '1px solid var(--border-gold)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
-              <MetricTooltip metricKey="global_form">
-                <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
-              </MetricTooltip>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                Cross-tournament rolling momentum calculated from each team's <strong>last 8 matches</strong> across all events, weighted by recency with a 7-day inactivity grace period.
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
+                <MetricTooltip metricKey="global_form">
+                  <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
+                </MetricTooltip>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  Cross-tournament rolling momentum calculated from each team's <strong>last 8 matches</strong> across all events.
+                </span>
+              </div>
+
+              {/* Selection & Export Action Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {selectedTeamIds.length > 0 ? `${selectedTeamIds.length} team(s) selected` : `All ${filteredTeamForm.length} team(s)`}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    if (selectedTeamIds.length === filteredTeamForm.length) setSelectedTeamIds([]);
+                    else setSelectedTeamIds(filteredTeamForm.map(t => t.id));
+                  }}
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  {selectedTeamIds.length === filteredTeamForm.length ? 'Deselect All' : 'Select All'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleExportTeamFormCSV}
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  <Download size={13} /> Export CSV
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCopyTeamFormSummary}
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  <Copy size={13} /> Copy Summary
+                </button>
+              </div>
             </div>
           </div>
 
@@ -563,13 +762,41 @@ export default function RankingsPage() {
       {activeTab === 'playerForm' && (
         <div className="space-y-4">
           <div className="card" style={{ background: 'rgba(201, 168, 76, 0.06)', border: '1px solid var(--border-gold)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
-              <MetricTooltip metricKey="global_form">
-                <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
-              </MetricTooltip>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                Cross-tournament rolling fragging momentum calculated from each player's <strong>last 8 matches (kills/match)</strong> across all events.
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
+                <MetricTooltip metricKey="global_form">
+                  <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
+                </MetricTooltip>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  Cross-tournament rolling fragging momentum calculated from each player's <strong>last 8 matches (kills/match)</strong> across all events.
+                </span>
+              </div>
+
+              {/* Selection & Export Action Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {selectedPlayerIds.length > 0 ? `${selectedPlayerIds.length} player(s) selected` : `All ${filteredPlayerForm.length} player(s)`}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    if (selectedPlayerIds.length === filteredPlayerForm.length) setSelectedPlayerIds([]);
+                    else setSelectedPlayerIds(filteredPlayerForm.map(p => p.id));
+                  }}
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  {selectedPlayerIds.length === filteredPlayerForm.length ? 'Deselect All' : 'Select All'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleExportPlayerFormCSV}
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  <Download size={13} /> Export CSV
+                </button>
+              </div>
             </div>
           </div>
 

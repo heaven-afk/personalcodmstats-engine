@@ -3,10 +3,12 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getTournaments } from '@/lib/firestore/tournaments';
 import { getPlayers, getTeams } from '@/lib/firestore/registry';
+import { getTeamMatchResults } from '@/lib/firestore/matchData';
 import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star, Sparkles, ArrowRight, Flame } from 'lucide-react';
 import { formatEventDates } from '@/lib/utils/dateUtils';
+import { computeTeamGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
@@ -18,6 +20,7 @@ export default function DashboardPage() {
   const [activeTourneys, setActiveTourneys] = useState([]);
   const [recentTourneys, setRecentTourneys] = useState([]);
   const [topPlayers, setTopPlayers] = useState([]);
+  const [topTeamForms, setTopTeamForms] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,6 +31,13 @@ export default function DashboardPage() {
           getPlayers(),
           getTeams()
         ]);
+
+        const teamResPromises = tourneys.map(t => getTeamMatchResults(t.id));
+        const allTeamRes = await Promise.all(teamResPromises);
+        const teamMatchResultsByTournament = {};
+        tourneys.forEach((t, i) => {
+          teamMatchResultsByTournament[t.id] = allTeamRes[i] || [];
+        });
 
         const active = tourneys.filter(t => t.status === 'active');
         const setup = tourneys.filter(t => t.status === 'setup');
@@ -47,6 +57,30 @@ export default function DashboardPage() {
           .sort((a, b) => (b.careerKills || 0) - (a.careerKills || 0))
           .slice(0, 5);
         setTopPlayers(sortedPlayers);
+
+        // Global Team Form Top 5
+        const teamForms = teams.map(t => {
+          const gf = computeTeamGlobalForm(t.id, tourneys, teamMatchResultsByTournament);
+          return { ...t, globalForm: gf };
+        });
+
+        const rankedForms = teamForms.filter(t => t.globalForm.confidence !== 'unranked');
+        const fieldAvgForm = rankedForms.length > 0
+          ? rankedForms.reduce((sum, t) => sum + (t.globalForm.decayedForm || 0), 0) / rankedForms.length
+          : 0;
+
+        const processedForms = teamForms.map(t => ({
+          ...t,
+          formLabel: globalFormLabel(t.globalForm.decayedForm, t.globalForm.trend, t.globalForm.confidence, fieldAvgForm),
+        }));
+
+        processedForms.sort((a, b) => {
+          if (a.globalForm.confidence === 'unranked' && b.globalForm.confidence !== 'unranked') return 1;
+          if (a.globalForm.confidence !== 'unranked' && b.globalForm.confidence === 'unranked') return -1;
+          return (b.globalForm.decayedForm || 0) - (a.globalForm.decayedForm || 0);
+        });
+
+        setTopTeamForms(processedForms.slice(0, 5));
 
       } catch (err) {
         console.error('Error loading dashboard data:', err);
@@ -283,7 +317,7 @@ export default function DashboardPage() {
 
       {/* Main Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        {/* Active & Setup Tournaments Column */}
+        {/* Left Column: Tournaments */}
         <div className="lg:col-span-2" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           <div className="card" style={{
             background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
@@ -443,8 +477,80 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Mini Leaderboard Column */}
-        <div>
+        {/* Right Column: Global Team Form & Career Leaderboard */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          {/* Global Team Form Widget */}
+          <div className="card" style={{
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(201, 168, 76, 0.3)',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <h2 className="card-title flex items-center gap-2" style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF', margin: 0 }}>
+                <Flame size={20} className="text-gold fill-gold" />
+                Global Team Form
+              </h2>
+              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gold)', background: 'rgba(201,168,76,0.15)', padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase' }}>
+                8-Match Rolling
+              </span>
+            </div>
+            <p className="text-xs text-text-muted mb-4">Top teams ranked by cross-tournament rolling momentum.</p>
+
+            {topTeamForms.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm border border-dashed border-border/50 rounded-xl">
+                No team form statistics available.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {topTeamForms.map((t, index) => (
+                  <Link href="/rankings?tab=teamForm" key={t.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 14px',
+                    background: 'rgba(26, 35, 50, 0.35)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    gap: '12px',
+                    transition: 'all 0.2s ease',
+                  }} className="hover:border-gold/50">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 900, color: index === 0 ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                        #{index + 1}
+                      </span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FFFFFF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.teamName}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ color: t.formLabel === 'Red Hot' ? 'var(--danger)' : t.formLabel === 'In Form' ? 'var(--success)' : 'var(--gold)', fontWeight: 600 }}>{t.formLabel}</span>
+                          <span>•</span>
+                          <span>{t.globalForm.matchesUsed}/8 matches</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.95rem', fontWeight: 900, color: 'var(--gold)' }}>
+                        {t.globalForm.decayedForm ?? '—'}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: t.globalForm.trend === 'up' ? 'var(--success)' : t.globalForm.trend === 'down' ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 700 }}>
+                        {t.globalForm.trend === 'up' ? '↑ Rising' : t.globalForm.trend === 'down' ? '↓ Falling' : '→ Steady'}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+
+                <Link href="/rankings?tab=teamForm" className="btn btn-secondary w-full text-center mt-2 flex items-center justify-center gap-2 text-xs py-2.5 rounded-xl border border-border/80 hover:border-gold/50 transition">
+                  View All Team Forms <ArrowRight size={13} />
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Career Kill Leaderboard Card */}
           <div className="card" style={{
             background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
             backdropFilter: 'blur(16px)',
@@ -520,7 +626,7 @@ export default function DashboardPage() {
                   );
                 })}
 
-                <Link href="/rankings" className="btn btn-secondary w-full text-center mt-5 flex items-center justify-center gap-2 text-xs py-2.5 rounded-xl border border-border/80 hover:border-gold/50 transition">
+                <Link href="/rankings?tab=career" className="btn btn-secondary w-full text-center mt-5 flex items-center justify-center gap-2 text-xs py-2.5 rounded-xl border border-border/80 hover:border-gold/50 transition">
                   View Full Career Rankings <ExternalLink size={13} />
                 </Link>
               </div>
