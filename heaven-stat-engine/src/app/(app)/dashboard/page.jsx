@@ -2,12 +2,10 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getTournaments } from '@/lib/firestore/tournaments';
-import { getPlayers } from '@/lib/firestore/registry';
-import { getTeams } from '@/lib/firestore/registry';
+import { getPlayers, getTeams } from '@/lib/firestore/registry';
 import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star, Sparkles, ArrowRight, Flame } from 'lucide-react';
-
 import { formatEventDates } from '@/lib/utils/dateUtils';
 
 export default function DashboardPage() {
@@ -63,7 +61,7 @@ export default function DashboardPage() {
   if (loading) return <LoadingSpinner size="lg" text="Loading dashboard hub..." />;
 
   return (
-    <div className="space-y-8">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       {/* Liquid Hero Header */}
       <div style={{
         position: 'relative',
@@ -125,7 +123,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Infused Liquid Stats Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Stat 1 */}
         <div style={{
           position: 'relative',
@@ -283,9 +281,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+      {/* Main Layout Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Active & Setup Tournaments Column */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           <div className="card" style={{
             background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
             backdropFilter: 'blur(16px)',
@@ -406,20 +405,34 @@ export default function DashboardPage() {
                 No completed tournaments recorded yet.
               </div>
             ) : (
-              <div className="space-y-3">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {recentTourneys.map((tourney) => (
-                  <div key={tourney.id} className="flex-between p-3.5 bg-bg-alt-row/40 hover:bg-bg-alt-row/80 rounded-xl border border-border/50 transition">
-                    <div>
-                      <h4 className="font-semibold text-sm text-text-primary">{tourney.name}</h4>
-                      <p className="text-xs text-text-muted mt-0.5">Season {tourney.season} · Completed {tourney.completedAt ? (
-                        typeof tourney.completedAt.toDate === 'function'
-                          ? tourney.completedAt.toDate().toLocaleDateString()
-                          : new Date(tourney.completedAt).toLocaleDateString()
-                      ) : 'recently'}</p>
+                  <div key={tourney.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '14px 18px',
+                    background: 'rgba(26, 35, 50, 0.4)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    transition: 'all 0.2s ease',
+                    gap: '16px',
+                  }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#FFFFFF', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+                        {tourney.name}
+                      </h4>
+                      <p style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: 3, margin: 0 }}>
+                        Season {tourney.season || '—'} · Completed {tourney.completedAt ? (
+                          typeof tourney.completedAt.toDate === 'function'
+                            ? tourney.completedAt.toDate().toLocaleDateString()
+                            : new Date(tourney.completedAt).toLocaleDateString()
+                        ) : 'recently'}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
                       <StatusBadge status={tourney.status} />
-                      <Link href={`/tournaments/${tourney.id}`} className="text-text-muted hover:text-gold p-1.5 rounded-lg hover:bg-white/5 transition">
+                      <Link href={`/tournaments/${tourney.id}`} style={{ color: '#94A3B8', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Open Hub">
                         <ExternalLink size={16} />
                       </Link>
                     </div>
@@ -450,7 +463,7 @@ export default function DashboardPage() {
                 No player statistics available.
               </div>
             ) : (
-              <div className="space-y-3.5">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {topPlayers.map((player, index) => {
                   const rankStyles = [
                     { bg: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)', text: '#000000', label: '1st' },
@@ -460,37 +473,48 @@ export default function DashboardPage() {
                   const currentStyle = rankStyles[index] || { bg: 'rgba(255, 255, 255, 0.1)', text: '#94A3B8', label: `${index + 1}` };
 
                   return (
-                    <div key={player.id} className="flex items-center justify-between p-3.5 bg-bg-alt-row/30 hover:bg-bg-alt-row/70 rounded-xl border border-border/50 transition">
-                      <div className="flex items-center gap-3.5">
+                    <div key={player.id} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '14px 16px',
+                      background: 'rgba(26, 35, 50, 0.3)',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      gap: '12px',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                         <div style={{
-                          width: '28px',
-                          height: '28px',
+                          width: '32px',
+                          height: '32px',
                           borderRadius: '8px',
                           background: currentStyle.bg,
                           color: currentStyle.text,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '0.78rem',
+                          fontSize: '0.8rem',
                           fontWeight: 900,
                           boxShadow: index < 3 ? '0 2px 8px rgba(0,0,0,0.3)' : 'none',
                           flexShrink: 0,
                         }}>
                           {index + 1}
                         </div>
-                        <div>
-                          <Link href={`/players/${player.id}`} className="font-semibold text-sm hover:text-gold transition text-text-primary block line-clamp-1">
+                        <div style={{ minWidth: 0 }}>
+                          <Link href={`/players/${player.id}`} style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FFFFFF', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
                             {player.professionalName || player.ign}
                           </Link>
-                          <div className="text-xs text-text-muted mt-0.5">IGN: <span className="font-mono text-text-secondary">{player.ign || '—'}</span></div>
+                          <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                            IGN: <span style={{ fontFamily: 'var(--font-mono)', color: '#CBD5E1' }}>{player.ign || '—'}</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-mono text-sm font-black text-gold flex items-center justify-end gap-1">
-                          <Flame size={12} className="text-gold" />
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.92rem', fontWeight: 900, color: 'var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                          <Flame size={12} style={{ color: 'var(--gold)' }} />
                           {player.careerKills || 0}
                         </div>
-                        <div className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">Kills</div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Kills</div>
                       </div>
                     </div>
                   );
