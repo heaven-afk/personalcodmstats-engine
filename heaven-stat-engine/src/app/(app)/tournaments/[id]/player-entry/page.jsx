@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock } from 'lucide-react';
 import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
-import { cleanTeamName } from '@/lib/utils/similarity';
+import { cleanTeamName, stringSimilarity } from '@/lib/utils/similarity';
 
 // Distinct color per lobby slot
 const LOBBY_COLORS = [
@@ -100,9 +100,6 @@ function parseSmartSpreadsheet(grid) {
   const headerRow = grid[headerRowIndex] || [];
   const subheaderRow = subheaderRowIndex !== -1 ? grid[subheaderRowIndex] : [];
 
-  // Compute the maximum column count across ALL rows so that sub-columns of the
-  // last lobby group (which sit beyond the header row's last non-empty cell when
-  // merged cells are used) are never silently skipped.
   const maxCols = grid.reduce((max, row) => Math.max(max, (row || []).length), 0);
 
   let playerCol = -1;
@@ -140,7 +137,6 @@ function parseSmartSpreadsheet(grid) {
     const superCellVal = superHeaderRowIndex !== -1 ? String(grid[superHeaderRowIndex][c] || '').trim() : '';
     const cleanSuperVal = superCellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    // Track super-header category carry-forward
     if (superHeaderRowIndex !== -1) {
       const categoryFromSuper = getCategory(cleanSuperVal);
       if (categoryFromSuper !== null) {
@@ -150,7 +146,6 @@ function parseSmartSpreadsheet(grid) {
       }
     }
 
-    // Track header-row category carry-forward (where categories are in header row)
     const headerCategoryMatch = getCategory(cleanVal);
     if (headerCategoryMatch !== null) {
       lastHeaderCategory = headerCategoryMatch;
@@ -188,9 +183,6 @@ function parseSmartSpreadsheet(grid) {
     if (topLobbyMatch !== null) {
       lastTopLobbyNum = topLobbyMatch;
     } else if (cellVal !== '') {
-      // Only reset the carry-forward when we hit a cell that is clearly a
-      // player/team/slot identifier (not a stat-category label like "Kills" or "Dmg").
-      // Stat-category cells belong to the CURRENT lobby group and should NOT clear it.
       const isStatCategory = getCategory(cleanVal) !== null;
       const isPlayerOrTeam =
         checkPlayer(cleanVal) || checkTeam(cleanVal) || checkSlot(cleanVal);
@@ -203,11 +195,7 @@ function parseSmartSpreadsheet(grid) {
     if (lobbyNum === null && subheaderRowIndex !== -1) {
       lobbyNum = matchVal(subCellVal);
     }
-    // Carry-forward: non-lobby, non-stat top-header cells that are empty inherit
-    // the last seen lobby number (handles merged Excel header cells).
     if (lobbyNum === null && lastTopLobbyNum !== null) {
-      // Only inherit when: no subheader detected, OR the cell (or its subheader) is
-      // a known stat category, OR the top-header cell is blank.
       const topIsStat = getCategory(cleanVal) !== null;
       const subIsStat = getCategory(cleanSubVal) !== null;
       if (cellVal === '' || topIsStat || subIsStat) {
@@ -220,7 +208,6 @@ function parseSmartSpreadsheet(grid) {
         lobbies[lobbyNum] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
       }
 
-      // Determine category (kills, damage, or accuracy)
       let category = null;
       if (subheaderRowIndex !== -1 && getCategory(cleanSubVal) !== null) {
         category = getCategory(cleanSubVal);
@@ -230,13 +217,9 @@ function parseSmartSpreadsheet(grid) {
         category = currentCategory;
       } else {
         const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
-        category = getCategory(checkVal) || 'kills'; // Fallback to kills
+        category = getCategory(checkVal) || 'kills';
       }
 
-      // This column was inherited via carry-forward from a blank gap cell (no header
-      // text, no stat sub-header).  Guard against overwriting an already-mapped
-      // slot — blank gap columns between stat groups (e.g. between the KILLS and
-      // DAMAGE super-headers) would otherwise clobber the correctly-assigned column.
       const isCarryForwardFromBlank = topLobbyMatch === null && cleanVal === '' && cleanSubVal === '';
 
       if (category === 'damage') {
@@ -302,18 +285,6 @@ function parseSmartSpreadsheet(grid) {
     });
   }
 
-  console.log("--- Smart Spreadsheet Parser Diagnostics ---");
-  console.log("Found Header Row Index:", headerRowIndex);
-  console.log("Found Subheader Row Index:", subheaderRowIndex);
-  console.log("Matched Player Column (playerCol):", playerCol);
-  console.log("Matched Team Column (teamCol):", teamCol);
-  console.log("Matched Slot Column (slotCol):", slotCol);
-  console.log("Mapped Lobbies and Columns:", lobbies);
-  console.log("Total Parsed Rows:", parsedRows.length);
-  if (parsedRows.length > 0) {
-    console.log("First Parsed Row Sample:", parsedRows[0]);
-  }
-
   return {
     lobbies: Object.keys(lobbies).map(Number).sort((a, b) => a - b),
     rows: parsedRows,
@@ -321,62 +292,130 @@ function parseSmartSpreadsheet(grid) {
   };
 }
 
-// ─── Smart Matcher Utility ──────────────────────────────────────────────────
-function findBestMatch(parsedName, parsedTeam, regs, allPlayers) {
-  if (!parsedName) return null;
-  
+// ─── Smart Player Matcher Utility ──────────────────────────────────────────
+function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers) {
+  if (!parsedName || !parsedName.trim()) {
+    return { playerId: null, playerName: 'Unmatched', ign: '', teamName: '', accuracy: 0, matchType: null, confidence: 'none' };
+  }
+
   const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const pNameClean = cleanStr(parsedName);
   const pTeamClean = cleanStr(parsedTeam);
 
-  let bestReg = null;
+  if (!pNameClean) {
+    return { playerId: null, playerName: parsedName, ign: parsedName, teamName: '', accuracy: 0, matchType: null, confidence: 'none' };
+  }
+
+  let bestMatch = null;
   let maxScore = -1;
+  let maxAccuracy = 0;
+  let matchType = null;
 
   for (const reg of regs) {
     const globalPlayer = allPlayers.find(p => p.id === reg.playerId);
-    const ign = cleanStr(reg.ign || globalPlayer?.ign || '');
-    const profName = cleanStr(reg.professionalName || globalPlayer?.professionalName || '');
-    const regTeam = cleanStr(reg.teamName || '');
+    const ign = reg.ign || globalPlayer?.ign || '';
+    const profName = reg.professionalName || globalPlayer?.professionalName || '';
+    const regTeam = reg.teamName || '';
 
-    let score = 0;
-    if (ign === pNameClean) {
-      score = 100;
-    } else if (profName === pNameClean) {
-      score = 90;
-    } else if (pNameClean.length >= 3 && (pNameClean.includes(ign) || ign.includes(pNameClean))) {
-      score = 50;
-    } else if (pNameClean.length >= 3 && (pNameClean.includes(profName) || profName.includes(pNameClean))) {
-      score = 40;
+    const ignClean = cleanStr(ign);
+    const profClean = cleanStr(profName);
+    const regTeamClean = cleanStr(regTeam);
+
+    let ignSim = 0;
+    let profSim = 0;
+
+    // IGN Similarity
+    if (ignClean) {
+      if (pNameClean === ignClean) {
+        ignSim = 1.0;
+      } else if (pNameClean.length >= 3 && (pNameClean.includes(ignClean) || ignClean.includes(pNameClean))) {
+        ignSim = 0.88;
+      } else {
+        ignSim = stringSimilarity(pNameClean, ignClean);
+      }
     }
 
-    if (score > 0) {
-      if (pTeamClean && regTeam === pTeamClean) {
-        score += 50;
-      } else if (pTeamClean && (regTeam.includes(pTeamClean) || pTeamClean.includes(regTeam))) {
-        score += 20;
+    // Professional Name Similarity
+    if (profClean) {
+      if (pNameClean === profClean) {
+        profSim = 1.0;
+      } else if (pNameClean.length >= 3 && (pNameClean.includes(profClean) || profClean.includes(pNameClean))) {
+        profSim = 0.88;
+      } else {
+        profSim = stringSimilarity(pNameClean, profClean);
       }
-      
-      if (score > maxScore) {
-        maxScore = score;
-        bestReg = reg;
-      }
+    }
+
+    let bestSim = 0;
+    let currentType = null;
+
+    if (profSim >= ignSim) {
+      bestSim = profSim;
+      currentType = profSim === 1.0 ? 'exact_proName' : 'fuzzy_proName';
+    } else {
+      bestSim = ignSim;
+      currentType = ignSim === 1.0 ? 'exact_ign' : 'fuzzy_ign';
+    }
+
+    // Team boost if available
+    let teamBoost = 0;
+    if (pTeamClean && regTeamClean) {
+      if (pTeamClean === regTeamClean) teamBoost = 0.12;
+      else if (pTeamClean.includes(regTeamClean) || regTeamClean.includes(pTeamClean)) teamBoost = 0.06;
+    }
+
+    let finalScore = bestSim + teamBoost;
+    let accuracyPct = Math.min(100, Math.round(bestSim * 100));
+
+    if (bestSim >= 0.40 && finalScore > maxScore) {
+      maxScore = finalScore;
+      maxAccuracy = accuracyPct;
+      matchType = currentType;
+      bestMatch = reg;
     }
   }
 
-  if (bestReg) {
-    const globalPlayer = allPlayers.find(p => p.id === bestReg.playerId);
+  if (bestMatch) {
+    const globalPlayer = allPlayers.find(p => p.id === bestMatch.playerId);
     let confidence = 'low';
-    if (maxScore >= 140) confidence = 'high';
-    else if (maxScore >= 80) confidence = 'medium';
+    if (maxAccuracy >= 85) confidence = 'high';
+    else if (maxAccuracy >= 70) confidence = 'medium';
+    else if (maxAccuracy >= 50) confidence = 'low';
+    else confidence = 'none';
 
     return {
-      playerId: bestReg.playerId,
-      playerName: globalPlayer?.professionalName || bestReg.professionalName || bestReg.ign || bestReg.playerId,
+      playerId: bestMatch.playerId,
+      playerName: globalPlayer?.professionalName || bestMatch.professionalName || bestMatch.ign || bestMatch.playerId,
+      ign: bestMatch.ign || globalPlayer?.ign || '',
+      teamName: bestMatch.teamName || '',
+      accuracy: maxAccuracy,
+      matchType,
       confidence
     };
   }
 
-  return null;
+  return {
+    playerId: null,
+    playerName: parsedName,
+    ign: parsedName,
+    teamName: parsedTeam || '',
+    accuracy: 0,
+    matchType: null,
+    confidence: 'none'
+  };
+}
+
+function findBestMatch(parsedName, parsedTeam, regs, allPlayers) {
+  const match = matchPlayerByName(parsedName, parsedTeam, regs, allPlayers);
+  if (!match || !match.playerId) return null;
+  return {
+    matchedPlayerId: match.playerId,
+    playerId: match.playerId,
+    playerName: match.playerName,
+    confidence: match.confidence,
+    accuracy: match.accuracy,
+    matchType: match.matchType
+  };
 }
 
 // ─── Player Paste Parser ──────────────────────────────────────────────────────
@@ -1061,22 +1100,16 @@ export default function PlayerEntryPage() {
 
         const mappedRows = (data.rows || []).map(row => {
           const nameInput = row.name || '';
-          const normalized = nameInput.toLowerCase().replace(/\s+/g, '');
-          
-          let player = playerRegs.find(p => p.ign?.toLowerCase().replace(/\s+/g, '') === normalized);
-          let matchType = 'ign';
-
-          if (!player) {
-            player = playerRegs.find(p => p.professionalName?.toLowerCase().replace(/\s+/g, '') === normalized);
-            matchType = 'proName';
-          }
+          const match = matchPlayerByName(nameInput, '', playerRegs, players);
 
           return {
-            playerId: player?.playerId || null,
-            playerName: player?.professionalName || player?.ign || nameInput,
-            ign: player?.ign || nameInput,
-            teamName: player?.teamName || '',
-            matchType: player ? matchType : null,
+            playerId: match.playerId,
+            playerName: match.playerName,
+            ign: match.ign,
+            teamName: match.teamName,
+            matchType: match.matchType,
+            matchAccuracy: match.accuracy,
+            confidence: match.confidence,
             kills: row.kills === null || row.kills === undefined ? null : (parseInt(row.kills) || 0),
             originalParsedName: nameInput,
             sourceLine: `Name: ${row.name}, Kills: ${row.kills}`
@@ -1129,24 +1162,38 @@ export default function PlayerEntryPage() {
         
         let updatedRow = { ...row };
         
-        if (field === 'playerName') {
-          const nameInput = val;
-          const normalized = nameInput.toLowerCase().replace(/\s+/g, '');
-          
-          let player = playerRegs.find(p => p.ign?.toLowerCase().replace(/\s+/g, '') === normalized);
-          let matchType = 'ign';
-
-          if (!player) {
-            player = playerRegs.find(p => p.professionalName?.toLowerCase().replace(/\s+/g, '') === normalized);
-            matchType = 'proName';
+        if (field === 'playerId') {
+          if (!val) {
+            updatedRow.playerId = null;
+            updatedRow.playerName = 'Unmatched';
+            updatedRow.ign = '';
+            updatedRow.teamName = '';
+            updatedRow.matchType = null;
+            updatedRow.matchAccuracy = 0;
+            updatedRow.confidence = 'none';
+          } else {
+            const regPlayer = playerRegs.find(p => p.playerId === val);
+            const globalP = players.find(gp => gp.id === val);
+            updatedRow.playerId = val;
+            updatedRow.playerName = globalP?.professionalName || regPlayer?.professionalName || regPlayer?.ign || val;
+            updatedRow.ign = regPlayer?.ign || globalP?.ign || val;
+            updatedRow.teamName = regPlayer?.teamName || '';
+            updatedRow.matchType = 'manual';
+            updatedRow.matchAccuracy = 100;
+            updatedRow.confidence = 'high';
           }
+        } else if (field === 'playerName') {
+          const nameInput = val;
+          const match = matchPlayerByName(nameInput, '', playerRegs, players);
 
           updatedRow.originalParsedName = nameInput;
-          updatedRow.playerId = player?.playerId || null;
-          updatedRow.playerName = player?.professionalName || player?.ign || nameInput;
-          updatedRow.ign = player?.ign || nameInput;
-          updatedRow.teamName = player?.teamName || '';
-          updatedRow.matchType = player ? matchType : null;
+          updatedRow.playerId = match.playerId;
+          updatedRow.playerName = match.playerName;
+          updatedRow.ign = match.ign;
+          updatedRow.teamName = match.teamName;
+          updatedRow.matchType = match.matchType;
+          updatedRow.matchAccuracy = match.accuracy;
+          updatedRow.confidence = match.confidence;
         } else if (field === 'kills') {
           updatedRow.kills = val === '' ? null : (parseInt(val) || 0);
         }
@@ -1870,8 +1917,9 @@ export default function PlayerEntryPage() {
                       <table className="data-table" style={{ fontSize: '0.75rem', width: '100%' }}>
                         <thead>
                           <tr style={{ background: 'var(--bg-header)' }}>
-                            <th>Parsed Name / IGN</th>
+                            <th>Parsed IGN (Screenshot)</th>
                             <th>Matched Player Name</th>
+                            <th>System Accuracy / Match Read</th>
                             <th>Team</th>
                             <th style={{ width: 100 }}>Kills</th>
                             <th style={{ width: 50 }}></th>
@@ -1880,8 +1928,7 @@ export default function PlayerEntryPage() {
                         <tbody>
                           {lobbyData.results.map((row, idx) => {
                             const isNullKills = row.kills === null;
-                            const isUnmatched = !row.playerId;
-                            const isFallback = row.matchType === 'proName';
+                            const isUnmatched = !row.playerId || row.confidence === 'none';
 
                             return (
                               <tr key={idx} style={{
@@ -1896,7 +1943,7 @@ export default function PlayerEntryPage() {
                                         width: '100%',
                                         fontSize: '0.75rem',
                                         padding: '2px 4px',
-                                        borderColor: isUnmatched ? 'var(--danger)' : isFallback ? 'var(--warning)' : undefined
+                                        borderColor: isUnmatched ? 'var(--danger)' : row.confidence === 'low' ? 'var(--warning)' : undefined
                                       }}
                                       value={row.originalParsedName || ''}
                                       onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'playerName', e.target.value)}
@@ -1904,41 +1951,94 @@ export default function PlayerEntryPage() {
                                   ) : (row.originalParsedName || '—')}
                                 </td>
                                 <td>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontWeight: 600 }}>
-                                      {isUnmatched ? 'Unmatched IGN' : row.playerName}
+                                  {isEditing ? (
+                                    <select
+                                      className="editable-input"
+                                      style={{ width: '100%', fontSize: '0.75rem', padding: '2px 4px' }}
+                                      value={row.playerId || ''}
+                                      onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'playerId', e.target.value)}
+                                    >
+                                      <option value="">-- Unmatched --</option>
+                                      {playerRegs.map(p => (
+                                        <option key={p.playerId} value={p.playerId}>
+                                          {p.professionalName || p.ign} ({p.teamName || 'No Team'})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <div>
+                                      <span style={{ fontWeight: 600 }}>
+                                        {isUnmatched ? 'Unmatched IGN' : row.playerName}
+                                      </span>
+                                      {row.ign && row.ign !== row.playerName && (
+                                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 6 }}>
+                                          (IGN: {row.ign})
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  {isUnmatched ? (
+                                    <span style={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      color: 'white',
+                                      background: 'var(--danger)',
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4
+                                    }}>
+                                      <AlertCircle size={10} /> Unmatched (0%)
                                     </span>
-                                    {isUnmatched && (
-                                      <span style={{
-                                        fontSize: '0.65rem',
-                                        fontWeight: 700,
-                                        color: 'white',
-                                        background: 'var(--danger)',
-                                        padding: '2px 6px',
-                                        borderRadius: 4,
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 4
-                                      }}>
-                                        <AlertCircle size={10} /> Unmatched
-                                      </span>
-                                    )}
-                                    {isFallback && (
-                                      <span style={{
-                                        fontSize: '0.65rem',
-                                        fontWeight: 700,
-                                        color: 'white',
-                                        background: 'var(--warning)',
-                                        padding: '2px 6px',
-                                        borderRadius: 4,
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 4
-                                      }} title="Matched via Professional Name instead of IGN (Confidence Low)">
-                                        <AlertTriangle size={10} /> Low Confidence
-                                      </span>
-                                    )}
-                                  </div>
+                                  ) : row.confidence === 'high' ? (
+                                    <span style={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      color: '#10B981',
+                                      background: 'rgba(16,185,129,0.12)',
+                                      border: '1px solid rgba(16,185,129,0.3)',
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4
+                                    }}>
+                                      <Check size={10} /> {row.matchAccuracy}% ({row.matchType === 'exact_proName' ? 'Exact Pro Name' : row.matchType === 'exact_ign' ? 'Exact IGN' : row.matchType === 'manual' ? 'Manual Selection' : 'High Accuracy'})
+                                    </span>
+                                  ) : row.confidence === 'medium' ? (
+                                    <span style={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      color: 'var(--gold)',
+                                      background: 'rgba(201,168,76,0.12)',
+                                      border: '1px solid rgba(201,168,76,0.3)',
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4
+                                    }}>
+                                      <Check size={10} /> {row.matchAccuracy}% ({row.matchType?.includes('proName') ? 'Pro Name Match' : 'IGN Match'})
+                                    </span>
+                                  ) : (
+                                    <span style={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      color: '#F59E0B',
+                                      background: 'rgba(245,158,11,0.12)',
+                                      border: '1px solid rgba(245,158,11,0.3)',
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4
+                                    }} title="Confidence Low - Check if the matched Pro Name or IGN is correct">
+                                      <AlertTriangle size={10} /> {row.matchAccuracy}% ({row.matchType?.includes('proName') ? 'Pro Name' : 'IGN'})
+                                    </span>
+                                  )}
                                 </td>
                                 <td style={{ color: 'var(--text-secondary)' }}>{row.teamName || '—'}</td>
                                 <td>
