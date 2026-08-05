@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import Modal from '@/components/ui/Modal';
-import { Plus, Trophy, Filter, Trash2 } from 'lucide-react';
+import { Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const STATUS_OPTIONS = ['all', 'setup', 'active', 'completed', 'archived'];
@@ -17,6 +17,8 @@ export default function TournamentsListPage() {
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
 
   // Delete confirmation state
   const [deletingId, setDeletingId] = useState(null);
@@ -45,7 +47,6 @@ export default function TournamentsListPage() {
       await deleteTournament(deletingId);
       toast.success('Tournament deleted successfully');
       closeDeleteModal();
-      // Re-fetch from source of truth to guarantee UI reflects actual stored data
       const updated = await getTournaments();
       setTournaments(updated);
     } catch (err) {
@@ -61,9 +62,16 @@ export default function TournamentsListPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = statusFilter === 'all'
-    ? tournaments
-    : tournaments.filter(t => t.status === statusFilter);
+  const filtered = tournaments.filter(t => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const nameMatch = t.name?.toLowerCase().includes(q);
+    const seasonMatch = t.season?.toLowerCase().includes(q);
+    const dateStr = formatEventDates(t.eventStartDate, t.eventEndDate)?.toLowerCase();
+    const dateMatch = dateStr?.includes(q);
+    return nameMatch || seasonMatch || dateMatch;
+  });
 
   const columns = [
     {
@@ -154,7 +162,7 @@ export default function TournamentsListPage() {
         </Link>
       </div>
 
-      {/* Status filter */}
+      {/* Status filter tabs */}
       <div className="tab-bar" style={{ marginBottom: 20 }}>
         {STATUS_OPTIONS.map(s => (
           <button
@@ -179,6 +187,39 @@ export default function TournamentsListPage() {
         ))}
       </div>
 
+      {/* Toolbar: Search + View Mode Switcher */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+        <div className="search-input-wrap" style={{ flex: 1, minWidth: 240, maxWidth: 360 }}>
+          <Search size={15} className="search-icon" />
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search by name, season, or date..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-card)', padding: '3px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+            onClick={() => setViewMode('grid')}
+          >
+            <LayoutGrid size={15} /> Grid
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+            onClick={() => setViewMode('table')}
+          >
+            <List size={15} /> List
+          </button>
+        </div>
+      </div>
+
       {filtered.length === 0 ? (
         <EmptyState
           icon={Trophy}
@@ -192,13 +233,101 @@ export default function TournamentsListPage() {
             </Link>
           )}
         />
+      ) : viewMode === 'grid' ? (
+        /* Grid View */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filtered.map(t => {
+            const bannerSrc = t.banner || t.bannerUrl;
+            const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
+
+            return (
+              <div
+                key={t.id}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                  border: '1px solid var(--border-md)',
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {/* Banner or Header */}
+                {bannerSrc ? (
+                  <img src={bannerSrc} alt="" style={{ width: '100%', height: '120px', objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                ) : (
+                  <div style={{ height: '120px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--border)' }}>
+                    <Trophy size={38} className="text-gold" style={{ opacity: 0.85 }} />
+                  </div>
+                )}
+
+                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                        {t.season || '—'}
+                      </span>
+                      <StatusBadge status={t.status} />
+                    </div>
+
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3 }}>
+                      {t.name}
+                    </h3>
+
+                    {/* Prominent Event Date Range */}
+                    {dateRange && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '0.8rem', color: 'var(--gold)', fontWeight: 600 }}>
+                        <Calendar size={13} style={{ flexShrink: 0 }} />
+                        <span>{dateRange}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {t.description && (
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineClamp: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {t.description}
+                    </p>
+                  )}
+
+                  {/* Metadata Chips */}
+                  <div style={{ display: 'flex', gap: '10px', background: 'rgba(15, 23, 42, 0.6)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'auto' }}>
+                    <div>Days: <strong style={{ color: 'var(--text-primary)' }}>{t.structure?.totalDays ?? '—'}</strong></div>
+                    <div>Lobbies: <strong style={{ color: 'var(--text-primary)' }}>{t.structure?.lobbiesPerDay ?? '—'}</strong></div>
+                    <div>Type: <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{t.type || 'standard'}</strong></div>
+                  </div>
+                </div>
+
+                {/* Card Actions */}
+                <div style={{ padding: '12px 16px', background: 'rgba(15, 23, 42, 0.9)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Link href={`/tournaments/${t.id}`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                    Open Hub
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: 'var(--danger)', marginLeft: '8px', padding: '6px' }}
+                    onClick={() => openDeleteModal(t.id, t.name)}
+                    title="Delete Tournament"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
+        /* Table View */
         <DataTable
           columns={columns}
           data={filtered}
           searchPlaceholder="Search by name or season..."
         />
       )}
+
       {/* Delete Confirmation Modal */}
       {deletingId && (
         <Modal title="⚠ Delete Tournament" onClose={closeDeleteModal}>
@@ -208,7 +337,6 @@ export default function TournamentsListPage() {
               All match results, configurations, registrations, bonuses, and stats will be gone forever.
             </p>
 
-            {/* Checkboxes */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '14px 16px', background: 'rgba(239, 68, 68, 0.07)', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.25)' }}>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: '0.85rem' }}>
                 <input
