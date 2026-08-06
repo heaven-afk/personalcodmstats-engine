@@ -102,6 +102,8 @@ export async function GET(request) {
 
   const scoringConfig = tournament.scoring || {};
 
+  const includeHistory = searchParams.get('includeHistory') === '1' || searchParams.get('includeHistory') === 'true';
+
   try {
     if (type === 'team') {
       const [allTeamResults, allBonusPoints, allTeams] = await Promise.all([
@@ -118,6 +120,22 @@ export async function GET(request) {
         bonusPoints = allBonusPoints.filter(b => b.groupId === groupId || (!b.groupId && groupTeamIds.has(b.teamId)));
       }
 
+      // Map team match placements history per teamId for sparklines
+      const teamPlacementHistoryMap = {};
+      if (includeHistory) {
+        // Sort teamResults chronologically by day then lobby
+        const sortedResults = [...teamResults].sort((a, b) => (a.day - b.day) || (a.lobby - b.lobby));
+        sortedResults.forEach((r) => {
+          if (!r.teamId) return;
+          if (!teamPlacementHistoryMap[r.teamId]) {
+            teamPlacementHistoryMap[r.teamId] = [];
+          }
+          if (typeof r.placement === 'number') {
+            teamPlacementHistoryMap[r.teamId].push(r.placement);
+          }
+        });
+      }
+
       // ── Daily mode: return standings for a single day only ──────────────────
       if (day !== null && !isNaN(day)) {
         // Enrich raw Firestore results with team names and logos from the global registry
@@ -130,11 +148,12 @@ export async function GET(request) {
         }));
 
         const dailyStandings = computeDailyStandings(enriched, bonusPoints, scoringConfig, day);
-        // Attach rank number and logoUrl for the overlay
+        // Attach rank number, logoUrl, and optional placementHistory for the overlay
         const ranked = dailyStandings.map((t, i) => ({
           ...t,
           rank: i + 1,
           logoUrl: t.logoUrl || teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || null,
+          ...(includeHistory ? { placementHistory: teamPlacementHistoryMap[t.teamId] || [] } : {}),
         }));
         return corsJson({ tournamentId, type, day, n, mode: 'daily', results: ranked.slice(0, n) });
       }
@@ -144,10 +163,11 @@ export async function GET(request) {
       // and attaches analyticsRank — reuse that ordering directly.
       const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
       const analytics = computeTeamAnalytics(teamResults, bonusPoints, scoringConfig);
-      // Join logoUrl from the registry — computeTeamAnalytics doesn't have access to it
+      // Join logoUrl from the registry and optional placementHistory
       const enrichedAnalytics = analytics.map((t) => ({
         ...t,
         logoUrl: teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || t.logoUrl || null,
+        ...(includeHistory ? { placementHistory: teamPlacementHistoryMap[t.teamId] || [] } : {}),
       }));
       return corsJson({ tournamentId, type, n, mode: 'season', results: enrichedAnalytics.slice(0, n) });
 
