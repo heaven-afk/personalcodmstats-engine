@@ -67,10 +67,12 @@ export async function GET(request) {
   }
 
   try {
-    const [allPlayerResults, teamDoc, standingsData] = await Promise.all([
+    const [allPlayerResults, teamMatchResults, bonusPoints, teamDoc, tournamentDoc] = await Promise.all([
       getPlayerMatchResults(tournamentId),
+      getTeamMatchResults(tournamentId).catch(() => []),
+      getBonusPoints(tournamentId).catch(() => []),
       getTeam(teamId),
-      calculateStandings(tournamentId).catch(() => ({ standings: [] })),
+      getTournament(tournamentId).catch(() => null),
     ]);
 
     if (!teamDoc) {
