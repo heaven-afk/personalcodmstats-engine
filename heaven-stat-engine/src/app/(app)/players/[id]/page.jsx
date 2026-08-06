@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPlayer } from '@/lib/firestore/registry';
+import { getPlayer, updatePlayer } from '@/lib/firestore/registry';
 import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getGroups } from '@/lib/firestore/groups';
@@ -12,7 +12,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
 import { ClassBadge } from '@/components/ui/Badge';
 import MetricTooltip from '@/components/ui/MetricTooltip';
-import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame } from 'lucide-react';
+import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame, Camera, Upload, X, Trash2, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { computePlayerGlobalForm } from '@/lib/engine/globalForm';
 
@@ -34,6 +34,11 @@ export default function PlayerProfilePage() {
   const [globalForm, setGlobalForm] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Photo Avatar Editing State
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [photoInputUrl, setPhotoInputUrl] = useState('');
+  const [savingPhoto, setSavingPhoto] = useState(false);
+
   useEffect(() => {
     async function loadPlayerProfile() {
       try {
@@ -44,6 +49,7 @@ export default function PlayerProfilePage() {
           return;
         }
         setPlayer(p);
+        setPhotoInputUrl(p.photoUrl || '');
 
         // Fetch tournament data
         const allTourneys = await getTournaments();
@@ -145,8 +151,83 @@ export default function PlayerProfilePage() {
     loadPlayerProfile();
   }, [id, router]);
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size exceeds 5MB limit');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 400;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        setPhotoInputUrl(dataUrl);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSavePhoto = async () => {
+    setSavingPhoto(true);
+    try {
+      const finalUrl = photoInputUrl.trim();
+      await updatePlayer(id, { photoUrl: finalUrl });
+      setPlayer(prev => ({ ...prev, photoUrl: finalUrl }));
+      toast.success('Player photo updated!');
+      setPhotoModalOpen(false);
+    } catch (err) {
+      toast.error('Failed to update photo: ' + err.message);
+    } finally {
+      setSavingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    setSavingPhoto(true);
+    try {
+      await updatePlayer(id, { photoUrl: '' });
+      setPlayer(prev => ({ ...prev, photoUrl: '' }));
+      setPhotoInputUrl('');
+      toast.success('Player photo removed');
+      setPhotoModalOpen(false);
+    } catch (err) {
+      toast.error('Failed to remove photo: ' + err.message);
+    } finally {
+      setSavingPhoto(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner size="lg" text="Loading player profile..." />;
   if (!player) return null;
+
+  const initial = (player.professionalName || player.ign || '?')[0].toUpperCase();
 
   const historyColumns = [
     {
@@ -176,10 +257,74 @@ export default function PlayerProfilePage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <button className="btn btn-secondary btn-sm p-2" onClick={() => router.push('/players')}>
             <ChevronLeft size={16} />
           </button>
+
+          {/* Player Avatar Header Frame */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            {player.photoUrl ? (
+              <img
+                src={player.photoUrl}
+                alt={player.professionalName}
+                style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: '2px solid var(--border-gold)',
+                  boxShadow: '0 0 16px rgba(201, 168, 76, 0.25)',
+                }}
+              />
+            ) : (
+              <div style={{
+                width: 58,
+                height: 58,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, rgba(201,168,76,0.25), rgba(59,130,246,0.2))',
+                border: '2px solid var(--border-gold)',
+                boxShadow: '0 0 16px rgba(201, 168, 76, 0.15)',
+                color: 'var(--gold)',
+                fontWeight: 800,
+                fontSize: '1.4rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {initial}
+              </div>
+            )}
+            <button
+              onClick={() => {
+                setPhotoInputUrl(player.photoUrl || '');
+                setPhotoModalOpen(true);
+              }}
+              title="Edit Player Photo"
+              style={{
+                position: 'absolute',
+                bottom: -2,
+                right: -2,
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                background: 'var(--gold)',
+                color: '#000',
+                border: '2px solid var(--bg-card)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                transition: 'transform 0.15s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.15)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <Camera size={11} />
+            </button>
+          </div>
+
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h1 className="page-title">{player.professionalName}</h1>
@@ -209,10 +354,76 @@ export default function PlayerProfilePage() {
         <div className="space-y-6">
           {/* Identity Card */}
           <div className="card">
-            <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
-              <User size={18} className="text-gold" />
-              Player Details
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
+              <h2 className="card-title flex items-center gap-2" style={{ margin: 0 }}>
+                <User size={18} className="text-gold" />
+                Player Details
+              </h2>
+              <button
+                onClick={() => {
+                  setPhotoInputUrl(player.photoUrl || '');
+                  setPhotoModalOpen(true);
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{ fontSize: '0.72rem', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                <Camera size={12} /> Edit Photo
+              </button>
+            </div>
+
+            {/* Avatar Spotlight Banner */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px 12px',
+              marginBottom: 16,
+              background: 'var(--bg-alt-row)',
+              border: '1px solid var(--border-md)',
+              borderRadius: 10
+            }}>
+              {player.photoUrl ? (
+                <img
+                  src={player.photoUrl}
+                  alt={player.professionalName}
+                  style={{
+                    width: 90,
+                    height: 90,
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '3px solid var(--border-gold)',
+                    boxShadow: '0 0 20px rgba(201, 168, 76, 0.3)',
+                    marginBottom: 10
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: 90,
+                  height: 90,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(201,168,76,0.25), rgba(59,130,246,0.2))',
+                  border: '3px solid var(--border-gold)',
+                  boxShadow: '0 0 20px rgba(201, 168, 76, 0.2)',
+                  color: 'var(--gold)',
+                  fontWeight: 800,
+                  fontSize: '2.2rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 10
+                }}>
+                  {initial}
+                </div>
+              )}
+              <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {player.professionalName}
+              </span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {player.ign ? `IGN: ${player.ign}` : 'No IGN Registered'}
+              </span>
+            </div>
+
             <div className="space-y-3.5 text-sm">
               <div className="flex-between">
                 <span className="text-text-muted">Pro Name</span>
@@ -311,6 +522,138 @@ export default function PlayerProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Edit Photo / Avatar Modal */}
+      {photoModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+            borderRadius: 14, padding: '24px', width: '100%', maxWidth: 440,
+            boxShadow: '0 24px 64px rgba(0,0,0,0.6)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Camera size={20} style={{ color: 'var(--gold)' }} />
+                <h3 style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                  Edit Player Photo / Avatar
+                </h3>
+              </div>
+              <button
+                onClick={() => setPhotoModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Avatar Preview */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20 }}>
+              {photoInputUrl ? (
+                <img
+                  src={photoInputUrl}
+                  alt="Preview"
+                  style={{
+                    width: 100,
+                    height: 100,
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '3px solid var(--border-gold)',
+                    boxShadow: '0 0 20px rgba(201,168,76,0.35)',
+                    marginBottom: 8
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: 100,
+                  height: 100,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(201,168,76,0.25), rgba(59,130,246,0.2))',
+                  border: '3px solid var(--border-gold)',
+                  boxShadow: '0 0 20px rgba(201, 168, 76, 0.2)',
+                  color: 'var(--gold)',
+                  fontSize: '2.5rem',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 8
+                }}>
+                  {initial}
+                </div>
+              )}
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {photoInputUrl ? 'Photo Preview' : 'Default Initials Placeholder'}
+              </span>
+            </div>
+
+            {/* Upload File button */}
+            <div style={{ marginBottom: 16 }}>
+              <label className="form-label" style={{ display: 'block', marginBottom: 6 }}>Upload Image File</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                style={{ display: 'none' }}
+                id="avatar-file-upload-modal"
+              />
+              <label
+                htmlFor="avatar-file-upload-modal"
+                className="btn btn-secondary btn-sm"
+                style={{ width: '100%', cursor: 'pointer', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}
+              >
+                <Upload size={14} /> Choose Image File...
+              </label>
+            </div>
+
+            {/* Image URL input */}
+            <div style={{ marginBottom: 20 }}>
+              <label className="form-label" style={{ display: 'block', marginBottom: 6 }}>Or Paste Image URL</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="https://example.com/avatar.jpg"
+                value={photoInputUrl}
+                onChange={e => setPhotoInputUrl(e.target.value)}
+              />
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              {player.photoUrl ? (
+                <button
+                  onClick={handleRemovePhoto}
+                  className="btn btn-danger btn-sm"
+                  disabled={savingPhoto}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Trash2 size={13} /> Remove
+                </button>
+              ) : <div />}
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setPhotoModalOpen(false)}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSavePhoto}
+                  className="btn btn-primary btn-sm"
+                  disabled={savingPhoto}
+                >
+                  {savingPhoto ? 'Saving...' : 'Save Photo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

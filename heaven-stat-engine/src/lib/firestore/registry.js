@@ -70,6 +70,7 @@ export async function createPlayer(data) {
     region: data.region || deriveRegion(data.country || ''),
     device: data.device || deriveDevice(data.deviceModel || ''),
     category: data.category || 'Registered',
+    photoUrl: data.photoUrl || '',
   };
 
   if (!isFirebaseConfigured) {
@@ -78,7 +79,7 @@ export async function createPlayer(data) {
   const existing = await findPlayerByName(enriched.professionalName, enriched.ign);
   if (existing) {
     const updatedFields = {};
-    const checkFields = ['professionalName', 'ign', 'gender', 'region', 'country', 'device', 'deviceModel', 'category'];
+    const checkFields = ['professionalName', 'ign', 'gender', 'region', 'country', 'device', 'deviceModel', 'category', 'photoUrl'];
     for (const field of checkFields) {
       if (enriched[field] && enriched[field] !== existing[field]) {
         updatedFields[field] = enriched[field];
@@ -98,7 +99,7 @@ export async function createPlayer(data) {
   }
   const ref = await addDoc(collection(db, 'players'), {
     professionalName: '', ign: '', gender: '', region: '', country: '',
-    device: '', deviceModel: '', category: 'Registered', tournamentIds: [], createdAt: serverTimestamp(),
+    device: '', deviceModel: '', category: 'Registered', photoUrl: '', tournamentIds: [], createdAt: serverTimestamp(),
     ...enriched,
     professionalNameLower: (enriched.professionalName || '').toLowerCase().trim(),
     ignLower: (enriched.ign || '').toLowerCase().trim(),

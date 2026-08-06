@@ -122,11 +122,48 @@ export default function PlayersPage() {
     {
       header: 'Professional Name',
       accessor: 'professionalName',
-      render: (row) => (
-        <Link href={`/players/${row.id}`} className="font-semibold text-text-primary hover:text-gold transition">
-          {row.professionalName || '—'}
-        </Link>
-      ),
+      render: (row) => {
+        const initial = (row.professionalName || row.ign || '?')[0].toUpperCase();
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {row.photoUrl ? (
+              <img
+                src={row.photoUrl}
+                alt={row.professionalName}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: '1.5px solid var(--border-gold)',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                  flexShrink: 0
+                }}
+              />
+            ) : (
+              <div style={{
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, rgba(201,168,76,0.25), rgba(59,130,246,0.2))',
+                border: '1.5px solid var(--border-md)',
+                color: 'var(--gold)',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                {initial}
+              </div>
+            )}
+            <Link href={`/players/${row.id}`} className="font-semibold text-text-primary hover:text-gold transition">
+              {row.professionalName || '—'}
+            </Link>
+          </div>
+        );
+      },
     },
     { header: 'IGN', accessor: 'ign' },
     {

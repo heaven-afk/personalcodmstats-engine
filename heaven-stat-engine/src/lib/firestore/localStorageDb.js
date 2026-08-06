@@ -365,7 +365,7 @@ export function localCreatePlayer(data) {
   const newP = {
     id: 'p_' + Math.random().toString(36).substr(2, 9),
     professionalName: '', ign: '', gender: '', region: '', country: '',
-    device: '', deviceModel: '', tournamentIds: [], createdAt: mockTimestamp(),
+    device: '', deviceModel: '', photoUrl: '', tournamentIds: [], createdAt: mockTimestamp(),
     ...data
   };
   list.push(newP);
