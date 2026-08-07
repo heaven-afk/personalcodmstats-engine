@@ -5,16 +5,6 @@
  *   - src/app/api/overlay/rankings/route.js
  *   - src/app/api/overlay/profile/route.js
  *   - src/app/api/overlay/compare/route.js
- *
- * TODO: src/app/(app)/comparison/page.jsx still has its own inline copies of
- * aggregateTeams / aggregatePlayers. Once the overlay API is stable, those
- * inline copies should be replaced with imports from this module to eliminate
- * drift between the two implementations.
- *
- * The pure aggregation functions (aggregateTeamData, aggregatePlayerData) take
- * pre-fetched data as arguments so they remain testable without Firestore.
- * The async wrappers (aggregateGlobalTeams, aggregateGlobalPlayers) handle all
- * Firestore fetching and delegate to those pure functions.
  */
 
 import { getTeams, getPlayers } from '@/lib/firestore/registry';
@@ -22,19 +12,9 @@ import { getTournaments, getTeamRegistrations, getPlayerRegistrations } from '@/
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { computeTeamRanking } from '@/lib/engine/standings';
 import { computeTeamAnalytics, getTeamRatingRankLabel } from '@/lib/engine/analytics';
+import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 // ─── Pure aggregation: teams ──────────────────────────────────────────────────
-/**
- * Aggregate career team stats from pre-fetched data arrays.
- * Mirrors the aggregateTeams function in comparison/page.jsx.
- *
- * @param {Array} registryTeams    - All teams from the global registry
- * @param {Array} tournaments      - All tournament documents
- * @param {Array[]} allTeamRegs    - Per-tournament team registration arrays (parallel to tournaments)
- * @param {Array[]} allTeamRes     - Per-tournament team match result arrays (parallel to tournaments)
- * @param {Array[]} allTeamBonuses - Per-tournament bonus point arrays (parallel to tournaments)
- * @returns {Array} Enriched team objects with career stats
- */
 export function aggregateTeamData(registryTeams, tournaments, allTeamRegs, allTeamRes, allTeamBonuses) {
   const teamMap = {};
   registryTeams.forEach((t) => {
@@ -104,9 +84,16 @@ export function aggregateTeamData(registryTeams, tournaments, allTeamRegs, allTe
     });
   });
 
+  const teamMatchResultsByTournament = {};
+  tournaments.forEach((t, i) => {
+    teamMatchResultsByTournament[t.id] = allTeamRes[i] || [];
+  });
+
   return Object.values(teamMap)
     .map((t) => {
       const avgRating = t.teamRatingCount > 0 ? t.totalTeamRating / t.teamRatingCount : 0;
+      const form = computeTeamGlobalForm(t.id, tournaments, teamMatchResultsByTournament);
+      const formLabelStr = globalFormLabel(form.decayedForm, form.trend, form.confidence);
       return {
         ...t,
         winRate:           t.careerMatches > 0 ? (t.careerWins / t.careerMatches) * 100 : 0,
@@ -116,22 +103,17 @@ export function aggregateTeamData(registryTeams, tournaments, allTeamRegs, allTe
         careerAvgTeamRatingLabel: getTeamRatingRankLabel(avgRating),
         avgPlacementPtsPerTournament: t.tournamentsCount > 0 ? t.careerPlacementPts / t.tournamentsCount : 0,
         avgRankedPosition: t.tournamentsCount > 0 ? t.careerRankSum / t.tournamentsCount : 0,
+        decayedForm: form.decayedForm,
+        trend: form.trend,
+        confidence: form.confidence,
+        formLabel: formLabelStr,
       };
     })
     .filter((t) => t.careerMatches > 0 || t.tournamentsCount > 0);
 }
 
 // ─── Pure aggregation: players ────────────────────────────────────────────────
-/**
- * Aggregate career player stats from pre-fetched data arrays.
- * Mirrors the aggregatePlayers function in comparison/page.jsx.
- *
- * @param {Array} registryPlayers - All players from the global registry
- * @param {Array[]} allPlayerRegs - Per-tournament player registration arrays (parallel to tournaments)
- * @param {Array[]} allPlayerRes  - Per-tournament player match result arrays (parallel to tournaments)
- * @returns {Array} Enriched player objects with career stats
- */
-export function aggregatePlayerData(registryPlayers, allPlayerRegs, allPlayerRes) {
+export function aggregatePlayerData(registryPlayers, allPlayerRegs, allPlayerRes, tournaments = []) {
   const playerMap = {};
   registryPlayers.forEach((p) => {
     playerMap[p.id] = {
@@ -159,6 +141,11 @@ export function aggregatePlayerData(registryPlayers, allPlayerRegs, allPlayerRes
     });
   });
 
+  const playerMatchResultsByTournament = {};
+  tournaments.forEach((t, i) => {
+    playerMatchResultsByTournament[t.id] = allPlayerRes[i] || [];
+  });
+
   allPlayerRes.forEach((results) => {
     results.forEach((res) => {
       if (playerMap[res.playerId]) {
@@ -175,23 +162,26 @@ export function aggregatePlayerData(registryPlayers, allPlayerRegs, allPlayerRes
   });
 
   return Object.values(playerMap)
-    .map((p) => ({
-      ...p,
-      avgKillsPerMatch:   p.careerMatches > 0 ? p.careerKills / p.careerMatches : 0,
-      avgDamagePerMatch:  p.careerMatches > 0 ? Math.round(p.careerDamage / p.careerMatches) : 0,
-      avgAccuracy:        p.careerAccuracyCount > 0 ? p.careerAccuracySum / p.careerAccuracyCount : 0,
-      killsPerTournament: p.tournamentsCount > 0 ? p.careerKills / p.tournamentsCount : 0,
-      damagePerKill:      p.careerKills > 0 ? p.careerDamage / p.careerKills : 0,
-    }))
+    .map((p) => {
+      const form = computePlayerGlobalForm(p.id, tournaments, playerMatchResultsByTournament);
+      const formLabelStr = globalFormLabel(form.decayedForm, form.trend, form.confidence);
+      return {
+        ...p,
+        avgKillsPerMatch:   p.careerMatches > 0 ? p.careerKills / p.careerMatches : 0,
+        avgDamagePerMatch:  p.careerMatches > 0 ? Math.round(p.careerDamage / p.careerMatches) : 0,
+        avgAccuracy:        p.careerAccuracyCount > 0 ? p.careerAccuracySum / p.careerAccuracyCount : 0,
+        killsPerTournament: p.tournamentsCount > 0 ? p.careerKills / p.tournamentsCount : 0,
+        damagePerKill:      p.careerKills > 0 ? p.careerDamage / p.careerKills : 0,
+        decayedForm: form.decayedForm,
+        trend: form.trend,
+        confidence: form.confidence,
+        formLabel: formLabelStr,
+      };
+    })
     .filter((p) => p.careerMatches > 0 || p.tournamentsCount > 0);
 }
 
 // ─── Async wrappers (handle Firestore fetching) ───────────────────────────────
-
-/**
- * Fetch all tournaments + their match data and return aggregated career team stats.
- * This is the function API routes should call directly.
- */
 export async function aggregateGlobalTeams() {
   const [registryTeams, tournaments] = await Promise.all([
     getTeams(),
@@ -209,10 +199,6 @@ export async function aggregateGlobalTeams() {
   return aggregateTeamData(registryTeams, tournaments, allTeamRegs, allTeamRes, allTeamBonuses);
 }
 
-/**
- * Fetch all tournaments + their match data and return aggregated career player stats.
- * This is the function API routes should call directly.
- */
 export async function aggregateGlobalPlayers() {
   const [registryPlayers, tournaments] = await Promise.all([
     getPlayers(),
@@ -226,5 +212,5 @@ export async function aggregateGlobalPlayers() {
     Promise.all(tournaments.map((t) => getPlayerMatchResults(t.id))),
   ]);
 
-  return aggregatePlayerData(registryPlayers, allPlayerRegs, allPlayerRes);
+  return aggregatePlayerData(registryPlayers, allPlayerRegs, allPlayerRes, tournaments);
 }

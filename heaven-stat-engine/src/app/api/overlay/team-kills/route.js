@@ -10,8 +10,9 @@
 import { NextResponse } from 'next/server';
 import { getPlayerMatchResults, getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
 import { getPlayer, getTeam } from '@/lib/firestore/registry';
-import { getTournament } from '@/lib/firestore/tournaments';
+import { getTournament, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { computeSeasonStandings } from '@/lib/engine/standings';
+import { cleanTeamName } from '@/lib/utils/similarity';
 
 function checkApiAuth(request) {
   const provided = request.headers.get('x-overlay-api-key');
@@ -67,21 +68,25 @@ export async function GET(request) {
   }
 
   try {
-    const [allPlayerResults, teamMatchResults, bonusPoints, teamDoc, tournamentDoc] = await Promise.all([
+    const [allPlayerResults, teamMatchResults, bonusPoints, teamDoc, tournamentDoc, playerRegs] = await Promise.all([
       getPlayerMatchResults(tournamentId),
       getTeamMatchResults(tournamentId).catch(() => []),
       getBonusPoints(tournamentId).catch(() => []),
       getTeam(teamId),
       getTournament(tournamentId).catch(() => null),
+      getPlayerRegistrations(tournamentId).catch(() => []),
     ]);
 
     if (!teamDoc) {
       return corsJson({ error: 'team not found' }, 404);
     }
 
-    // Filter results by team and scope
+    const targetCleanName = cleanTeamName(teamDoc.teamName || teamDoc.name || '').toLowerCase();
+
+    // Filter results by team and scope (matching teamId or clean teamName)
     const filteredResults = allPlayerResults.filter((r) => {
-      if (r.teamId !== teamId) return false;
+      const matchTeam = r.teamId === teamId || r.teamId === teamDoc.id || (r.teamName && cleanTeamName(r.teamName).toLowerCase() === targetCleanName);
+      if (!matchTeam) return false;
       if (scope === 'daily' && day !== null) {
         return r.day === day;
       }
@@ -102,7 +107,7 @@ export async function GET(request) {
 
     const playerIds = Object.keys(playerKillsMap);
 
-    // Resolve player profile docs
+    // Resolve player profile docs from match results
     const playerDocs = await Promise.all(playerIds.map((pid) => getPlayer(pid)));
 
     const playersList = playerDocs
@@ -121,6 +126,40 @@ export async function GET(request) {
 
     // Sort descending by kills
     playersList.sort((a, b) => b.kills - a.kills);
+
+    const existingPlayerIds = new Set(playersList.map((p) => p.id));
+
+    // Fallback: If we have fewer than 4 players, check playerRegistrations for this tournament
+    if (playersList.length < 4) {
+      const teamRegs = playerRegs.filter((reg) => {
+        return (
+          reg.teamId === teamId ||
+          reg.teamId === teamDoc.id ||
+          (reg.teamName && cleanTeamName(reg.teamName).toLowerCase() === targetCleanName)
+        );
+      });
+
+      const missingPids = teamRegs
+        .map((r) => r.playerId)
+        .filter((pid) => pid && !existingPlayerIds.has(pid));
+
+      if (missingPids.length > 0) {
+        const regPlayerDocs = await Promise.all(missingPids.map((pid) => getPlayer(pid)));
+        regPlayerDocs.filter(Boolean).forEach((p) => {
+          if (!existingPlayerIds.has(p.id)) {
+            existingPlayerIds.add(p.id);
+            playersList.push({
+              id: p.id,
+              ign: p.ign || '—',
+              professionalName: p.professionalName || p.ign || 'Unknown Player',
+              country: p.country || null,
+              kills: 0,
+              photoUrl: p.photoUrl || null,
+            });
+          }
+        });
+      }
+    }
 
     // Take top 4 distinct players
     const top4Players = playersList.slice(0, 4);

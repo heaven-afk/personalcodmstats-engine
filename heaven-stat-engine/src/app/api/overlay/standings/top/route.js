@@ -28,6 +28,7 @@ import { getTeams } from '@/lib/firestore/registry';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
 import { computeDailyStandings } from '@/lib/engine/standings';
 import { computePlayerStats, computePlayerAnalytics } from '@/lib/engine/playerStats';
+import { computeTeamGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 // ─── Auth & CORS helpers (shared pattern across all overlay routes) ───────────
 
@@ -148,13 +149,20 @@ export async function GET(request) {
         }));
 
         const dailyStandings = computeDailyStandings(enriched, bonusPoints, scoringConfig, day);
-        // Attach rank number, logoUrl, and optional placementHistory for the overlay
-        const ranked = dailyStandings.map((t, i) => ({
-          ...t,
-          rank: i + 1,
-          logoUrl: t.logoUrl || teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || null,
-          ...(includeHistory ? { placementHistory: teamPlacementHistoryMap[t.teamId] || [] } : {}),
-        }));
+        // Attach rank number, logoUrl, optional placementHistory, and form metrics for the overlay
+        const ranked = dailyStandings.map((t, i) => {
+          const form = computeTeamGlobalForm(t.teamId, [tournament], { [tournamentId]: teamResults });
+          return {
+            ...t,
+            rank: i + 1,
+            logoUrl: t.logoUrl || teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || null,
+            decayedForm: form.decayedForm,
+            trend: form.trend,
+            confidence: form.confidence,
+            formLabel: globalFormLabel(form.decayedForm, form.trend, form.confidence),
+            ...(includeHistory ? { placementHistory: teamPlacementHistoryMap[t.teamId] || [] } : {}),
+          };
+        });
         return corsJson({ tournamentId, type, day, n, mode: 'daily', results: ranked.slice(0, n) });
       }
 
@@ -163,12 +171,19 @@ export async function GET(request) {
       // and attaches analyticsRank — reuse that ordering directly.
       const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
       const analytics = computeTeamAnalytics(teamResults, bonusPoints, scoringConfig);
-      // Join logoUrl from the registry and optional placementHistory
-      const enrichedAnalytics = analytics.map((t) => ({
-        ...t,
-        logoUrl: teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || t.logoUrl || null,
-        ...(includeHistory ? { placementHistory: teamPlacementHistoryMap[t.teamId] || [] } : {}),
-      }));
+      // Join logoUrl from the registry, optional placementHistory, and form metrics
+      const enrichedAnalytics = analytics.map((t) => {
+        const form = computeTeamGlobalForm(t.teamId, [tournament], { [tournamentId]: teamResults });
+        return {
+          ...t,
+          logoUrl: teamMap[t.teamId]?.logoUrl || teamMap[t.teamId]?.logo || t.logoUrl || null,
+          decayedForm: form.decayedForm,
+          trend: form.trend,
+          confidence: form.confidence,
+          formLabel: globalFormLabel(form.decayedForm, form.trend, form.confidence),
+          ...(includeHistory ? { placementHistory: teamPlacementHistoryMap[t.teamId] || [] } : {}),
+        };
+      });
       return corsJson({ tournamentId, type, n, mode: 'season', results: enrichedAnalytics.slice(0, n) });
 
     } else {
