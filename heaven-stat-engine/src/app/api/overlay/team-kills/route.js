@@ -179,7 +179,7 @@ export async function GET(request) {
     }
 
     // Compute overall season standings to get absolute tournament rank
-    const scoringConfig = tournamentDoc?.scoringConfig || {};
+    const scoringConfig = tournamentDoc?.scoring || {};
     const seasonStandings = computeSeasonStandings(teamMatchResults, bonusPoints, scoringConfig);
     const teamRankIdx = seasonStandings.findIndex((s) => (s.teamId || s.id) === teamId);
     const currentRank = teamRankIdx !== -1 ? teamRankIdx + 1 : (teamDoc.rank || 1);
