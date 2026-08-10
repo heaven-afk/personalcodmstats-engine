@@ -7,6 +7,7 @@ import { getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
 import { computeTeamRanking } from '@/lib/engine/standings';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { TierBadge } from '@/components/ui/Badge';
 import { Shield, Search, ExternalLink, Trophy, BarChart2, Combine, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
@@ -207,6 +208,13 @@ export default function TeamsPage() {
     { header: 'Tournaments Played', accessor: 'tournamentsCount' },
     { header: 'Career Wins', accessor: 'careerWins' },
     { header: 'Career Points', accessor: 'careerTotalPts' },
+    {
+      header: 'Ranked Tier',
+      accessor: 'rankedTier',
+      render: (row) => row.rankedTier
+        ? <TierBadge tier={row.rankedTier} size="xs" />
+        : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>,
+    },
     {
       header: 'Actions',
       key: 'actions',

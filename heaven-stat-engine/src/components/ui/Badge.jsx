@@ -11,6 +11,33 @@ export function StatusBadge({ status }) {
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
+// ─── Tier Badge ─────────────────────────────────────────────────────────────
+// Displays a ranked tier label (Tier 1 / Tier 2 / Tier 3) with distinct
+// gold / silver / bronze colour treatment.
+export function TierBadge({ tier, size = 'sm' }) {
+  if (!tier) return null;
+  const map = {
+    'Tier 1': { icon: '🏅', bg: 'linear-gradient(135deg,#b8860b,#d4a017)', border: '#C9A84C', color: '#fff', label: 'Tier 1' },
+    'Tier 2': { icon: '🥈', bg: 'linear-gradient(135deg,#6b7280,#9ca3af)', border: '#9ca3af', color: '#fff', label: 'Tier 2' },
+    'Tier 3': { icon: '🥉', bg: 'linear-gradient(135deg,#92400e,#b45309)', border: '#b45309', color: '#fff', label: 'Tier 3' },
+  };
+  const cfg = map[tier];
+  if (!cfg) return null;
+  const fontSize = size === 'xs' ? '0.6rem' : size === 'sm' ? '0.68rem' : '0.78rem';
+  const padding  = size === 'xs' ? '2px 6px'  : size === 'sm' ? '3px 8px'  : '4px 10px';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '4px',
+      background: cfg.bg, border: `1px solid ${cfg.border}`,
+      borderRadius: 99, color: cfg.color, fontSize, fontWeight: 800,
+      padding, letterSpacing: '0.04em', textTransform: 'uppercase',
+      boxShadow: `0 1px 4px ${cfg.border}55`,
+    }}>
+      {cfg.icon} {cfg.label}
+    </span>
+  );
+}
+
 export function ClassBadge({ playerClass }) {
   const isClass2 = playerClass?.includes('2');
   return (

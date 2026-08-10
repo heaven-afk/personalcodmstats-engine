@@ -6,7 +6,7 @@ import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tourname
 import { getPlayerMatchResults } from '@/lib/firestore/matchData';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { ClassBadge } from '@/components/ui/Badge';
+import { ClassBadge, TierBadge } from '@/components/ui/Badge';
 import { Users, Search, ExternalLink, Award, Cpu, Globe, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -177,6 +177,13 @@ export default function PlayersPage() {
     { header: 'Tournaments', accessor: 'tournamentsCount' },
     { header: 'Career Kills', accessor: 'careerKills' },
     { header: 'Matches', accessor: 'careerMatches' },
+    {
+      header: 'Ranked Tier',
+      accessor: 'rankedTier',
+      render: (row) => row.rankedTier
+        ? <TierBadge tier={row.rankedTier} size="xs" />
+        : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>,
+    },
     {
       header: 'Actions',
       key: 'actions',

@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { getTournaments, deleteTournament } from '@/lib/firestore/tournaments';
 import { formatEventDates } from '@/lib/utils/dateUtils';
 import DataTable from '@/components/ui/DataTable';
-import { StatusBadge } from '@/components/ui/Badge';
+import { StatusBadge, TierBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import Modal from '@/components/ui/Modal';
-import { Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search } from 'lucide-react';
+import { Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search, Medal } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const STATUS_OPTIONS = ['all', 'setup', 'active', 'completed', 'archived'];
@@ -108,6 +108,11 @@ export default function TournamentsListPage() {
       header: 'Status',
       accessor: 'status',
       render: (t) => <StatusBadge status={t.status} />,
+    },
+    {
+      header: 'Tier',
+      accessor: 'rankedTier',
+      render: (t) => t.isRanked ? <TierBadge tier={t.rankedTier} size="xs" /> : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>,
     },
     {
       header: 'Days',
@@ -270,7 +275,10 @@ export default function TournamentsListPage() {
                       <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                         {t.season || '—'}
                       </span>
-                      <StatusBadge status={t.status} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {t.isRanked && <TierBadge tier={t.rankedTier} size="xs" />}
+                        <StatusBadge status={t.status} />
+                      </div>
                     </div>
 
                     <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3 }}>

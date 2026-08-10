@@ -58,12 +58,30 @@ export async function setTournamentStatus(id, status) {
   await updateDoc(doc(db, 'tournaments', id), updates);
 }
 
+export async function setTournamentRanked(id, isRanked, tier) {
+  if (!isFirebaseConfigured) {
+    // localDb fallback — just update the tournament record
+    return localDb.localUpdateTournament(id, {
+      isRanked,
+      rankedTier: isRanked ? tier : null,
+      rankedAt: isRanked ? new Date().toISOString() : null,
+    });
+  }
+  const updates = {
+    isRanked: !!isRanked,
+    rankedTier: isRanked ? tier : null,
+    rankedAt: isRanked ? serverTimestamp() : null,
+  };
+  await updateDoc(doc(db, 'tournaments', id), updates);
+}
+
 export async function deleteTournament(id) {
   if (!isFirebaseConfigured) {
     return localDb.localDeleteTournament(id);
   }
   await deleteDoc(doc(db, 'tournaments', id));
 }
+
 
 // ─── Team Registrations ───────────────────────────────────────────────────────
 export async function getTeamRegistrations(tournamentId) {

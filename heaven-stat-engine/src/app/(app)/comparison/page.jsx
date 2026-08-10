@@ -7,7 +7,7 @@ import { computeTeamRanking } from '@/lib/engine/standings';
 import { computeTeamAnalytics, getTeamRatingRankLabel } from '@/lib/engine/analytics';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge, RankBadge } from '@/components/ui/Badge';
-import { Shield, User, GitCompare, Activity, BarChart2, Target, TrendingUp, Swords, Award, Star, Globe, Trophy } from 'lucide-react';
+import { Shield, User, GitCompare, Activity, BarChart2, Target, TrendingUp, Swords, Award, Star, Globe, Trophy, Medal } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer,
@@ -53,6 +53,8 @@ function aggregateTeams(registryTeams, tournaments, allTeamRegs, allTeamRes, all
       tournamentKPM: 0,
       tournamentTop3Rate: 0,
       tournamentTop5Rate: 0,
+      rankedEventsPlayed: 0,
+      rankedEventsWon: 0,
     };
   });
   tournaments.forEach((tourney, index) => {
@@ -77,6 +79,11 @@ function aggregateTeams(registryTeams, tournaments, allTeamRegs, allTeamRes, all
         tm.careerRankSum      += tr.rank || 0;
         if (tr.rank === 1) {
           tm.tournamentWins += 1;
+        }
+        // Ranked event tracking
+        if (tourney.isRanked) {
+          tm.rankedEventsPlayed += 1;
+          if (tr.rank === 1) tm.rankedEventsWon += 1;
         }
 
         const teamAnalytics = analyticsMap[tr.teamId];
@@ -105,22 +112,26 @@ function aggregateTeams(registryTeams, tournaments, allTeamRegs, allTeamRes, all
       careerAvgTeamRatingLabel: getTeamRatingRankLabel(avgRating),
       avgPlacementPtsPerTournament: t.tournamentsCount > 0 ? t.careerPlacementPts / t.tournamentsCount : 0,
       avgRankedPosition: t.tournamentsCount > 0 ? t.careerRankSum / t.tournamentsCount : 0,
+      rankedEventsPlayed: t.rankedEventsPlayed,
+      rankedEventsWon: t.rankedEventsWon,
     };
   }).filter(t => t.careerMatches > 0 || t.tournamentsCount > 0);
 }
 
-function aggregatePlayers(registryPlayers, allPlayerRegs, allPlayerRes) {
+function aggregatePlayers(registryPlayers, allPlayerRegs, allPlayerRes, allTournaments) {
   const playerMap = {};
   registryPlayers.forEach(p => {
-    playerMap[p.id] = { ...p, careerKills: 0, careerMatches: 0, careerDamage: 0, careerAccuracySum: 0, careerAccuracyCount: 0, tournamentsCount: 0, lastClass: 'Class 1', teamId: '', teamName: '—' };
+    playerMap[p.id] = { ...p, careerKills: 0, careerMatches: 0, careerDamage: 0, careerAccuracySum: 0, careerAccuracyCount: 0, tournamentsCount: 0, lastClass: 'Class 1', teamId: '', teamName: '—', rankedEventsPlayed: 0, rankedEventsWon: 0 };
   });
-  allPlayerRegs.forEach(regs => {
+  allPlayerRegs.forEach((regs, tIdx) => {
+    const tourney = allTournaments ? allTournaments[tIdx] : null;
     regs.forEach(reg => {
       if (playerMap[reg.playerId]) {
         const pm = playerMap[reg.playerId];
         pm.tournamentsCount += 1;
         if (reg.class) pm.lastClass = reg.class;
         if (reg.teamId) { pm.teamId = reg.teamId; pm.teamName = reg.teamName || '—'; }
+        if (tourney?.isRanked) pm.rankedEventsPlayed += 1;
       }
     });
   });
@@ -222,7 +233,7 @@ export default function ComparisonPage() {
 
     return {
       teams:   aggregateTeams(rawRegistryTeams, scopedTournaments, scopedTeamRegs, scopedTeamRes, scopedTeamBonuses),
-      players: aggregatePlayers(rawRegistryPlayers, scopedPlayerRegs, scopedPlayerRes),
+      players: aggregatePlayers(rawRegistryPlayers, scopedPlayerRegs, scopedPlayerRes, scopedTournaments),
     };
   }, [scope, selectedTournamentId, allTournaments, rawRegistryTeams, rawRegistryPlayers, allTeamRegs, allTeamRes, allTeamBonuses, allPlayerRes, allPlayerRegs]);
 
@@ -632,6 +643,8 @@ export default function ComparisonPage() {
                     </>
                   )}
                   {scope === 'global' && renderStatRow('Tournaments Played', leftEntity.tournamentsCount, rightEntity.tournamentsCount)}
+                  {scope === 'global' && renderStatRow('Ranked Events Played', leftEntity.rankedEventsPlayed, rightEntity.rankedEventsPlayed)}
+                  {scope === 'global' && renderStatRow('Ranked Events Won',   leftEntity.rankedEventsWon,   rightEntity.rankedEventsWon)}
                   {renderTextRow('Clan Name',          leftEntity.clanName,          rightEntity.clanName)}
                 </div>
               ) : (
@@ -643,6 +656,7 @@ export default function ComparisonPage() {
                   {renderStatRow('Avg Accuracy',       leftEntity.avgAccuracy,       rightEntity.avgAccuracy,       { isPercent: true, decimalPlaces: 2 })}
                   {renderStatRow('Damage / Kill',      leftEntity.damagePerKill,     rightEntity.damagePerKill,     { decimalPlaces: 1 })}
                   {scope === 'global' && renderStatRow('Tournaments', leftEntity.tournamentsCount, rightEntity.tournamentsCount)}
+                  {scope === 'global' && renderStatRow('Ranked Events Played', leftEntity.rankedEventsPlayed, rightEntity.rankedEventsPlayed)}
                   {renderBadgeRow('Class', <ClassBadge playerClass={leftEntity.lastClass} />, <ClassBadge playerClass={rightEntity.lastClass} />)}
                   {renderTextRow('Team',   leftEntity.teamName, rightEntity.teamName)}
                   {renderTextRow('Device', leftEntity.device,   rightEntity.device)}
@@ -661,6 +675,8 @@ export default function ComparisonPage() {
                   <>
                     <MetricCard label="Avg Ranked Position" icon={Trophy}    lv={leftEntity.avgRankedPosition}    rv={rightEntity.avgRankedPosition}    decimalPlaces={2} isLowerBetter description="Mean tournament rank" />
                     <MetricCard label="Tournament Wins"     icon={Award}     lv={leftEntity.tournamentWins}        rv={rightEntity.tournamentWins}        decimalPlaces={0} description="1st place standings" />
+                    <MetricCard label="Ranked Events Played" icon={Medal}    lv={leftEntity.rankedEventsPlayed}   rv={rightEntity.rankedEventsPlayed}    decimalPlaces={0} description="Ranked events participated" />
+                    <MetricCard label="Ranked Events Won"    icon={Medal}    lv={leftEntity.rankedEventsWon}      rv={rightEntity.rankedEventsWon}       decimalPlaces={0} description="Ranked events finished 1st" />
                   </>
                 )}
                 <MetricCard label="Lobby Wins"         icon={Award}     lv={leftEntity.careerWins}        rv={rightEntity.careerWins}        decimalPlaces={0} description="1st place finishes" />

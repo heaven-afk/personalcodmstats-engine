@@ -10,7 +10,7 @@ import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig, getMapForMatch } from '@/lib/utils/mapConfig';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
-import { ClassBadge } from '@/components/ui/Badge';
+import { ClassBadge, TierBadge } from '@/components/ui/Badge';
 import MetricTooltip from '@/components/ui/MetricTooltip';
 import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame, Camera, Upload, X, Trash2, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -118,6 +118,8 @@ export default function PlayerProfilePage() {
               name: t.name,
               season: t.season,
               status: t.status,
+              isRanked: t.isRanked || false,
+              rankedTier: t.rankedTier || null,
               teamName: reg.teamName || '—',
               class: reg.class || 'Class 1',
               ign: reg.ign || p.ign,
@@ -247,6 +249,13 @@ export default function PlayerProfilePage() {
       accessor: 'class',
       render: (row) => <ClassBadge playerClass={row.class} />,
     },
+    {
+      header: 'Ranked Tier',
+      accessor: 'rankedTier',
+      render: (row) => row.isRanked
+        ? <TierBadge tier={row.rankedTier} size="xs" />
+        : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>,
+    },
     { header: 'Kills', accessor: 'kills' },
     { header: 'Matches', accessor: 'matches' },
     { header: 'Kills/Match', accessor: 'killsPerMatch' },
@@ -328,6 +337,7 @@ export default function PlayerProfilePage() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h1 className="page-title">{player.professionalName}</h1>
+              {player.rankedTier && <TierBadge tier={player.rankedTier} />}
               {globalForm && globalForm.confidence !== 'unranked' && (
                 <MetricTooltip metricKey="global_form">
                   <span className="badge" style={{

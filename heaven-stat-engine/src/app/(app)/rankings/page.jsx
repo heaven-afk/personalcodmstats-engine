@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { getPlayers, getTeams } from '@/lib/firestore/registry';
 import { getTournaments, getPlayerRegistrations, getTeamRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayerMatchResults, getTeamMatchResults } from '@/lib/firestore/matchData';
-import { ClassBadge, RankBadge, StatusBadge } from '@/components/ui/Badge';
+import { ClassBadge, RankBadge, StatusBadge, TierBadge } from '@/components/ui/Badge';
 import DataTable from '@/components/ui/DataTable';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import MetricTooltip from '@/components/ui/MetricTooltip';
@@ -85,6 +85,8 @@ export default function RankingsPage() {
             lastClass: 'Class 1',
             lastTeam: '—',
             clanName: '—',
+            rankedTier: p.rankedTier || null,
+            rankedEventsCount: p.rankedEventsCount || 0,
             totalKills: 0,
             totalMatches: 0,
             totalEvents: 0,
@@ -363,6 +365,18 @@ export default function RankingsPage() {
     { header: 'Kills/Match', accessor: 'killsPerMatch' },
     { header: 'Avg Damage', accessor: 'avgDamage' },
     { header: 'Avg Accuracy', accessor: 'avgAccuracy', render: (row) => <span>{row.avgAccuracy}%</span> },
+    {
+      header: 'Ranked Tier',
+      accessor: 'rankedTier',
+      render: (row) => row.rankedTier
+        ? <TierBadge tier={row.rankedTier} size="xs" />
+        : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>,
+    },
+    {
+      header: 'Ranked Events',
+      accessor: 'rankedEventsCount',
+      render: (row) => <span style={{ fontWeight: 700, color: row.rankedEventsCount > 0 ? 'var(--gold)' : 'var(--text-muted)' }}>{row.rankedEventsCount || 0}</span>,
+    },
   ];
 
   const renderTrendIcon = (trend) => {

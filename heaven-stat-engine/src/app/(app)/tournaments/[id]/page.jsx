@@ -1,7 +1,7 @@
 'use client';
 import { useTournament } from './layout';
-import { StatusBadge } from '@/components/ui/Badge';
-import { Calendar, Trophy, Crosshair, Award, Plus, Trash2, Edit, Check, Shield } from 'lucide-react';
+import { StatusBadge, TierBadge } from '@/components/ui/Badge';
+import { Calendar, Trophy, Crosshair, Award, Plus, Trash2, Edit, Check, Shield, Medal, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { setTournamentStatus } from '@/lib/firestore/tournaments';
 import { getGroups, createGroup, updateGroup, deleteGroup } from '@/lib/firestore/groups';
@@ -9,12 +9,44 @@ import toast from 'react-hot-toast';
 import { useState, useEffect, useCallback } from 'react';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 
+const TIER_OPTIONS = ['Tier 1', 'Tier 2', 'Tier 3'];
+
 const STATUS_FLOW = ['setup', 'active', 'completed', 'archived'];
 
 export default function TournamentOverviewPage() {
   const { tournament, refresh } = useTournament();
   const router = useRouter();
   const [advancing, setAdvancing] = useState(false);
+
+  // Ranked event state
+  const [showRankPanel, setShowRankPanel]     = useState(false);
+  const [selectedTier, setSelectedTier]       = useState(tournament?.rankedTier || 'Tier 1');
+  const [rankingInProgress, setRankingInProgress] = useState(false);
+
+  const handleRankEvent = async (isRanked) => {
+    if (isRanked && !selectedTier) { toast.error('Please select a tier.'); return; }
+    setRankingInProgress(true);
+    try {
+      const res = await fetch('/api/rankEvent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tournamentId: tournament.id, isRanked, tier: selectedTier }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update ranking');
+      toast.success(
+        isRanked
+          ? `✅ Tournament ranked as ${selectedTier}! ${data.teamsUpdated} teams & ${data.playersUpdated} players updated.`
+          : `Ranking removed. ${data.teamsUpdated} teams & ${data.playersUpdated} players recalculated.`
+      );
+      setShowRankPanel(false);
+      await refresh();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setRankingInProgress(false);
+    }
+  };
 
   // Qualifier groups state
   const [groups, setGroups] = useState([]);
@@ -417,6 +449,113 @@ export default function TournamentOverviewPage() {
           )}
         </div>
       )}
+
+      {/* ── Ranked Event Card ─────────────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 20, border: tournament.isRanked ? '1px solid rgba(201,168,76,0.45)' : '1px solid var(--border-md)', position: 'relative', overflow: 'hidden' }}>
+        {tournament.isRanked && (
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #b8860b, #C9A84C, #d4a017)' }} />
+        )}
+        <div className="flex-between" style={{ marginBottom: showRankPanel ? 16 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: tournament.isRanked ? 'linear-gradient(135deg,#b8860b,#d4a017)' : 'var(--bg-alt-row)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Medal size={18} style={{ color: tournament.isRanked ? '#fff' : 'var(--text-muted)' }} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h3 className="card-title" style={{ margin: 0 }}>Ranked Event Status</h3>
+                {tournament.isRanked && <TierBadge tier={tournament.rankedTier} />}
+              </div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, marginTop: 2 }}>
+                {tournament.isRanked
+                  ? `This event is ranked. Teams & players have been labelled ${tournament.rankedTier}.`
+                  : 'Mark this event as ranked to apply tier labels to all participants.'}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {tournament.isRanked && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--danger)', fontSize: '0.78rem' }}
+                onClick={() => { setSelectedTier(tournament.rankedTier || 'Tier 1'); setShowRankPanel(v => !v); }}
+                disabled={rankingInProgress}
+              >
+                <Edit size={13} /> Edit Tier
+              </button>
+            )}
+            {tournament.isRanked && !showRankPanel && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--danger)', fontSize: '0.78rem' }}
+                onClick={() => { if (confirm('Remove ranking from this tournament? Tier labels will be recalculated.')) handleRankEvent(false); }}
+                disabled={rankingInProgress}
+              >
+                {rankingInProgress ? 'Processing…' : <><X size={13} /> Remove Ranking</>}
+              </button>
+            )}
+            {!tournament.isRanked && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ background: 'linear-gradient(135deg,#b8860b,#C9A84C)', border: 'none' }}
+                onClick={() => { setSelectedTier('Tier 1'); setShowRankPanel(v => !v); }}
+                disabled={rankingInProgress}
+              >
+                <Medal size={13} /> Mark as Ranked
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tier selection panel */}
+        {showRankPanel && (
+          <div style={{ background: 'rgba(0,0,0,0.18)', borderRadius: 10, padding: '16px 20px', border: '1px solid rgba(201,168,76,0.25)' }}>
+            <p style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', marginBottom: 12 }}>Select Tier</p>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+              {TIER_OPTIONS.map(t => {
+                const cfg = {
+                  'Tier 1': { icon: '🏅', desc: 'Top-level championship', color: '#C9A84C' },
+                  'Tier 2': { icon: '🥈', desc: 'High-level competitive', color: '#9ca3af' },
+                  'Tier 3': { icon: '🥉', desc: 'Competitive league', color: '#b45309' },
+                }[t];
+                const isSelected = selectedTier === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setSelectedTier(t)}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                      padding: '12px 20px', borderRadius: 10, cursor: 'pointer',
+                      background: isSelected ? `${cfg.color}22` : 'var(--bg-card)',
+                      border: `2px solid ${isSelected ? cfg.color : 'var(--border-md)'}`,
+                      transition: 'all 0.15s', minWidth: 110,
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>{cfg.icon}</span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: isSelected ? cfg.color : 'var(--text-primary)' }}>{t}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{cfg.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowRankPanel(false)}>Cancel</button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ background: 'linear-gradient(135deg,#b8860b,#C9A84C)', border: 'none' }}
+                disabled={rankingInProgress}
+                onClick={() => handleRankEvent(true)}
+              >
+                {rankingInProgress ? 'Processing…' : `Confirm — ${selectedTier}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Status stepper */}
       <div className="card" style={{ marginBottom: 20 }}>
