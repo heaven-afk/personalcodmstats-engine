@@ -4,6 +4,7 @@ import { StatusBadge, TierBadge } from '@/components/ui/Badge';
 import { Calendar, Trophy, Crosshair, Award, Plus, Trash2, Edit, Check, Shield, Medal, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { setTournamentStatus } from '@/lib/firestore/tournaments';
+import { rankEvent } from '@/lib/firestore/rankEvent';
 import { getGroups, createGroup, updateGroup, deleteGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
 import { useState, useEffect, useCallback } from 'react';
@@ -27,17 +28,11 @@ export default function TournamentOverviewPage() {
     if (isRanked && !selectedTier) { toast.error('Please select a tier.'); return; }
     setRankingInProgress(true);
     try {
-      const res = await fetch('/api/rankEvent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tournamentId: tournament.id, isRanked, tier: selectedTier }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update ranking');
+      const result = await rankEvent(tournament.id, isRanked, selectedTier);
       toast.success(
         isRanked
-          ? `✅ Tournament ranked as ${selectedTier}! ${data.teamsUpdated} teams & ${data.playersUpdated} players updated.`
-          : `Ranking removed. ${data.teamsUpdated} teams & ${data.playersUpdated} players recalculated.`
+          ? `✅ Tournament ranked as ${selectedTier}! ${result.teamsUpdated} teams & ${result.playersUpdated} players updated.`
+          : `Ranking removed. ${result.teamsUpdated} teams & ${result.playersUpdated} players recalculated.`
       );
       setShowRankPanel(false);
       await refresh();
