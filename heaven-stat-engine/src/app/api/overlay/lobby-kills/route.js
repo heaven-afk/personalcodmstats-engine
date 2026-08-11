@@ -10,6 +10,8 @@
 import { NextResponse } from 'next/server';
 import { getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getPlayer, getTeam } from '@/lib/firestore/registry';
+import { getPlayerRegistrations } from '@/lib/firestore/tournaments';
+import { cleanTeamName } from '@/lib/utils/similarity';
 
 function checkApiAuth(request) {
   const provided = request.headers.get('x-overlay-api-key');
@@ -77,16 +79,27 @@ export async function GET(request) {
       return corsJson({ error: 'team not found' }, 404);
     }
 
-    // Filter results for team, day, and lobby
-    const filteredResults = allPlayerResults.filter(
-      (r) => r.teamId === teamId && r.day === day && r.lobby === lobby
-    );
+    const targetCleanName = cleanTeamName(teamDoc.teamName || teamDoc.name || '').toLowerCase();
+
+    // Filter results for team, day, and lobby (matching teamId, teamDoc.id, or clean teamName)
+    const filteredResults = allPlayerResults.filter((r) => {
+      const matchTeam =
+        r.teamId === teamId ||
+        r.teamId === teamDoc.id ||
+        (r.teamName && cleanTeamName(r.teamName).toLowerCase() === targetCleanName);
+      if (!matchTeam) return false;
+      return Number(r.day) === day && Number(r.lobby) === lobby;
+    });
 
     // Group & sum kills by playerId
     const playerKillsMap = {};
+    let totalLobbyKills = 0;
     filteredResults.forEach((res) => {
-      if (!res.playerId) return;
-      playerKillsMap[res.playerId] = (playerKillsMap[res.playerId] || 0) + (res.kills || 0);
+      const kills = Number(res.kills) || 0;
+      totalLobbyKills += kills;
+      if (res.playerId) {
+        playerKillsMap[res.playerId] = (playerKillsMap[res.playerId] || 0) + kills;
+      }
     });
 
     const playerIds = Object.keys(playerKillsMap);
@@ -101,7 +114,7 @@ export async function GET(request) {
         return {
           id: p.id,
           ign: p.ign || '—',
-          professionalName: p.professionalName || 'Unknown Player',
+          professionalName: p.professionalName || p.ign || 'Unknown Player',
           country: country,
           countryEmoji: getCountryEmoji(country),
           kills: playerKillsMap[p.id] || 0,
@@ -111,6 +124,42 @@ export async function GET(request) {
 
     // Sort descending by kills
     playersList.sort((a, b) => b.kills - a.kills);
+
+    const existingPlayerIds = new Set(playersList.map((p) => p.id));
+
+    // Fallback: If we have fewer than 4 players, check playerRegistrations for this tournament
+    const playerRegs = await getPlayerRegistrations(tournamentId).catch(() => []);
+    const teamRegs = playerRegs.filter((reg) => {
+      return (
+        reg.teamId === teamId ||
+        reg.teamId === teamDoc.id ||
+        (reg.teamName && cleanTeamName(reg.teamName).toLowerCase() === targetCleanName)
+      );
+    });
+
+    const missingPids = teamRegs
+      .map((r) => r.playerId)
+      .filter((pid) => pid && !existingPlayerIds.has(pid));
+
+    if (missingPids.length > 0) {
+      const regPlayerDocs = await Promise.all(missingPids.map((pid) => getPlayer(pid)));
+      regPlayerDocs.filter(Boolean).forEach((p) => {
+        if (!existingPlayerIds.has(p.id)) {
+          existingPlayerIds.add(p.id);
+          playersList.push({
+            id: p.id,
+            ign: p.ign || '—',
+            professionalName: p.professionalName || p.ign || 'Unknown Player',
+            country: p.country || null,
+            countryEmoji: getCountryEmoji(p.country),
+            kills: 0,
+            photoUrl: p.photoUrl || null,
+          });
+        }
+      });
+    }
+
+    const top4Players = playersList.slice(0, 4);
 
     // Always pad to exactly 4 player slots
     const EMPTY_SLOT = {
@@ -123,8 +172,8 @@ export async function GET(request) {
       photoUrl: null,
     };
 
-    while (playersList.length < 4) {
-      playersList.push({ ...EMPTY_SLOT });
+    while (top4Players.length < 4) {
+      top4Players.push({ ...EMPTY_SLOT });
     }
 
     const responseData = {
@@ -136,8 +185,9 @@ export async function GET(request) {
         name: teamDoc.teamName || teamDoc.name || 'Team',
         logo: teamDoc.logoUrl || teamDoc.logo || null,
         slot: teamDoc.slot || null,
+        totalKills: totalLobbyKills,
       },
-      players: playersList.slice(0, 4),
+      players: top4Players,
     };
 
     return corsJson(responseData, 200);
