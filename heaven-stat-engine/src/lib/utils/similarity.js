@@ -100,40 +100,103 @@ export function scanForDuplicates(globalTeams, threshold = 0.75) {
 }
 
 /**
- * Filters a list of global players to find any that are similar to newPlayerName or newIGN.
+ * Returns all known IGN variants for a player (ign, currentIGN, ignHistory[]).
+ * @param {object} player
+ * @returns {string[]}
  */
-export function getSimilarPlayers(newPlayerName, newIGN, globalPlayers, threshold = 0.75) {
+export function getAllPlayerIGNs(player) {
+  const ignsSet = new Set();
+  if (player.ign?.trim()) ignsSet.add(player.ign.trim().toLowerCase());
+  if (player.currentIGN?.trim()) ignsSet.add(player.currentIGN.trim().toLowerCase());
+  if (Array.isArray(player.ignHistory)) {
+    player.ignHistory.forEach(i => { if (i?.trim()) ignsSet.add(i.trim().toLowerCase()); });
+  }
+  return [...ignsSet];
+}
+
+/**
+ * Finds an exact match for a player in the global registry.
+ * Checks professional name (case-insensitive) first,
+ * then checks ALL known IGNs (ign, currentIGN, ignHistory[]).
+ * Returns the matched player or null.
+ *
+ * @param {string} proName
+ * @param {string} ign
+ * @param {object[]} globalPlayers
+ * @returns {object|null}
+ */
+export function findExactPlayerMatch(proName, ign, globalPlayers) {
+  const proLower = proName?.trim().toLowerCase() || '';
+  const ignLower = ign?.trim().toLowerCase() || '';
+
+  if (proLower) {
+    const byName = globalPlayers.find(
+      p => (p.professionalName || '').trim().toLowerCase() === proLower
+    );
+    if (byName) return byName;
+  }
+
+  if (ignLower) {
+    const byIgn = globalPlayers.find(p =>
+      getAllPlayerIGNs(p).includes(ignLower)
+    );
+    if (byIgn) return byIgn;
+  }
+
+  return null;
+}
+
+/**
+ * Filters a list of global players to find any that are similar to newPlayerName or newIGN.
+ * Searches ALL known IGN variants (ign, currentIGN, ignHistory[]) for the best IGN score.
+ *
+ * @param {string} newPlayerName  - Professional name from the CSV row
+ * @param {string} newIGN         - IGN from the CSV row
+ * @param {object[]} globalPlayers
+ * @param {number} threshold      - Minimum similarity score (default 0.70)
+ * @returns {{ player: object, similarity: number, matchedOn: 'name'|'ign' }[]}
+ */
+export function getSimilarPlayers(newPlayerName, newIGN, globalPlayers, threshold = 0.70) {
   const termName = newPlayerName?.trim().toLowerCase() || '';
   const termIGN = newIGN?.trim().toLowerCase() || '';
 
-  if (termName) {
-    return globalPlayers
-      .map(player => {
-        let sim = 0;
-        if (player.professionalName) {
-          sim = stringSimilarity(termName, player.professionalName);
-        }
-        return { player, similarity: sim };
-      })
-      .filter(res => res.similarity >= threshold && res.player.professionalName?.toLowerCase() !== termName)
-      .sort((a, b) => b.similarity - a.similarity)
-      .map(res => res.player);
-  }
+  const results = globalPlayers.map(player => {
+    let bestScore = 0;
+    let matchedOn = 'name';
 
-  if (termIGN) {
-    return globalPlayers
-      .map(player => {
-        let sim = 0;
-        if (player.ign) {
-          sim = stringSimilarity(termIGN, player.ign);
-        }
-        return { player, similarity: sim };
-      })
-      .filter(res => res.similarity >= threshold && res.player.ign?.toLowerCase() !== termIGN)
-      .sort((a, b) => b.similarity - a.similarity)
-      .map(res => res.player);
-  }
+    // Score against professional name
+    if (termName && player.professionalName) {
+      const nameSim = stringSimilarity(termName, player.professionalName);
+      if (nameSim > bestScore) {
+        bestScore = nameSim;
+        matchedOn = 'name';
+      }
+    }
 
-  return [];
+    // Score against ALL known IGNs
+    if (termIGN) {
+      const allIGNs = getAllPlayerIGNs(player);
+      for (const knownIgn of allIGNs) {
+        const ignSim = stringSimilarity(termIGN, knownIgn);
+        if (ignSim > bestScore) {
+          bestScore = ignSim;
+          matchedOn = 'ign';
+        }
+      }
+    }
+
+    return { player, similarity: bestScore, matchedOn };
+  });
+
+  return results
+    .filter(r => {
+      // Exclude obvious exact self-matches (already caught by findExactPlayerMatch)
+      const proLower = (r.player.professionalName || '').trim().toLowerCase();
+      const allIgns = getAllPlayerIGNs(r.player);
+      const isExactProName = termName && proLower === termName;
+      const isExactIgn = termIGN && allIgns.includes(termIGN);
+      if (isExactProName || isExactIgn) return false;
+      return r.similarity >= threshold;
+    })
+    .sort((a, b) => b.similarity - a.similarity);
 }
-

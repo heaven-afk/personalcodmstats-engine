@@ -11,7 +11,7 @@ import { getGroups } from '@/lib/firestore/groups';
 import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer, deletePlayer, deleteTeam } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
 import Modal from '@/components/ui/Modal';
-import { getSimilarTeams, getSimilarPlayers, cleanTeamName } from '@/lib/utils/similarity';
+import { getSimilarTeams, getSimilarPlayers, findExactPlayerMatch, getAllPlayerIGNs, cleanTeamName } from '@/lib/utils/similarity';
 import {
   getAllSheetsAsCSV,
   parsePlayerRegistrationCSV,
@@ -1089,6 +1089,9 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   const [showImportPreview, setShowImportPreview] = useState(false);
 
   const prepareImport = (parsedRows) => {
+    const HIGH_CONFIDENCE = 0.88; // auto-link silently
+    const PROPOSE_THRESHOLD = 0.70; // show to user to confirm
+
     const queue = parsedRows.map((row, index) => {
       const proName = row.professionalName?.trim() || '';
       const ign = row.ign?.trim() || '';
@@ -1101,69 +1104,94 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
       const device = row.device?.trim() || deriveDevice(deviceModel);
       const category = row.class || 'Registered';
 
-      // Check duplicate
       const proNameLower = proName.toLowerCase();
       const ignLower = ign.toLowerCase();
       const teamLower = teamName.toLowerCase();
 
+      // ── Duplicate-in-this-tournament check ──────────────────────────────────
+      // Check against all known IGNs for already-registered players in this tournament
       const isDuplicate = registrations.some(r => {
         const rProName = (r.professionalName || '').trim().toLowerCase();
-        const rIgn = (r.ign || '').trim().toLowerCase();
         const rTeam = (r.teamName || '').trim().toLowerCase();
-        return (proNameLower && rProName === proNameLower && rTeam === teamLower) ||
-               (ignLower && rIgn === ignLower && rTeam === teamLower);
+        if (proNameLower && rProName === proNameLower && rTeam === teamLower) return true;
+        // Also check against all IGNs of the existing registration's global player
+        if (ignLower && rTeam === teamLower) {
+          const regPlayer = globalPlayers.find(p => p.id === r.playerId);
+          if (regPlayer && getAllPlayerIGNs(regPlayer).includes(ignLower)) return true;
+        }
+        return false;
       });
 
-      // Similar team check for tournament registered teams
+      // ── Team fuzzy match ─────────────────────────────────────────────────────
       let similarTeam = null;
       if (teamName && !teamRegistrations.some(t => t.teamName?.trim().toLowerCase() === teamLower)) {
         const similarRegs = getSimilarTeams(teamName, teamRegistrations, 0.75);
-        if (similarRegs.length > 0) {
-          similarTeam = similarRegs[0];
-        }
+        if (similarRegs.length > 0) similarTeam = similarRegs[0];
       }
+      const resolvedTeamName = similarTeam ? similarTeam.teamName : teamName;
 
-      // Exact match
-      const exact = globalPlayers.find(p => {
-        const pProName = (p.professionalName || '').trim().toLowerCase();
-        const pIgn = (p.ign || '').trim().toLowerCase();
-        if (proNameLower) {
-          return pProName === proNameLower;
-        }
-        return ignLower && pIgn === ignLower;
-      });
-
+      // ── Tier 1: Exact match (pro name or any known IGN) ─────────────────────
+      const exact = findExactPlayerMatch(proName, ign, globalPlayers);
       if (exact) {
         return {
           id: `imp_pl_${Date.now()}_${index}`,
           slot,
-          professionalName: exact.professionalName || proName,
-          ign: exact.ign || ign,
-          teamName: similarTeam ? similarTeam.teamName : teamName,
+          professionalName: exact.professionalName,   // keep existing pro name
+          ign,                                         // carry the imported IGN (history will accumulate)
+          teamName: resolvedTeamName,
           category,
           gender: exact.gender || gender,
           region: exact.region || region,
           country: exact.country || country,
-          device: exact.device || device,
-          deviceModel: exact.deviceModel || deviceModel,
+          device: device || exact.currentDevice || exact.device,
+          deviceModel: deviceModel || exact.currentDeviceModel || exact.deviceModel,
           playerId: exact.id,
           isLinked: true,
+          linkTier: 'exact',
           originalName: proName || ign,
           conflict: null,
-          similarTeam: null,
-          isDuplicate
+          similarTeam: similarTeam ? null : null,
+          isDuplicate,
         };
       }
 
-      // Similar match
-      const similar = getSimilarPlayers(proName, ign, globalPlayers, 0.75);
+      // ── Tiers 2 & 3: Fuzzy match across pro name + all known IGNs ───────────
+      const similarResults = getSimilarPlayers(proName, ign, globalPlayers, PROPOSE_THRESHOLD);
+      const best = similarResults[0] || null;
 
+      if (best && best.similarity >= HIGH_CONFIDENCE) {
+        // Tier 2: High-confidence — auto-link without user action
+        return {
+          id: `imp_pl_${Date.now()}_${index}`,
+          slot,
+          professionalName: best.player.professionalName,
+          ign,
+          teamName: resolvedTeamName,
+          category,
+          gender: best.player.gender || gender,
+          region: best.player.region || region,
+          country: best.player.country || country,
+          device: device || best.player.currentDevice || best.player.device,
+          deviceModel: deviceModel || best.player.currentDeviceModel || best.player.deviceModel,
+          playerId: best.player.id,
+          isLinked: true,
+          linkTier: 'high',
+          linkSimilarity: Math.round(best.similarity * 100),
+          matchedOn: best.matchedOn,
+          originalName: proName || ign,
+          conflict: null,
+          similarTeam,
+          isDuplicate,
+        };
+      }
+
+      // Tier 3: Proposed link (user must confirm)
       return {
         id: `imp_pl_${Date.now()}_${index}`,
         slot,
         professionalName: proName,
         ign,
-        teamName,
+        teamName: resolvedTeamName,
         category,
         gender,
         region,
@@ -1172,10 +1200,11 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         deviceModel,
         playerId: '',
         isLinked: false,
+        linkTier: 'none',
         originalName: proName || ign,
-        conflict: similar.length > 0 ? similar[0] : null,
+        conflict: best,   // { player, similarity, matchedOn } — shown to user
         similarTeam,
-        isDuplicate
+        isDuplicate,
       };
     });
 
@@ -1198,49 +1227,26 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           continue;
         }
 
+        // ── Use createPlayer() for BOTH linked and new players.
+        // For linked players, createPlayer finds the existing record by ID
+        // and runs the correct history-accumulation logic (IGN/device history,
+        // immutable professionalName, fill-in-only demographics).
+        // For new players, createPlayer creates a fresh profile.
         let player;
         if (item.isLinked && item.playerId) {
-          player = {
-            id: item.playerId,
-            professionalName: item.professionalName,
+          // Pass the imported IGN/device so history accumulates correctly
+          player = await createPlayer({
+            professionalName: item.professionalName,  // ignored by createPlayer (immutable)
             ign: item.ign,
             gender: item.gender,
             region: item.region,
             country: item.country,
             device: item.device,
-            deviceModel: item.deviceModel
-          };
-
-          // Sync updated fields to the global player profile registry
-          const currentGlobal = globalPlayers.find(p => p.id === item.playerId);
-          const updatedFields = {};
-          if (item.professionalName && item.professionalName !== currentGlobal?.professionalName) {
-            updatedFields.professionalName = item.professionalName;
-            updatedFields.professionalNameLower = item.professionalName.toLowerCase().trim();
-          }
-          if (item.ign && item.ign !== currentGlobal?.ign) {
-            updatedFields.ign = item.ign;
-            updatedFields.ignLower = item.ign.toLowerCase().trim();
-          }
-          if (item.gender && item.gender !== currentGlobal?.gender) {
-            updatedFields.gender = item.gender;
-          }
-          if (item.region && item.region !== currentGlobal?.region) {
-            updatedFields.region = item.region;
-          }
-          if (item.country && item.country !== currentGlobal?.country) {
-            updatedFields.country = item.country;
-          }
-          if (item.device && item.device !== currentGlobal?.device) {
-            updatedFields.device = item.device;
-          }
-          if (item.deviceModel && item.deviceModel !== currentGlobal?.deviceModel) {
-            updatedFields.deviceModel = item.deviceModel;
-          }
-
-          if (Object.keys(updatedFields).length > 0) {
-            await updatePlayer(item.playerId, updatedFields);
-          }
+            deviceModel: item.deviceModel,
+            category: item.category,
+          });
+          // Ensure we use the correct existing player ID
+          player = { ...player, id: item.playerId };
         } else {
           player = await createPlayer({
             professionalName: item.professionalName,
@@ -1270,13 +1276,15 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
           class: item.category,
           teamId: matchedTeam?.teamId || '',
           teamName: matchedTeam?.teamName || item.teamName || '',
-          ign: player.ign,
+          // Registration snapshot: use the imported IGN (current for this tournament)
+          ign: item.ign || player.currentIGN || player.ign || '',
           professionalName: player.professionalName,
-          gender: item.gender || player.gender || '',
-          region: item.region || player.region || '',
-          country: item.country || player.country || '',
-          device: item.device || player.device || '',
-          deviceModel: item.deviceModel || player.deviceModel || '',
+          gender: player.gender || item.gender || '',
+          region: player.region || item.region || '',
+          country: player.country || item.country || '',
+          // Use current device from player profile (just updated by createPlayer)
+          device: player.currentDevice || item.device || player.device || '',
+          deviceModel: player.currentDeviceModel || item.deviceModel || player.deviceModel || '',
           ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
         });
 
@@ -1788,14 +1796,27 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                       </td>
                       <td>
                         {item.isDuplicate ? (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--red)', fontWeight: 600 }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 600 }}>
                             ⚠️ Already Registered (Will be skipped)
                           </span>
+
                         ) : item.conflict ? (
+                          /* ── Tier 3: Proposed link (user must confirm) ── */
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
                             <div style={{ fontSize: '0.75rem', color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span>⚠️ Similar: <strong>{item.conflict.professionalName}</strong> (IGN: {item.conflict.ign})</span>
+                              <span>
+                                💡 Possible match: <strong>{item.conflict.player.professionalName}</strong>
+                                {' '}
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', opacity: 0.8 }}>
+                                  ({Math.round(item.conflict.similarity * 100)}% via {item.conflict.matchedOn === 'ign' ? 'IGN' : 'name'})
+                                </span>
+                              </span>
                             </div>
+                            {item.conflict.player.currentIGN || item.conflict.player.ign ? (
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                Known IGN: {item.conflict.player.currentIGN || item.conflict.player.ign}
+                              </div>
+                            ) : null}
                             <div style={{ display: 'flex', gap: 8 }}>
                               <button
                                 type="button"
@@ -1805,19 +1826,22 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                                   newQueue[idx] = {
                                     ...item,
                                     isLinked: true,
-                                    playerId: item.conflict.id,
-                                    professionalName: item.conflict.professionalName || item.professionalName,
-                                    ign: item.conflict.ign || item.ign,
-                                    gender: item.conflict.gender || item.gender,
-                                    region: item.conflict.region || item.region,
-                                    country: item.conflict.country || item.country,
-                                    device: item.conflict.device || item.device,
-                                    deviceModel: item.conflict.deviceModel || item.deviceModel
+                                    linkTier: 'proposed',
+                                    playerId: item.conflict.player.id,
+                                    // Keep existing professional name (immutable)
+                                    professionalName: item.conflict.player.professionalName,
+                                    // Carry the imported IGN for history accumulation
+                                    ign: item.ign,
+                                    gender: item.conflict.player.gender || item.gender,
+                                    region: item.conflict.player.region || item.region,
+                                    country: item.conflict.player.country || item.country,
+                                    device: item.device || item.conflict.player.currentDevice || item.conflict.player.device,
+                                    deviceModel: item.deviceModel || item.conflict.player.currentDeviceModel || item.conflict.player.deviceModel,
                                   };
                                   setImportQueue(newQueue);
                                 }}
                               >
-                                Link to Existing
+                                ✓ Link to "{item.conflict.player.professionalName}"
                               </button>
                               <button
                                 type="button"
@@ -1827,9 +1851,8 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                                   newQueue[idx] = {
                                     ...item,
                                     isLinked: false,
+                                    linkTier: 'none',
                                     playerId: '',
-                                    professionalName: item.originalName === item.ign ? '' : item.professionalName,
-                                    ign: item.ign
                                   };
                                   setImportQueue(newQueue);
                                 }}
@@ -1838,9 +1861,33 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                               </button>
                             </div>
                           </div>
+
+                        ) : item.isLinked && item.linkTier === 'high' ? (
+                          /* ── Tier 2: High-confidence auto-link ── */
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
+                              ✓ Auto-linked ({item.linkSimilarity}% via {item.matchedOn === 'ign' ? 'IGN' : 'name'})
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-secondary"
+                              style={{ fontSize: '0.65rem', padding: '2px 6px', width: 'fit-content' }}
+                              onClick={() => {
+                                const newQueue = [...importQueue];
+                                newQueue[idx] = { ...item, isLinked: false, linkTier: 'none', playerId: '' };
+                                setImportQueue(newQueue);
+                              }}
+                            >
+                              Undo — Register as New
+                            </button>
+                          </div>
+
                         ) : item.isLinked ? (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--cyan)' }}>✓ Auto-linked to exact match</span>
+                          /* ── Tier 1: Exact match ── */
+                          <span style={{ fontSize: '0.75rem', color: 'var(--cyan)', fontWeight: 600 }}>✓ Linked — exact match</span>
+
                         ) : (
+                          /* ── Tier 4: New player ── */
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Will register as new player</span>
                         )}
                       </td>
