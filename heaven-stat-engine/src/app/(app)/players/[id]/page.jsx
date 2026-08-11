@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getPlayer, updatePlayer } from '@/lib/firestore/registry';
@@ -15,6 +15,35 @@ import MetricTooltip from '@/components/ui/MetricTooltip';
 import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame, Camera, Upload, X, Trash2, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { computePlayerGlobalForm } from '@/lib/engine/globalForm';
+
+function HistoryList({ label, items, renderItem }) {
+  const [open, setOpen] = useState(false);
+  if (!items?.length) return null;
+  return (
+    <div style={{ marginTop: 4, paddingLeft: 0 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: '0.7rem', color: 'var(--text-muted)', padding: '2px 0',
+          display: 'flex', alignItems: 'center', gap: 4
+        }}
+      >
+        <span style={{ transition: 'transform 0.15s', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
+        {label} ({items.length})
+      </button>
+      {open && (
+        <div style={{
+          marginTop: 4, padding: '8px 10px',
+          background: 'var(--bg-alt-row)', borderRadius: 6,
+          border: '1px solid var(--border-md)', display: 'flex', flexDirection: 'column', gap: 4
+        }}>
+          {items.map((item, i) => renderItem(item, i))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function PlayerProfilePage() {
   const { id } = useParams();
@@ -354,7 +383,7 @@ export default function PlayerProfilePage() {
                 </MetricTooltip>
               )}
             </div>
-            <p className="page-subtitle">IGN: {player.ign || '—'} · Region: {player.region || '—'}</p>
+            <p className="page-subtitle">IGN: {player.currentIGN || player.ign || '—'} · Region: {player.region || '—'}</p>
           </div>
         </div>
       </div>
@@ -430,38 +459,108 @@ export default function PlayerProfilePage() {
                 {player.professionalName}
               </span>
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                {player.ign ? `IGN: ${player.ign}` : 'No IGN Registered'}
+                {(player.currentIGN || player.ign) ? `IGN: ${player.currentIGN || player.ign}` : 'No IGN Registered'}
               </span>
             </div>
 
             <div className="space-y-3.5 text-sm">
+              {/* Pro Name — immutable */}
               <div className="flex-between">
                 <span className="text-text-muted">Pro Name</span>
                 <span className="font-semibold text-text-primary">{player.professionalName}</span>
               </div>
-              <div className="flex-between">
-                <span className="text-text-muted">IGN</span>
-                <span className="font-semibold text-text-primary">{player.ign || '—'}</span>
+
+              {/* IGN — current + history */}
+              <div>
+                <div className="flex-between">
+                  <span className="text-text-muted">IGN</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="font-semibold text-text-primary">
+                      {player.currentIGN || player.ign || '—'}
+                    </span>
+                    {(player.currentIGN || player.ign) && (
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px',
+                        borderRadius: 4, background: 'rgba(201,168,76,0.15)',
+                        color: 'var(--gold)', border: '1px solid var(--border-gold)',
+                        letterSpacing: '0.04em', textTransform: 'uppercase'
+                      }}>Current</span>
+                    )}
+                  </div>
+                </div>
+                {(player.ignHistory?.length > 1) && (
+                  <HistoryList
+                    label="IGN History"
+                    items={[...player.ignHistory].reverse()}
+                    renderItem={(ign, i) => (
+                      <span key={i} style={{
+                        fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                        color: i === 0 ? 'var(--gold)' : 'var(--text-secondary)'
+                      }}>
+                        {i === 0 && '▸ '}{ign}
+                        {i === 0 && <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>(current)</span>}
+                      </span>
+                    )}
+                  />
+                )}
               </div>
+
+              {/* Gender */}
               <div className="flex-between">
                 <span className="text-text-muted">Gender</span>
                 <span className="font-semibold text-text-primary">{player.gender || '—'}</span>
               </div>
+
+              {/* Region */}
               <div className="flex-between">
                 <span className="text-text-muted">Region</span>
                 <span className="font-semibold text-text-primary">{player.region || '—'}</span>
               </div>
+
+              {/* Country */}
               <div className="flex-between">
                 <span className="text-text-muted">Country</span>
                 <span className="font-semibold text-text-primary">{player.country || '—'}</span>
               </div>
-              <div className="flex-between">
-                <span className="text-text-muted">Device</span>
-                <span className="font-semibold text-text-primary">{player.device || '—'}</span>
-              </div>
-              <div className="flex-between">
-                <span className="text-text-muted">Model</span>
-                <span className="font-semibold text-text-primary">{player.deviceModel || '—'}</span>
+
+              {/* Device — current + history */}
+              <div>
+                <div className="flex-between">
+                  <span className="text-text-muted">Device</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="font-semibold text-text-primary">
+                      {player.currentDevice || player.device || '—'}
+                      {(player.currentDeviceModel || player.deviceModel) && (
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
+                          {player.currentDeviceModel || player.deviceModel}
+                        </span>
+                      )}
+                    </span>
+                    {(player.currentDevice || player.device) && (
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px',
+                        borderRadius: 4, background: 'rgba(201,168,76,0.15)',
+                        color: 'var(--gold)', border: '1px solid var(--border-gold)',
+                        letterSpacing: '0.04em', textTransform: 'uppercase'
+                      }}>Current</span>
+                    )}
+                  </div>
+                </div>
+                {(player.deviceHistory?.length > 1) && (
+                  <HistoryList
+                    label="Device History"
+                    items={[...player.deviceHistory].reverse()}
+                    renderItem={(d, i) => (
+                      <span key={i} style={{
+                        fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+                        color: i === 0 ? 'var(--gold)' : 'var(--text-secondary)'
+                      }}>
+                        {i === 0 && '▸ '}{d.device} {d.deviceModel}
+                        {i === 0 && <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>(current)</span>}
+                      </span>
+                    )}
+                  />
+                )}
               </div>
             </div>
           </div>

@@ -360,13 +360,100 @@ export function localGetPlayer(id) {
 
 export function localCreatePlayer(data) {
   const list = localGetPlayers();
-  const existing = list.find(p => p.professionalName.toLowerCase() === data.professionalName?.toLowerCase());
-  if (existing) return existing;
+
+  // Find by professionalName first (immutable identity key), then by IGN as fallback
+  let existing = data.professionalName?.trim()
+    ? list.find(p => p.professionalName?.toLowerCase() === data.professionalName.trim().toLowerCase())
+    : null;
+  if (!existing && data.ign?.trim()) {
+    const needle = data.ign.trim().toLowerCase();
+    existing = list.find(p =>
+      p.ign?.toLowerCase() === needle ||
+      p.currentIGN?.toLowerCase() === needle ||
+      (p.ignHistory || []).some(i => i.toLowerCase() === needle)
+    );
+  }
+
+  if (existing) {
+    const index = list.findIndex(p => p.id === existing.id);
+    const updatedFields = {};
+
+    // ── professionalName is IMMUTABLE — never touch it ──────────────────────
+
+    // ── IGN history accumulation ─────────────────────────────────────────────
+    if (data.ign?.trim()) {
+      const newIgn = data.ign.trim();
+      const existingHistory = existing.ignHistory?.length
+        ? existing.ignHistory
+        : (existing.ign ? [existing.ign] : []);
+      const alreadyKnown = existingHistory.some(i => i.toLowerCase() === newIgn.toLowerCase());
+      if (!alreadyKnown) {
+        updatedFields.ignHistory = [...existingHistory, newIgn];
+      } else if (!existing.ignHistory) {
+        updatedFields.ignHistory = existingHistory;
+      }
+      if (newIgn.toLowerCase() !== (existing.currentIGN || existing.ign || '').toLowerCase()) {
+        updatedFields.currentIGN = newIgn;
+      }
+    }
+
+    // ── Device history accumulation ──────────────────────────────────────────
+    const newDevice = data.device || '';
+    const newModel = data.deviceModel || '';
+    if (newDevice || newModel) {
+      const existingDevHistory = existing.deviceHistory?.length
+        ? existing.deviceHistory
+        : (existing.device || existing.deviceModel
+            ? [{ device: existing.device || '', deviceModel: existing.deviceModel || '' }]
+            : []);
+      const alreadyKnown = existingDevHistory.some(
+        d => d.device?.toLowerCase() === newDevice.toLowerCase()
+          && d.deviceModel?.toLowerCase() === newModel.toLowerCase()
+      );
+      if (!alreadyKnown) {
+        updatedFields.deviceHistory = [...existingDevHistory, { device: newDevice, deviceModel: newModel }];
+      } else if (!existing.deviceHistory) {
+        updatedFields.deviceHistory = existingDevHistory;
+      }
+      if (newDevice && newDevice !== existing.currentDevice) {
+        updatedFields.currentDevice = newDevice;
+      }
+      if (newModel && newModel !== existing.currentDeviceModel) {
+        updatedFields.currentDeviceModel = newModel;
+      }
+    }
+
+    // ── Demographic fields — only fill in if blank, never overwrite ──────────
+    if (data.gender && !existing.gender) updatedFields.gender = data.gender;
+    if (data.region && !existing.region) updatedFields.region = data.region;
+    if (data.country && !existing.country) updatedFields.country = data.country;
+    if (data.category && data.category !== existing.category) updatedFields.category = data.category;
+
+    if (Object.keys(updatedFields).length > 0 && index !== -1) {
+      list[index] = { ...existing, ...updatedFields };
+      setStorageItem('heaven_players', list);
+      return list[index];
+    }
+    return existing;
+  }
+
+  // ── New player — initialise all history fields ───────────────────────────
+  const newIgn = data.ign?.trim() || '';
+  const newDevice = data.device || '';
+  const newModel = data.deviceModel || '';
+
   const newP = {
     id: 'p_' + Math.random().toString(36).substr(2, 9),
     professionalName: '', ign: '', gender: '', region: '', country: '',
     device: '', deviceModel: '', photoUrl: '', tournamentIds: [], createdAt: mockTimestamp(),
-    ...data
+    ...data,
+    currentIGN: newIgn,
+    ignHistory: newIgn ? [newIgn] : [],
+    currentDevice: newDevice,
+    currentDeviceModel: newModel,
+    deviceHistory: (newDevice || newModel)
+      ? [{ device: newDevice, deviceModel: newModel }]
+      : [],
   };
   list.push(newP);
   setStorageItem('heaven_players', list);

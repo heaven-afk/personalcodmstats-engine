@@ -76,39 +76,113 @@ export async function createPlayer(data) {
   if (!isFirebaseConfigured) {
     return localDb.localCreatePlayer(enriched);
   }
+
   const existing = await findPlayerByName(enriched.professionalName, enriched.ign);
   if (existing) {
     const updatedFields = {};
-    const checkFields = ['professionalName', 'ign', 'gender', 'region', 'country', 'device', 'deviceModel', 'category', 'photoUrl'];
-    for (const field of checkFields) {
-      if (enriched[field] && enriched[field] !== existing[field]) {
-        updatedFields[field] = enriched[field];
-        if (field === 'professionalName') {
-          updatedFields.professionalNameLower = enriched.professionalName.toLowerCase().trim();
-        }
-        if (field === 'ign') {
-          updatedFields.ignLower = enriched.ign.toLowerCase().trim();
-        }
+
+    // ── professionalName is IMMUTABLE — never touch it ──────────────────────
+
+    // ── IGN history accumulation ─────────────────────────────────────────────
+    if (enriched.ign?.trim()) {
+      const newIgn = enriched.ign.trim();
+      const existingHistory = existing.ignHistory?.length
+        ? existing.ignHistory
+        : (existing.ign ? [existing.ign] : []);
+      const alreadyKnown = existingHistory.some(i => i.toLowerCase() === newIgn.toLowerCase());
+      if (!alreadyKnown) {
+        updatedFields.ignHistory = [...existingHistory, newIgn];
+      } else if (!existing.ignHistory) {
+        // Backfill the history field if it didn't exist yet
+        updatedFields.ignHistory = existingHistory;
+      }
+      // Always keep currentIGN pointing to the latest import's IGN
+      if (newIgn.toLowerCase() !== (existing.currentIGN || existing.ign || '').toLowerCase()) {
+        updatedFields.currentIGN = newIgn;
+        updatedFields.currentIGNLower = newIgn.toLowerCase();
       }
     }
+
+    // ── Device history accumulation ──────────────────────────────────────────
+    const newDevice = enriched.device || '';
+    const newModel = enriched.deviceModel || '';
+    if (newDevice || newModel) {
+      const existingDevHistory = existing.deviceHistory?.length
+        ? existing.deviceHistory
+        : (existing.device || existing.deviceModel
+            ? [{ device: existing.device || '', deviceModel: existing.deviceModel || '' }]
+            : []);
+      const alreadyKnown = existingDevHistory.some(
+        d => d.device?.toLowerCase() === newDevice.toLowerCase()
+          && d.deviceModel?.toLowerCase() === newModel.toLowerCase()
+      );
+      if (!alreadyKnown) {
+        updatedFields.deviceHistory = [...existingDevHistory, { device: newDevice, deviceModel: newModel }];
+      } else if (!existing.deviceHistory) {
+        updatedFields.deviceHistory = existingDevHistory;
+      }
+      // Update current device pointers to the latest import
+      if (newDevice && newDevice !== existing.currentDevice) {
+        updatedFields.currentDevice = newDevice;
+      }
+      if (newModel && newModel !== existing.currentDeviceModel) {
+        updatedFields.currentDeviceModel = newModel;
+      }
+    }
+
+    // ── Demographic fields — only fill in if blank, never overwrite ──────────
+    if (enriched.gender && !existing.gender) updatedFields.gender = enriched.gender;
+    if (enriched.region && !existing.region) updatedFields.region = enriched.region;
+    if (enriched.country && !existing.country) updatedFields.country = enriched.country;
+
+    // ── Category can update freely ───────────────────────────────────────────
+    if (enriched.category && enriched.category !== existing.category) {
+      updatedFields.category = enriched.category;
+    }
+
     if (Object.keys(updatedFields).length > 0) {
       await updateDoc(doc(db, 'players', existing.id), updatedFields);
       return { ...existing, ...updatedFields };
     }
     return existing;
   }
+
+  // ── New player — initialise all history fields ───────────────────────────
+  const newIgn = enriched.ign?.trim() || '';
+  const newDevice = enriched.device || '';
+  const newModel = enriched.deviceModel || '';
+
   const ref = await addDoc(collection(db, 'players'), {
     professionalName: '', ign: '', gender: '', region: '', country: '',
-    device: '', deviceModel: '', category: 'Registered', photoUrl: '', tournamentIds: [], createdAt: serverTimestamp(),
+    device: '', deviceModel: '', category: 'Registered', photoUrl: '',
+    tournamentIds: [], createdAt: serverTimestamp(),
     ...enriched,
     professionalNameLower: (enriched.professionalName || '').toLowerCase().trim(),
-    ignLower: (enriched.ign || '').toLowerCase().trim(),
+    ignLower: newIgn.toLowerCase(),
+    // History fields
+    currentIGN: newIgn,
+    currentIGNLower: newIgn.toLowerCase(),
+    ignHistory: newIgn ? [newIgn] : [],
+    currentDevice: newDevice,
+    currentDeviceModel: newModel,
+    deviceHistory: (newDevice || newModel)
+      ? [{ device: newDevice, deviceModel: newModel }]
+      : [],
   });
-  return { 
-    id: ref.id, 
+
+  return {
+    id: ref.id,
     ...enriched,
     professionalNameLower: (enriched.professionalName || '').toLowerCase().trim(),
-    ignLower: (enriched.ign || '').toLowerCase().trim(),
+    ignLower: newIgn.toLowerCase(),
+    currentIGN: newIgn,
+    currentIGNLower: newIgn.toLowerCase(),
+    ignHistory: newIgn ? [newIgn] : [],
+    currentDevice: newDevice,
+    currentDeviceModel: newModel,
+    deviceHistory: (newDevice || newModel)
+      ? [{ device: newDevice, deviceModel: newModel }]
+      : [],
   };
 }
 
