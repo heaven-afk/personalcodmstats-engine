@@ -11,8 +11,13 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { AlertTriangle, CheckCircle, Trash2, ShieldAlert, Users, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+
 export default function CleanDuplicatesPage() {
+  const router = useRouter();
   const { tournament } = useTournament();
+  const { isOperator, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -24,9 +29,16 @@ export default function CleanDuplicatesPage() {
   const [selectedGroupId, setSelectedGroupId] = useState('all'); // 'all' or specific groupId
   const [scanType, setScanType] = useState('team'); // 'team' | 'player'
 
+  useEffect(() => {
+    if (!authLoading && isOperator) {
+      toast.error('Access restricted: you do not have permission to view this page.');
+      router.replace('/tournaments');
+    }
+  }, [authLoading, isOperator, router]);
+
   // Load registrations, groups, and match results to identify duplicates
   const scanForDuplicates = useCallback(async () => {
-    if (!tournament?.id) return;
+    if (isOperator || !tournament?.id) return;
     setScanning(true);
     try {
       // 1. Fetch groups list

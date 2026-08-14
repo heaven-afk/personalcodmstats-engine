@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   getTeamRegistrations, addTeamRegistration, updateTeamRegistration, deleteTeamRegistration,
   getPlayerRegistrations, addPlayerRegistration, updatePlayerRegistration, deletePlayerRegistration,
@@ -19,7 +20,7 @@ import {
 } from '@/lib/importers/csvParser';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
-import { Plus, Trash2, Upload, Users, Shield, Search, Check, FileSpreadsheet, X, ChevronRight, ClipboardPaste } from 'lucide-react';
+import { Plus, Trash2, Upload, Users, Shield, Search, Check, FileSpreadsheet, X, ChevronRight, ClipboardPaste, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ─── Sheet Picker Modal ───────────────────────────────────────────────────────
@@ -59,44 +60,26 @@ function SheetPickerModal({ sheets, onSelect, onClose }) {
               onClick={() => onSelect(name)}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '12px 16px', borderRadius: 9,
+                padding: '10px 14px', borderRadius: 8,
                 background: 'var(--bg-alt-row)', border: '1px solid var(--border-md)',
-                cursor: 'pointer', color: 'var(--text-primary)', fontWeight: 600,
-                fontSize: '0.875rem', transition: 'all 0.15s',
+                color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.875rem',
+                fontWeight: 600, transition: 'all 0.15s',
               }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'var(--gold)';
-                e.currentTarget.style.background = 'rgba(201,168,76,0.08)';
-                e.currentTarget.style.color = 'var(--gold)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--border-md)';
-                e.currentTarget.style.background = 'var(--bg-alt-row)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--gold)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-md)'; }}
             >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <FileSpreadsheet size={15} style={{ color: 'var(--gold)', flexShrink: 0 }} />
-                {name}
-              </span>
-              <ChevronRight size={14} style={{ color: 'var(--text-muted)' }} />
+              <span>{name}</span>
+              <ChevronRight size={14} style={{ color: 'var(--gold)' }} />
             </button>
           ))}
         </div>
-        <button
-          className="btn btn-secondary btn-sm"
-          style={{ marginTop: 16, width: '100%' }}
-          onClick={onClose}
-        >
-          Cancel
-        </button>
       </div>
     </div>
   );
 }
 
 // ─── Inline Editable Cell Component ──────────────────────────────────────────
-function EditableCell({ value, onSave, type = 'text', width = '100%', selectOptions = null }) {
+function EditableCell({ value, onSave, type = 'text', width = '100%', selectOptions = null, readOnly = false }) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value);
 
@@ -108,6 +91,16 @@ function EditableCell({ value, onSave, type = 'text', width = '100%', selectOpti
       onSave(local);
     }
   };
+
+  if (readOnly) {
+    return (
+      <td style={{ width }}>
+        <span className="editable-cell-value" style={{ cursor: 'default' }}>
+          {value || <span className="placeholder-dash">—</span>}
+        </span>
+      </td>
+    );
+  }
 
   if (editing) {
     if (selectOptions) {
@@ -372,6 +365,9 @@ export default function RegisterPage() {
 
   if (loading) return <LoadingSpinner size="lg" text="Loading registrations..." />;
 
+  const { user, isOwner, isOperator } = useAuth();
+  const canEdit = isOwner || (tournament?.editorUids && tournament.editorUids.includes(user?.uid));
+
   const hasGroups = groups.length > 0;
   const displayedTeamRegs = selectedGroupId
     ? teamRegs.filter(r => r.groupId === selectedGroupId)
@@ -386,6 +382,26 @@ export default function RegisterPage() {
 
   return (
     <div>
+      {/* Read-Only Notice for Operators without edit access */}
+      {isOperator && !canEdit && (
+        <div style={{
+          padding: '14px 18px',
+          borderRadius: 10,
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          color: '#93c5fd'
+        }}>
+          <Lock size={18} style={{ color: '#60a5fa', flexShrink: 0 }} />
+          <div>
+            <strong style={{ color: '#fff' }}>Read-Only View:</strong> You have view-only access to this tournament's registrations.
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h1 className="page-title">Registration</h1>
@@ -431,6 +447,8 @@ export default function RegisterPage() {
           onRefresh={refresh}
           setImportProgress={setImportProgress}
           selectedGroupId={selectedGroupId || null}
+          canEdit={canEdit}
+          isOwner={isOwner}
         />
       )}
       {tab === 'players' && (
@@ -444,6 +462,8 @@ export default function RegisterPage() {
           onRefresh={refresh}
           setImportProgress={setImportProgress}
           selectedGroupId={selectedGroupId || null}
+          canEdit={canEdit}
+          isOwner={isOwner}
         />
       )}
 
@@ -537,7 +557,7 @@ function useSheetUpload(onImport) {
 }
 
 // ─── Team Registration Panel ─────────────────────────────────────────────────
-function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress, selectedGroupId }) {
+function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress, selectedGroupId, canEdit = true, isOwner = false }) {
   const [addingRow, setAddingRow] = useState(false);
   const [newTeam, setNewTeam] = useState({ slot: '', teamName: '', clanName: '', tier: '' });
   const [teamSearch, setTeamSearch] = useState('');
@@ -727,6 +747,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handleDelete = async (regId, teamName) => {
+    if (!isOwner) { toast.error('Only the owner can delete registrations'); return; }
     const currentReg = registrations.find(r => r.id === regId);
     if (!confirm(`Remove ${teamName} from this tournament?`)) return;
     
@@ -768,6 +789,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handleClearAll = async () => {
+    if (!isOwner) { toast.error('Only the owner can clear all registrations'); return; }
     if (!confirm(`Are you sure you want to remove all ${registrations.length} teams from this tournament?`)) return;
     const deleteGlobal = confirm("Would you also like to delete these teams from the Global Teams Registry overall?");
     
@@ -822,7 +844,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
         <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Teams</span>
         <span className="data-table-count">{registrations.length} registered</span>
         <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-          {registrations.length > 0 && (
+          {isOwner && registrations.length > 0 && (
             <button
               className="btn btn-danger btn-sm"
               onClick={handleClearAll}
@@ -832,29 +854,33 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
               <Trash2 size={13} /> Clear All
             </button>
           )}
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => setShowPaste(v => !v)}
-            title="Copy and paste a list of team names directly"
-          >
-            <ClipboardPaste size={13} /> Paste Data
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={trigger}
-            disabled={importing}
-            title="Upload CSV or Excel file (supports multiple sheets)"
-          >
-            <Upload size={13} /> {importing ? 'Importing…' : 'Upload CSV / Excel'}
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setAddingRow(true)}>
-            <Plus size={13} /> Add Team
-          </button>
+          {canEdit && (
+            <>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowPaste(v => !v)}
+                title="Copy and paste a list of team names directly"
+              >
+                <ClipboardPaste size={13} /> Paste Data
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={trigger}
+                disabled={importing}
+                title="Upload CSV or Excel file (supports multiple sheets)"
+              >
+                <Upload size={13} /> {importing ? 'Importing…' : 'Upload CSV / Excel'}
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => setAddingRow(true)}>
+                <Plus size={13} /> Add Team
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Paste Area panel */}
-      {showPaste && (
+      {canEdit && showPaste && (
         <div className="card" style={{ margin: '12px 16px', border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)' }}>
           <div className="flex-between" style={{ marginBottom: 10 }}>
             <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>Paste Teams List (Plain text, TSV, or CSV)</span>
@@ -885,7 +911,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
         padding: '8px 16px', fontSize: '0.75rem', color: 'var(--text-muted)',
         borderBottom: '1px solid var(--border)', background: 'var(--bg-alt-row)',
       }}>
-        📋 <strong>Expected columns:</strong> <code>teamName</code>, <code>clanName</code>, <code>tier</code>, <code>slot</code> — Click cells below to edit.
+        📋 <strong>Expected columns:</strong> <code>teamName</code>, <code>clanName</code>, <code>tier</code>, <code>slot</code> {canEdit ? '— Click cells below to edit.' : ''}
       </div>
 
       <div className="data-table-scroll">
@@ -905,21 +931,25 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
                   value={reg.slot}
                   type="number"
                   width="60px"
+                  readOnly={!canEdit}
                   onSave={val => handleUpdateTeam(reg.id, { slot: Number(val) || i + 1 })}
                 />
                 <EditableCell
                   value={reg.teamName}
                   width="200px"
+                  readOnly={!canEdit}
                   onSave={val => handleUpdateTeam(reg.id, { teamName: val })}
                 />
                 <EditableCell
                   value={reg.clanName}
                   width="160px"
+                  readOnly={!canEdit}
                   onSave={val => handleUpdateTeam(reg.id, { clanName: val })}
                 />
                 <EditableCell
                   value={reg.tier}
                   width="120px"
+                  readOnly={!canEdit}
                   onSave={val => handleUpdateTeam(reg.id, { tier: val })}
                 />
                 <td>
@@ -1366,39 +1396,8 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
 
     const targetProName = (fields.professionalName !== undefined ? fields.professionalName : currentReg.professionalName || '').trim();
     const targetTeamName = fields.teamName !== undefined ? fields.teamName : currentReg.teamName || '';
-
-    if (targetProName) {
-      const hasDuplicate = registrations.some(r => 
-        r.id !== regId &&
-        r.teamName?.toLowerCase() === targetTeamName.toLowerCase() &&
-        r.professionalName?.trim().toLowerCase() === targetProName.toLowerCase()
-      );
-      if (hasDuplicate) {
-        toast.error(`Player with Professional Name "${targetProName}" is already registered in team "${targetTeamName || 'Unassigned'}".`);
-        return;
-      }
-    }
-
     try {
       await updatePlayerRegistration(tournamentId, regId, fields);
-      if (currentReg.playerId) {
-        const globalFields = {};
-        const allowedKeys = ['professionalName', 'ign', 'gender', 'region', 'country', 'device', 'deviceModel'];
-        for (const key of allowedKeys) {
-          if (fields[key] !== undefined) {
-            globalFields[key] = fields[key];
-            if (key === 'professionalName') {
-              globalFields.professionalNameLower = fields.professionalName.toLowerCase().trim();
-            }
-            if (key === 'ign') {
-              globalFields.ignLower = fields.ign.toLowerCase().trim();
-            }
-          }
-        }
-        if (Object.keys(globalFields).length > 0) {
-          await updatePlayer(currentReg.playerId, globalFields);
-        }
-      }
       await onRefresh();
     } catch (e) {
       toast.error('Failed to update player: ' + e.message);
@@ -1406,18 +1405,13 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   };
 
   const handleDelete = async (regId, name) => {
+    if (!isOwner) { toast.error('Only the owner can delete registrations'); return; }
     const currentReg = registrations.find(r => r.id === regId);
     if (!confirm(`Remove ${name} from this tournament?`)) return;
     
     setSaving(true);
     try {
       await deletePlayerRegistration(tournamentId, regId);
-      if (currentReg?.playerId) {
-        const deleteGlobal = confirm(`Would you also like to delete ${name}'s profile from the Global Player Registry? (Warning: This will delete their career profile and career stats across all tournaments!)`);
-        if (deleteGlobal) {
-          await deletePlayer(currentReg.playerId);
-        }
-      }
       toast.success('Removed');
       await onRefresh();
     } catch (e) {
@@ -1427,72 +1421,30 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
     }
   };
 
-  const handlePasteImport = async () => {
-    if (!pasteText.trim()) return;
-    setParsing(true);
-    try {
-      const parsed = parsePastedPlayers(pasteText);
-      if (parsed.length === 0) {
-        toast.error('No players parsed. Please check the copy format.');
-        return;
-      }
-      prepareImport(parsed);
-      setPasteText('');
-      setShowPaste(false);
-    } catch (err) {
-      toast.error('Import failed: ' + err.message);
-    } finally {
-      setParsing(false);
-    }
-  };
-
   const handleClearAll = async () => {
+    if (!isOwner) { toast.error('Only the owner can clear all registrations'); return; }
     if (!confirm(`Are you sure you want to remove all ${registrations.length} players from this tournament?`)) return;
     const deleteGlobal = confirm("Would you also like to delete these players' profiles from the Global Player Registry overall? (Warning: This will delete their career profile and statistics!)");
     
     setSaving(true);
     try {
-      await clearAllPlayerRegistrations(tournamentId, registrations.map(r => r.id));
+      await clearAllPlayerRegistrations(tournamentId);
       if (deleteGlobal) {
         const deletePromises = registrations
+          .filter(r => r.playerId)
           .map(r => r.playerId)
-          .filter(Boolean)
+          .filter((v, i, a) => a.indexOf(v) === i)
           .map(pid => deletePlayer(pid));
         await Promise.all(deletePromises);
       }
       toast.success('All player registrations cleared');
       await onRefresh();
     } catch (e) {
-      toast.error('Failed to clear registrations: ' + e.message);
+      toast.error('Failed to clear players: ' + e.message);
     } finally {
       setSaving(false);
     }
   };
-
-  // ── Upload logic ──────────────────────────────────────────────────────────
-  const handlePlayerImport = async (csvText, sheetLabel) => {
-    const { rows, errors } = parsePlayerRegistrationCSV(csvText);
-    if (errors?.length) console.warn('CSV parse warnings:', errors);
-
-    const validRows = rows.filter(r => r.professionalName?.trim() || r.ign?.trim());
-    if (validRows.length === 0) {
-      toast.error(`No valid player rows found in "${sheetLabel}". Check column headers (professionalName / ign).`);
-      return;
-    }
-
-    prepareImport(validRows);
-  };
-
-  const { trigger, modal, input, importing } = useSheetUpload(handlePlayerImport);
-
-  // Sort registrations by team name then slot
-  const sortedRegistrations = [...registrations].sort((a, b) => {
-    const tc = (a.teamName || '').localeCompare(b.teamName || '');
-    if (tc !== 0) return tc;
-    return (a.slot || 0) - (b.slot || 0);
-  });
-
-  const FIELDS = ['PRO NAME', 'IGN', 'TEAM', 'CATEGORY', 'GENDER', 'REGION', 'COUNTRY', 'DEVICE', 'MODEL', ''];
 
   return (
     <div className="data-table-container">
@@ -1502,7 +1454,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Players</span>
         <span className="data-table-count">{registrations.length} registered</span>
         <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-          {registrations.length > 0 && (
+          {isOwner && registrations.length > 0 && (
             <button
               className="btn btn-danger btn-sm"
               onClick={handleClearAll}
@@ -1512,29 +1464,33 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
               <Trash2 size={13} /> Clear All
             </button>
           )}
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => setShowPaste(v => !v)}
-            title="Copy and paste a list of player names/details directly"
-          >
-            <ClipboardPaste size={13} /> Paste Data
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={trigger}
-            disabled={importing}
-            title="Upload CSV or Excel file (supports multiple sheets)"
-          >
-            <Upload size={13} /> {importing ? 'Importing…' : 'Upload CSV / Excel'}
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setAddingRow(true)}>
-            <Plus size={13} /> Add Player
-          </button>
+          {canEdit && (
+            <>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowPaste(v => !v)}
+                title="Copy and paste a list of player names/details directly"
+              >
+                <ClipboardPaste size={13} /> Paste Data
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={trigger}
+                disabled={importing}
+                title="Upload CSV or Excel file (supports multiple sheets)"
+              >
+                <Upload size={13} /> {importing ? 'Importing…' : 'Upload CSV / Excel'}
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => setAddingRow(true)}>
+                <Plus size={13} /> Add Player
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Paste Area panel */}
-      {showPaste && (
+      {canEdit && showPaste && (
         <div className="card" style={{ margin: '12px 16px', border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)' }}>
           <div className="flex-between" style={{ marginBottom: 10 }}>
             <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>Paste Players List (Plain text, TSV, or CSV)</span>
@@ -1565,7 +1521,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         padding: '8px 16px', fontSize: '0.75rem', color: 'var(--text-muted)',
         borderBottom: '1px solid var(--border)', background: 'var(--bg-alt-row)',
       }}>
-        📋 <strong>Expected columns:</strong> <code>professionalName</code>, <code>ign</code>, <code>teamName</code>, <code>class</code>, <code>gender</code>, <code>region</code>, <code>country</code>, <code>device</code>, <code>deviceModel</code> — Click cells below to edit.
+        📋 <strong>Expected columns:</strong> <code>professionalName</code>, <code>ign</code>, <code>teamName</code>, <code>class</code>, <code>gender</code>, <code>region</code>, <code>country</code>, <code>device</code>, <code>deviceModel</code> {canEdit ? '— Click cells below to edit.' : ''}
       </div>
 
       <div className="data-table-scroll">
@@ -1585,38 +1541,45 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                   <EditableCell
                     value={reg.professionalName}
                     width="110px"
+                    readOnly={!canEdit}
                     onSave={val => handleUpdatePlayer(reg.id, { professionalName: val })}
                   />
                   <EditableCell
                     value={reg.ign}
                     width="100px"
+                    readOnly={!canEdit}
                     onSave={val => handleUpdatePlayer(reg.id, { ign: val })}
                   />
                   <EditableCell
                     value={reg.teamName}
                     width="120px"
+                    readOnly={!canEdit}
                     selectOptions={['', ...teamRegistrations.map(t => t.teamName)]}
                     onSave={val => handleUpdatePlayer(reg.id, { teamName: val, teamId: teamRegistrations.find(t => t.teamName === val)?.teamId || '' })}
                   />
                   <EditableCell
                     value={reg.class || 'Registered'}
                     width="110px"
+                    readOnly={!canEdit}
                     selectOptions={['Registered', 'Transferred In']}
                     onSave={val => handleUpdatePlayer(reg.id, { class: val })}
                   />
                   <EditableCell
                     value={reg.gender}
                     width="60px"
+                    readOnly={!canEdit}
                     onSave={val => handleUpdatePlayer(reg.id, { gender: val })}
                   />
                   <EditableCell
                     value={reg.region}
                     width="80px"
+                    readOnly={!canEdit}
                     onSave={val => handleUpdatePlayer(reg.id, { region: val })}
                   />
                   <EditableCell
                     value={reg.country}
                     width="80px"
+                    readOnly={!canEdit}
                     onSave={val => handleUpdatePlayer(reg.id, { country: val })}
                   />
                   <EditableCell

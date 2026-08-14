@@ -1,6 +1,7 @@
 'use client';
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { createTournament } from '@/lib/firestore/tournaments';
 import { createGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
@@ -18,6 +19,7 @@ import {
 
 export default function CreateTournamentPage() {
   const router = useRouter();
+  const { user, role, isOperator } = useAuth();
   const fileRef = useRef(null);
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -191,7 +193,11 @@ export default function CreateTournamentPage() {
         };
       }
 
-      const t = await createTournament(tournamentPayload);
+      if (isOperator && user?.uid) {
+        tournamentPayload.editorUids = [user.uid];
+      }
+
+      const t = await createTournament(tournamentPayload, role, user?.uid);
 
       if (tournamentType === 'qualifier') {
         for (const g of qualifierGroups) {

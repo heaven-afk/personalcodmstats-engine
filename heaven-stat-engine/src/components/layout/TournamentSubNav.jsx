@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useParams } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 const TABS = [
   { key: 'overview',     label: 'Overview',      href: '' },
@@ -18,7 +18,15 @@ const TABS = [
 
 export default function TournamentSubNav({ tournamentId }) {
   const pathname = usePathname();
+  const { isOperator } = useAuth();
   const base = `/tournaments/${tournamentId}`;
+
+  const visibleTabs = TABS.filter(tab => {
+    if (isOperator) {
+      return tab.key !== 'analytics' && tab.key !== 'deep-analysis' && tab.key !== 'clean-duplicates';
+    }
+    return true;
+  });
 
   const isActive = (tab) => {
     if (tab.href === '') return pathname === base;
@@ -33,7 +41,7 @@ export default function TournamentSubNav({ tournamentId }) {
 
   return (
     <div className="tournament-subnav">
-      {TABS.map((tab) => (
+      {visibleTabs.map((tab) => (
         <Link
           key={tab.key}
           href={`${base}${tab.href}`}

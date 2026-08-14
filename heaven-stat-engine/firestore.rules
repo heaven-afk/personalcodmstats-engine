@@ -8,8 +8,23 @@ service cloud.firestore {
     }
 
     function isOwner() {
-      return isSignedIn()
-        && request.auth.token.email == 'ogadizion01@gmail.com';
+      return isSignedIn() && (
+        (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'owner') ||
+        request.auth.token.email == 'ogadizion01@gmail.com'
+      );
+    }
+
+    function isOperator() {
+      return isSignedIn() && (
+        request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'operator'
+      );
+    }
+
+    function isTournamentEditor(tournamentId) {
+      return isOwner() || (
+        isOperator() &&
+        request.auth.uid in get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.editorUids
+      );
     }
 
     // ─── Overlay Engine collections ────────────────────────────────────
@@ -33,33 +48,57 @@ service cloud.firestore {
     }
 
     // ─── Heaven Stat Engine data ───────────────────────────────────────
-    // Public reads preserved (Overlay Engine public render page and OBS
-    // need to read team names/logos/tournament data without logging in).
-    // Writes allowed for any signed-in Firebase user.
-    match /tournaments/{tournamentId}/{document=**} {
+    // Public reads preserved.
+    // Tournament documents: create requires owner or operator with editorUids;
+    // update requires owner or operator in editorUids; delete is owner-only.
+    match /tournaments/{tournamentId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isOwner() || (
+          isOperator() &&
+          request.resource.data.editorUids is list &&
+          request.auth.uid in request.resource.data.editorUids
+        )
+      );
+      allow update: if isSignedIn() && (
+        isOwner() || (
+          isOperator() &&
+          resource.data.editorUids is list &&
+          request.auth.uid in resource.data.editorUids
+        )
+      );
+      allow delete: if isOwner();
+
+      // Sub-collections under a tournament inherit tournament-level editor access
+      match /{subcollection}/{docId} {
+        allow read: if true;
+        allow create, update: if isTournamentEditor(tournamentId);
+        allow delete: if isOwner();
+      }
     }
 
     match /teams/{teamId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create, update: if isOwner() || isOperator();
+      allow delete: if isOwner();
     }
 
     match /players/{playerId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create, update: if isOwner() || isOperator();
+      allow delete: if isOwner();
     }
 
     match /clans/{clanId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create, update: if isOwner() || isOperator();
+      allow delete: if isOwner();
     }
 
     // ─── Fallback rule for any other collection ───────────────────────
     match /{document=**} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isOwner();
     }
   }
 }

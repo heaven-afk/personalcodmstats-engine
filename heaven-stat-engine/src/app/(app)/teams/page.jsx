@@ -14,8 +14,10 @@ import Modal from '@/components/ui/Modal';
 import { mergeTeams } from '@/lib/firestore/merge';
 import { scanForDuplicates, cleanTeamName } from '@/lib/utils/similarity';
 import { cleanImageUrl } from '@/lib/utils/image';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function TeamsPage() {
+  const { isOwner } = useAuth();
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
@@ -236,28 +238,30 @@ export default function TeamsPage() {
           <h1 className="page-title">Teams</h1>
           <p className="page-subtitle">Unified registry of all teams across all tournaments</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {teamsNeedingClean.length > 0 && (
+        {isOwner && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {teamsNeedingClean.length > 0 && (
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                onClick={handleOpenCleanModal}
+              >
+                <Sparkles size={14} /> Clean Names ({teamsNeedingClean.length})
+              </button>
+            )}
             <button
-              className="btn btn-secondary btn-sm"
+              className="btn btn-primary btn-sm"
               style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-              onClick={handleOpenCleanModal}
+              onClick={() => setMergeModalOpen(true)}
             >
-              <Sparkles size={14} /> Clean Names ({teamsNeedingClean.length})
+              <Combine size={14} /> Merge Teams
             </button>
-          )}
-          <button
-            className="btn btn-primary btn-sm"
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-            onClick={() => setMergeModalOpen(true)}
-          >
-            <Combine size={14} /> Merge Teams
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Potential Duplicates Scanner Alert */}
-      {duplicatePairs.length > 0 && (
+      {/* Potential Duplicates Scanner Alert (Owner Only) */}
+      {isOwner && duplicatePairs.length > 0 && (
         <div className="card" style={{ border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)', padding: '16px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Combine size={18} style={{ color: 'var(--gold)' }} />

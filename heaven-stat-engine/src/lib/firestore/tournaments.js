@@ -22,9 +22,10 @@ export async function getTournament(id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-export async function createTournament(data) {
+export async function createTournament(data, userRole, creatorUid) {
+  const editorUids = data.editorUids || (userRole === 'operator' && creatorUid ? [creatorUid] : []);
   if (!isFirebaseConfigured) {
-    return localDb.localCreateTournament(data);
+    return localDb.localCreateTournament({ ...data, editorUids });
   }
   const payload = {
     name: '', season: '', description: '', status: 'setup',
@@ -33,7 +34,9 @@ export async function createTournament(data) {
     eventEndDate: data.eventEndDate || null,
     createdAt: serverTimestamp(), completedAt: null,
     scoring: { killPointValue: 2, placementPoints: [], bonusTypes: [] },
+    editorUids,
     ...data,
+    editorUids: data.editorUids !== undefined ? data.editorUids : editorUids,
   };
   if (payload.type === 'standard' && !payload.structure) {
     payload.structure = { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] };
@@ -47,6 +50,13 @@ export async function updateTournament(id, data) {
     return localDb.localUpdateTournament(id, data);
   }
   await updateDoc(doc(db, 'tournaments', id), data);
+}
+
+export async function updateTournamentEditors(id, editorUids) {
+  if (!isFirebaseConfigured) {
+    return localDb.localUpdateTournament(id, { editorUids });
+  }
+  await updateDoc(doc(db, 'tournaments', id), { editorUids });
 }
 
 export async function setTournamentStatus(id, status) {

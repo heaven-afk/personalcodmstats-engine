@@ -9,8 +9,10 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ClassBadge, TierBadge } from '@/components/ui/Badge';
 import { Users, Search, ExternalLink, Award, Cpu, Globe, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function PlayersPage() {
+  const { isOwner } = useAuth();
   const [players, setPlayers] = useState([]);
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -192,14 +194,16 @@ export default function PlayersPage() {
           <Link href={`/players/${row.id}`} className="text-text-muted hover:text-gold transition" title="View Profile">
             <ExternalLink size={16} />
           </Link>
-          <button
-            onClick={() => handleDeletePlayer(row.id, row.professionalName || row.ign)}
-            className="text-text-muted hover:text-red-500 transition-colors"
-            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-            title="Delete player globally"
-          >
-            <Trash2 size={16} />
-          </button>
+          {isOwner && (
+            <button
+              onClick={() => handleDeletePlayer(row.id, row.professionalName || row.ign)}
+              className="text-text-muted hover:text-red-500 transition-colors"
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              title="Delete player globally"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
       ),
     },

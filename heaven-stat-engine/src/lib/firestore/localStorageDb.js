@@ -199,6 +199,7 @@ export function localCreateTournament(data) {
     eventEndDate: data.eventEndDate || null,
     createdAt: mockTimestamp(), completedAt: null,
     scoring: { killPointValue: 2, placementPoints: [], bonusTypes: [] },
+    editorUids: data.editorUids || [],
     ...data
   };
   if (newT.type === 'standard' && !newT.structure) {

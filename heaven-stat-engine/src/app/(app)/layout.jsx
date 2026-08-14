@@ -1,19 +1,39 @@
 'use client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Sidebar from '@/components/layout/Sidebar';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Menu, Zap } from 'lucide-react';
 
+const OWNER_ONLY_PREFIXES = [
+  '/comparison',
+  '/analysis',
+  '/simulate',
+  '/rankings',
+  '/settings',
+  '/dashboard'
+];
+
 export default function AppLayout({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isOperator } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) router.replace('/login');
-  }, [user, loading, router]);
+    if (!loading && !user) {
+      router.replace('/login');
+      return;
+    }
+
+    if (!loading && isOperator) {
+      const isRestricted = OWNER_ONLY_PREFIXES.some(prefix => pathname.startsWith(prefix));
+      if (isRestricted) {
+        router.replace('/tournaments');
+      }
+    }
+  }, [user, loading, isOperator, pathname, router]);
 
   if (loading) return (
     <div className="full-page-center">

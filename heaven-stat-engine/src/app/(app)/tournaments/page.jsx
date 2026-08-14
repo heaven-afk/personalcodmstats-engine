@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/contexts/AuthContext';
 import { getTournaments, deleteTournament } from '@/lib/firestore/tournaments';
 import { formatEventDates } from '@/lib/utils/dateUtils';
 import DataTable from '@/components/ui/DataTable';
@@ -8,12 +9,13 @@ import { StatusBadge, TierBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import Modal from '@/components/ui/Modal';
-import { Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search, Medal } from 'lucide-react';
+import { Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search, Medal, Eye, Edit3, ShieldAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const STATUS_OPTIONS = ['all', 'setup', 'active', 'completed', 'archived'];
 
 export default function TournamentsListPage() {
+  const { user, isOwner, isOperator } = useAuth();
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -28,6 +30,7 @@ export default function TournamentsListPage() {
   const [confirming, setConfirming] = useState(false);
 
   const openDeleteModal = (id, name) => {
+    if (!isOwner) return;
     setDeletingId(id);
     setDeletingName(name);
     setDeleteChecked1(false);
@@ -41,7 +44,7 @@ export default function TournamentsListPage() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!deleteChecked1 || !deleteChecked2) return;
+    if (!isOwner || !deleteChecked1 || !deleteChecked2) return;
     setConfirming(true);
     try {
       await deleteTournament(deletingId);
@@ -80,6 +83,7 @@ export default function TournamentsListPage() {
       render: (t) => {
         const bannerSrc = t.banner || t.bannerUrl;
         const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
+        const canEdit = isOwner || (t.editorUids && t.editorUids.includes(user?.uid));
         return (
           <Link href={`/tournaments/${t.id}`} className="text-gold" style={{ fontWeight: 600 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -91,7 +95,20 @@ export default function TournamentsListPage() {
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span>{t.name}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{t.name}</span>
+                  {isOperator && (
+                    canEdit ? (
+                      <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                        Editor
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(148, 163, 184, 0.15)', color: 'var(--text-muted)', border: '1px solid rgba(148, 163, 184, 0.3)' }}>
+                        Read-Only
+                      </span>
+                    )
+                  )}
+                </div>
                 {dateRange && (
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
                     {dateRange}
@@ -133,22 +150,27 @@ export default function TournamentsListPage() {
     {
       header: 'Actions',
       key: 'actions',
-      render: (t) => (
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <Link href={`/tournaments/${t.id}`} className="btn btn-secondary btn-sm">
-            Open
-          </Link>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ color: 'var(--danger)', padding: '5px 8px' }}
-            onClick={() => openDeleteModal(t.id, t.name)}
-            title="Delete Tournament"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      ),
+      render: (t) => {
+        const canEdit = isOwner || (t.editorUids && t.editorUids.includes(user?.uid));
+        return (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <Link href={`/tournaments/${t.id}`} className="btn btn-secondary btn-sm">
+              {canEdit ? 'Open' : 'View (Read-Only)'}
+            </Link>
+            {isOwner && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--danger)', padding: '5px 8px' }}
+                onClick={() => openDeleteModal(t.id, t.name)}
+                title="Delete Tournament"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -244,6 +266,7 @@ export default function TournamentsListPage() {
           {filtered.map(t => {
             const bannerSrc = t.banner || t.bannerUrl;
             const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
+            const canEdit = isOwner || (t.editorUids && t.editorUids.includes(user?.uid));
 
             return (
               <div
@@ -276,6 +299,17 @@ export default function TournamentsListPage() {
                         {t.season || '—'}
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {isOperator && (
+                          canEdit ? (
+                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                              Editor
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(148, 163, 184, 0.15)', color: 'var(--text-muted)', border: '1px solid rgba(148, 163, 184, 0.3)' }}>
+                              Read-Only
+                            </span>
+                          )
+                        )}
                         {t.isRanked && <TierBadge tier={t.rankedTier} size="xs" />}
                         <StatusBadge status={t.status} />
                       </div>
@@ -311,17 +345,19 @@ export default function TournamentsListPage() {
                 {/* Card Actions */}
                 <div style={{ padding: '12px 16px', background: 'rgba(15, 23, 42, 0.9)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Link href={`/tournaments/${t.id}`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
-                    Open Hub
+                    {canEdit ? 'Open Hub' : 'View Hub (Read-Only)'}
                   </Link>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{ color: 'var(--danger)', marginLeft: '8px', padding: '6px' }}
-                    onClick={() => openDeleteModal(t.id, t.name)}
-                    title="Delete Tournament"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {isOwner && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--danger)', marginLeft: '8px', padding: '6px' }}
+                      onClick={() => openDeleteModal(t.id, t.name)}
+                      title="Delete Tournament"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -336,8 +372,8 @@ export default function TournamentsListPage() {
         />
       )}
 
-      {/* Delete Confirmation Modal */}
-      {deletingId && (
+      {/* Delete Confirmation Modal (Owner Only) */}
+      {isOwner && deletingId && (
         <Modal title="⚠ Delete Tournament" onClose={closeDeleteModal}>
           <div className="space-y-4">
             <p className="text-sm text-text-secondary">

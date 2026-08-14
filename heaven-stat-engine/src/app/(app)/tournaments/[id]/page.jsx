@@ -1,9 +1,10 @@
 'use client';
 import { useTournament } from './layout';
+import { useAuth } from '@/contexts/AuthContext';
 import { StatusBadge, TierBadge } from '@/components/ui/Badge';
-import { Calendar, Trophy, Crosshair, Award, Plus, Trash2, Edit, Check, Shield, Medal, X } from 'lucide-react';
+import { Calendar, Trophy, Crosshair, Award, Plus, Trash2, Edit, Check, Shield, Medal, X, Lock, UserCheck, UserX, UserPlus, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { setTournamentStatus } from '@/lib/firestore/tournaments';
+import { setTournamentStatus, updateTournamentEditors } from '@/lib/firestore/tournaments';
 import { rankEvent } from '@/lib/firestore/rankEvent';
 import { getGroups, createGroup, updateGroup, deleteGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
@@ -16,8 +17,51 @@ const STATUS_FLOW = ['setup', 'active', 'completed', 'archived'];
 
 export default function TournamentOverviewPage() {
   const { tournament, refresh } = useTournament();
+  const { user, isOwner, isOperator } = useAuth();
   const router = useRouter();
   const [advancing, setAdvancing] = useState(false);
+
+  const canEdit = isOwner || (tournament?.editorUids && tournament.editorUids.includes(user?.uid));
+
+  // Access management state (Owner only)
+  const [newEditorUid, setNewEditorUid] = useState('');
+  const [updatingEditors, setUpdatingEditors] = useState(false);
+
+  const handleAddEditor = async () => {
+    if (!newEditorUid.trim()) return;
+    const cleanUid = newEditorUid.trim();
+    const currentEditors = tournament.editorUids || [];
+    if (currentEditors.includes(cleanUid)) {
+      toast.error('This user UID already has access');
+      return;
+    }
+    setUpdatingEditors(true);
+    try {
+      const updated = [...currentEditors, cleanUid];
+      await updateTournamentEditors(tournament.id, updated);
+      await refresh();
+      setNewEditorUid('');
+      toast.success(`Access granted to ${cleanUid}`);
+    } catch (err) {
+      toast.error('Failed to grant access: ' + err.message);
+    } finally {
+      setUpdatingEditors(false);
+    }
+  };
+
+  const handleRemoveEditor = async (uidToRemove) => {
+    setUpdatingEditors(true);
+    try {
+      const updated = (tournament.editorUids || []).filter(u => u !== uidToRemove);
+      await updateTournamentEditors(tournament.id, updated);
+      await refresh();
+      toast.success('Access revoked');
+    } catch (err) {
+      toast.error('Failed to revoke access: ' + err.message);
+    } finally {
+      setUpdatingEditors(false);
+    }
+  };
 
   // Ranked event state
   const [showRankPanel, setShowRankPanel]     = useState(false);
@@ -25,6 +69,7 @@ export default function TournamentOverviewPage() {
   const [rankingInProgress, setRankingInProgress] = useState(false);
 
   const handleRankEvent = async (isRanked) => {
+    if (!isOwner) { toast.error('Only the owner can rank events'); return; }
     if (isRanked && !selectedTier) { toast.error('Please select a tier.'); return; }
     setRankingInProgress(true);
     try {
@@ -77,6 +122,7 @@ export default function TournamentOverviewPage() {
   const currentIdx = STATUS_FLOW.indexOf(tournament.status);
 
   const handleAdvance = async () => {
+    if (!canEdit) { toast.error('Edit permission required'); return; }
     const next = STATUS_FLOW[currentIdx + 1];
     if (!next) return;
     if (!confirm(`Advance tournament to "${next}"?${next === 'active' ? '\nThis will lock structure and scoring config.' : ''}`)) return;
@@ -90,6 +136,7 @@ export default function TournamentOverviewPage() {
   };
 
   const handleAddGroup = async () => {
+    if (!canEdit) { toast.error('Edit permission required'); return; }
     if (!newGroup.groupName.trim()) {
       toast.error('Group name is required');
       return;
@@ -115,6 +162,7 @@ export default function TournamentOverviewPage() {
   };
 
   const handleSaveGroupEdit = async (groupId) => {
+    if (!canEdit) { toast.error('Edit permission required'); return; }
     if (!editingGroupData) return;
     try {
       await updateGroup(tournament.id, groupId, editingGroupData);
@@ -128,6 +176,7 @@ export default function TournamentOverviewPage() {
   };
 
   const handleGroupStatusChange = async (groupId, newStatus) => {
+    if (!canEdit) { toast.error('Edit permission required'); return; }
     try {
       await updateGroup(tournament.id, groupId, { status: newStatus });
       toast.success(`Group status updated to ${newStatus}`);
@@ -138,6 +187,7 @@ export default function TournamentOverviewPage() {
   };
 
   const handleDeleteGroup = async (groupId, name) => {
+    if (!isOwner) { toast.error('Only the owner can delete groups'); return; }
     if (!confirm(`Delete group "${name}"?`)) return;
     try {
       await deleteGroup(tournament.id, groupId);
@@ -150,6 +200,26 @@ export default function TournamentOverviewPage() {
 
   return (
     <div>
+      {/* Read-Only Notice for Operators without edit access */}
+      {isOperator && !canEdit && (
+        <div style={{
+          padding: '14px 18px',
+          borderRadius: 10,
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          color: '#93c5fd'
+        }}>
+          <Lock size={18} style={{ color: '#60a5fa', flexShrink: 0 }} />
+          <div>
+            <strong style={{ color: '#fff' }}>Read-Only View:</strong> You have view-only access to this tournament. Contact the owner to request editor permissions for data entry.
+          </div>
+        </div>
+      )}
+
       {/* Quick stats */}
       <div className="card-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
@@ -184,6 +254,83 @@ export default function TournamentOverviewPage() {
         </div>
       </div>
 
+      {/* ── Owner-Only Access Management ─────────────────────────────── */}
+      {isOwner && (
+        <div className="card" style={{ marginBottom: 24, border: '1px solid rgba(201,168,76,0.3)' }}>
+          <div className="flex-between" style={{ marginBottom: 14 }}>
+            <div>
+              <h3 className="card-title flex items-center gap-2" style={{ color: 'var(--gold)' }}>
+                <UserCheck size={18} />
+                Operator Access Management
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                Grant or revoke operator editor access for this specific tournament.
+              </p>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'var(--bg-alt-row)', padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)' }}>
+              {(tournament.editorUids || []).length} Editor{(tournament.editorUids || []).length !== 1 ? 's' : ''} Assigned
+            </span>
+          </div>
+
+          {/* Current editors list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {(!tournament.editorUids || tournament.editorUids.length === 0) ? (
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
+                No operators assigned. Only the Owner currently has edit access.
+              </p>
+            ) : (
+              tournament.editorUids.map(uid => (
+                <div key={uid} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  background: 'var(--bg-alt-row)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-md)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 700 }}>UID:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--text-primary)' }}>
+                      {uid}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: 'var(--danger)', padding: '3px 8px', fontSize: '0.78rem' }}
+                    onClick={() => handleRemoveEditor(uid)}
+                    disabled={updatingEditors}
+                    title="Revoke operator access"
+                  >
+                    <UserX size={13} /> Revoke
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Add operator form */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <input
+              className="form-input"
+              placeholder="Enter Operator User UID..."
+              value={newEditorUid}
+              onChange={e => setNewEditorUid(e.target.value)}
+              style={{ flex: 1, fontSize: '0.85rem' }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={handleAddEditor}
+              disabled={updatingEditors || !newEditorUid.trim()}
+            >
+              <UserPlus size={14} /> Grant Access
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Qualifier Groups Management section if type === 'qualifier' */}
       {tournament.type === 'qualifier' && (
         <div className="card" style={{ marginBottom: 24 }}>
@@ -194,21 +341,23 @@ export default function TournamentOverviewPage() {
                 Each group runs its own schedule and advances top teams.
               </p>
             </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => {
-                const nextChar = String.fromCharCode(65 + groups.length);
-                setNewGroup(prev => ({ ...prev, groupName: `Group ${nextChar}` }));
-                setShowAddGroup(v => !v);
-              }}
-            >
-              <Plus size={14} /> Add Group
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  const nextChar = String.fromCharCode(65 + groups.length);
+                  setNewGroup(prev => ({ ...prev, groupName: `Group ${nextChar}` }));
+                  setShowAddGroup(v => !v);
+                }}
+              >
+                <Plus size={14} /> Add Group
+              </button>
+            )}
           </div>
 
           {/* Add Group inline form */}
-          {showAddGroup && (
+          {canEdit && showAddGroup && (
             <div style={{ background: 'var(--bg-alt-row)', border: '1px solid var(--gold)', borderRadius: 10, padding: 16, marginBottom: 16 }}>
               <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--gold)', marginBottom: 12 }}>New Group Configuration</h4>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -280,7 +429,7 @@ export default function TournamentOverviewPage() {
 
                   {(newGroup.mapConfig?.mode || 'rigid') === 'rigid' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Map:</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Default Map:</span>
                       <select
                         className="form-select"
                         style={{ fontSize: '0.78rem', padding: '4px 8px' }}
@@ -301,83 +450,93 @@ export default function TournamentOverviewPage() {
             </div>
           )}
 
-          {groups.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No groups defined yet. Click "Add Group" to create one.</p>
+          {/* Groups List */}
+          {loadingGroups ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading qualifier groups...</p>
+          ) : groups.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No groups found. Add a group above.</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {groups.map(g => {
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {groups.map((g) => {
                 const isEditingThis = editingGroupId === g.id;
                 return (
                   <div
                     key={g.id}
                     style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 12,
-                      padding: '14px 18px',
                       background: 'var(--bg-alt-row)',
                       border: '1px solid var(--border-md)',
-                      borderRadius: 10,
+                      borderRadius: 8,
+                      padding: 14,
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                          <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--gold)' }}>{g.groupName}</span>
-                          <StatusBadge status={g.status || 'setup'} />
-                        </div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                          Days: {g.structure?.totalDays || 6} · Lobbies: {g.structure?.lobbiesPerDay || 4} · Advances: Top {g.advancementCount || 2} teams
-                          {' · '}
-                          Map: {g.mapConfig?.mode === 'flexible' ? 'Flexible' : `Rigid (${g.mapConfig?.map || 'Isolated'})`}
-                        </div>
+                    <div className="flex-between" style={{ marginBottom: isEditingThis ? 12 : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                          {g.groupName}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {g.structure?.totalDays || 6} Days · {g.structure?.lobbiesPerDay || 4} Lobbies/Day
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 600 }}>
+                          Top {g.advancementCount || 2} Advance
+                        </span>
+                        <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)' }}>
+                          Map: {g.mapConfig?.mode === 'flexible' ? 'Flexible' : (g.mapConfig?.map || 'Isolated')}
+                        </span>
                       </div>
 
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <select
-                          className="form-select"
-                          style={{ fontSize: '0.78rem', padding: '4px 8px' }}
-                          value={g.status || 'setup'}
-                          onChange={e => handleGroupStatusChange(g.id, e.target.value)}
-                        >
-                          <option value="setup">Setup</option>
-                          <option value="active">Active</option>
-                          <option value="completed">Completed</option>
-                        </select>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: '6px 10px', fontSize: '0.78rem' }}
-                          onClick={() => {
-                            if (isEditingThis) {
-                              setEditingGroupId(null);
-                              setEditingGroupData(null);
-                            } else {
-                              setEditingGroupId(g.id);
-                              setEditingGroupData({
-                                groupName: g.groupName,
-                                structure: g.structure || { totalDays: 6, lobbiesPerDay: 4 },
-                                mapConfig: g.mapConfig || { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} },
-                                advancementCount: g.advancementCount || 2,
-                              });
-                            }
-                          }}
-                        >
-                          {isEditingThis ? 'Cancel' : 'Edit Map'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          style={{ padding: '6px', color: 'var(--danger)' }}
-                          onClick={() => handleDeleteGroup(g.id, g.groupName)}
-                          title="Delete group"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {canEdit && (
+                          <select
+                            className="form-select"
+                            style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                            value={g.status || 'setup'}
+                            onChange={(e) => handleGroupStatusChange(g.id, e.target.value)}
+                          >
+                            <option value="setup">Setup</option>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                            <option value="archived">Archived</option>
+                          </select>
+                        )}
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '6px 10px', fontSize: '0.78rem' }}
+                            onClick={() => {
+                              if (isEditingThis) {
+                                setEditingGroupId(null);
+                                setEditingGroupData(null);
+                              } else {
+                                setEditingGroupId(g.id);
+                                setEditingGroupData({
+                                  groupName: g.groupName,
+                                  structure: g.structure || { totalDays: 6, lobbiesPerDay: 4 },
+                                  mapConfig: g.mapConfig || { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} },
+                                  advancementCount: g.advancementCount || 2,
+                                });
+                              }
+                            }}
+                          >
+                            {isEditingThis ? 'Cancel' : 'Edit Map'}
+                          </button>
+                        )}
+                        {isOwner && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ padding: '6px', color: 'var(--danger)' }}
+                            onClick={() => handleDeleteGroup(g.id, g.groupName)}
+                            title="Delete group"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    {isEditingThis && editingGroupData && (
+                    {isEditingThis && editingGroupData && canEdit && (
                       <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 12, marginTop: 4 }}>
                         <h5 style={{ fontSize: '0.8rem', color: 'var(--gold)', marginBottom: 8, fontWeight: 700 }}>Edit Group Map Config</h5>
                         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
@@ -445,112 +604,109 @@ export default function TournamentOverviewPage() {
         </div>
       )}
 
-      {/* ── Ranked Event Card ─────────────────────────────────────── */}
-      <div className="card" style={{ marginBottom: 20, border: tournament.isRanked ? '1px solid rgba(201,168,76,0.45)' : '1px solid var(--border-md)', position: 'relative', overflow: 'hidden' }}>
-        {tournament.isRanked && (
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #b8860b, #C9A84C, #d4a017)' }} />
-        )}
-        <div className="flex-between" style={{ marginBottom: showRankPanel ? 16 : 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: tournament.isRanked ? 'linear-gradient(135deg,#b8860b,#d4a017)' : 'var(--bg-alt-row)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Medal size={18} style={{ color: tournament.isRanked ? '#fff' : 'var(--text-muted)' }} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h3 className="card-title" style={{ margin: 0 }}>Ranked Event Status</h3>
-                {tournament.isRanked && <TierBadge tier={tournament.rankedTier} />}
+      {/* ── Ranked Event Card (Owner Only) ─────────────────────────── */}
+      {isOwner && (
+        <div className="card" style={{ marginBottom: 20, border: tournament.isRanked ? '1px solid rgba(201,168,76,0.45)' : '1px solid var(--border-md)', position: 'relative', overflow: 'hidden' }}>
+          {tournament.isRanked && (
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #b8860b, #C9A84C, #d4a017)' }} />
+          )}
+          <div className="flex-between" style={{ marginBottom: showRankPanel ? 16 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: tournament.isRanked ? 'linear-gradient(135deg,#b8860b,#d4a017)' : 'var(--bg-alt-row)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Medal size={18} style={{ color: tournament.isRanked ? '#fff' : 'var(--text-muted)' }} />
               </div>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, marginTop: 2 }}>
-                {tournament.isRanked
-                  ? `This event is ranked. Teams & players have been labelled ${tournament.rankedTier}.`
-                  : 'Mark this event as ranked to apply tier labels to all participants.'}
-              </p>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h3 className="card-title" style={{ margin: 0 }}>Ranked Event Status</h3>
+                  {tournament.isRanked && <TierBadge tier={tournament.rankedTier} />}
+                </div>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, marginTop: 2 }}>
+                  {tournament.isRanked
+                    ? `This event is ranked. Teams & players have been labelled ${tournament.rankedTier}.`
+                    : 'Mark this event as ranked to apply tier labels to all participants.'}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {tournament.isRanked ? (
+                <>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowRankPanel(v => !v)}
+                  >
+                    Change Tier
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleRankEvent(false)}
+                    disabled={rankingInProgress}
+                  >
+                    {rankingInProgress ? 'Removing...' : 'Remove Ranking'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setShowRankPanel(v => !v)}
+                >
+                  <Medal size={14} /> Rank This Event
+                </button>
+              )}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {tournament.isRanked && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--danger)', fontSize: '0.78rem' }}
-                onClick={() => { setSelectedTier(tournament.rankedTier || 'Tier 1'); setShowRankPanel(v => !v); }}
-                disabled={rankingInProgress}
-              >
-                <Edit size={13} /> Edit Tier
-              </button>
-            )}
-            {tournament.isRanked && !showRankPanel && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ color: 'var(--danger)', fontSize: '0.78rem' }}
-                onClick={() => { if (confirm('Remove ranking from this tournament? Tier labels will be recalculated.')) handleRankEvent(false); }}
-                disabled={rankingInProgress}
-              >
-                {rankingInProgress ? 'Processing…' : <><X size={13} /> Remove Ranking</>}
-              </button>
-            )}
-            {!tournament.isRanked && (
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                style={{ background: 'linear-gradient(135deg,#b8860b,#C9A84C)', border: 'none' }}
-                onClick={() => { setSelectedTier('Tier 1'); setShowRankPanel(v => !v); }}
-                disabled={rankingInProgress}
-              >
-                <Medal size={13} /> Mark as Ranked
-              </button>
-            )}
-          </div>
-        </div>
 
-        {/* Tier selection panel */}
-        {showRankPanel && (
-          <div style={{ background: 'rgba(0,0,0,0.18)', borderRadius: 10, padding: '16px 20px', border: '1px solid rgba(201,168,76,0.25)' }}>
-            <p style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', marginBottom: 12 }}>Select Tier</p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-              {TIER_OPTIONS.map(t => {
-                const cfg = {
-                  'Tier 1': { icon: '🏅', desc: 'Top-level championship', color: '#C9A84C' },
-                  'Tier 2': { icon: '🥈', desc: 'High-level competitive', color: '#9ca3af' },
-                  'Tier 3': { icon: '🥉', desc: 'Competitive league', color: '#b45309' },
-                }[t];
-                const isSelected = selectedTier === t;
-                return (
+          {/* Rank panel accordion */}
+          {showRankPanel && (
+            <div style={{
+              marginTop: 16,
+              paddingTop: 16,
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+            }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                Select the tier level for this tournament. All teams and players registered in this event
+                will have this tier assigned to their career record.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {TIER_OPTIONS.map(tier => (
                   <button
-                    key={t}
+                    key={tier}
                     type="button"
-                    onClick={() => setSelectedTier(t)}
+                    onClick={() => setSelectedTier(tier)}
                     style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                      padding: '12px 20px', borderRadius: 10, cursor: 'pointer',
-                      background: isSelected ? `${cfg.color}22` : 'var(--bg-card)',
-                      border: `2px solid ${isSelected ? cfg.color : 'var(--border-md)'}`,
-                      transition: 'all 0.15s', minWidth: 110,
+                      padding: '8px 16px',
+                      borderRadius: 8,
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      border: `1px solid ${selectedTier === tier ? 'var(--gold)' : 'var(--border-md)'}`,
+                      background: selectedTier === tier ? 'rgba(201,168,76,0.18)' : 'var(--bg-alt-row)',
+                      color: selectedTier === tier ? 'var(--gold)' : 'var(--text-secondary)',
+                      transition: 'all 0.15s',
                     }}
                   >
-                    <span style={{ fontSize: '1.5rem' }}>{cfg.icon}</span>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: isSelected ? cfg.color : 'var(--text-primary)' }}>{t}</span>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{cfg.desc}</span>
+                    {tier}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowRankPanel(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => handleRankEvent(true)}
+                  disabled={rankingInProgress}
+                >
+                  {rankingInProgress ? 'Calculating...' : `Confirm as ${selectedTier}`}
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowRankPanel(false)}>Cancel</button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                style={{ background: 'linear-gradient(135deg,#b8860b,#C9A84C)', border: 'none' }}
-                disabled={rankingInProgress}
-                onClick={() => handleRankEvent(true)}
-              >
-                {rankingInProgress ? 'Processing…' : `Confirm — ${selectedTier}`}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Status stepper */}
       <div className="card" style={{ marginBottom: 20 }}>
@@ -586,14 +742,16 @@ export default function TournamentOverviewPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 12 }}>
-          {currentIdx < STATUS_FLOW.length - 1 && (
+          {canEdit && currentIdx < STATUS_FLOW.length - 1 && (
             <button className="btn btn-primary" onClick={handleAdvance} disabled={advancing}>
               {advancing ? 'Advancing...' : `Advance to ${STATUS_FLOW[currentIdx + 1]}`}
             </button>
           )}
-          <button className="btn btn-secondary" onClick={() => router.push(`/tournaments/${tournament.id}/config`)}>
-            {tournament.status === 'setup' ? 'Edit Configuration' : 'View Configuration'}
-          </button>
+          {isOwner && (
+            <button className="btn btn-secondary" onClick={() => router.push(`/tournaments/${tournament.id}/config`)}>
+              {tournament.status === 'setup' ? 'Edit Configuration' : 'View Configuration'}
+            </button>
+          )}
         </div>
       </div>
 

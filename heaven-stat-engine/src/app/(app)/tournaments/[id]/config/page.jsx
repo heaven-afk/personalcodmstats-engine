@@ -65,12 +65,22 @@ const PRESETS = {
   }
 };
 
+import { useAuth } from '@/contexts/AuthContext';
+
 export default function EditTournamentConfigPage() {
   const router = useRouter();
   const { id } = useParams();
   const { tournament, refresh, setTournament } = useTournament();
+  const { isOperator, loading: authLoading } = useAuth();
 
-  if (!tournament) return null;
+  useEffect(() => {
+    if (!authLoading && isOperator) {
+      toast.error('Access restricted: you do not have permission to view this page.');
+      router.replace('/tournaments');
+    }
+  }, [authLoading, isOperator, router]);
+
+  if (authLoading || isOperator || !tournament) return null;
 
   return (
     <TournamentConfigForm
