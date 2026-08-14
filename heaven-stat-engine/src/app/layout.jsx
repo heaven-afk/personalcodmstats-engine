@@ -5,8 +5,8 @@ export const metadata = {
   title: 'Heaven Stat Engine',
   description: 'Personal tournament stat platform for CODM Battle Royale',
   icons: {
-    icon: '/brand/06_app_favicon.png',
-    apple: '/brand/06_app_favicon.png',
+    icon: '/brand/heaven_stat_engine_app_icon.png',
+    apple: '/brand/heaven_stat_engine_app_icon.png',
   },
 };
 

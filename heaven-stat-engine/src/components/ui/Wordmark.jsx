@@ -4,7 +4,7 @@ export default function Wordmark({ size = 'md', className = '', showText = true 
   const isSm = size === 'sm';
   const isLg = size === 'lg';
 
-  const iconDim = isSm ? 32 : isLg ? 48 : 38;
+  const iconDim = isSm ? 34 : isLg ? 52 : 40;
   const titleSize = isSm ? '1.05rem' : isLg ? '1.75rem' : '1.35rem';
   const subSize = isSm ? '0.62rem' : isLg ? '0.78rem' : '0.70rem';
 
@@ -15,19 +15,15 @@ export default function Wordmark({ size = 'md', className = '', showText = true 
         style={{
           width: iconDim,
           height: iconDim,
-          borderRadius: isSm ? 8 : 12,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
-          overflow: 'hidden',
-          boxShadow: '0 4px 16px rgba(201, 168, 76, 0.25)',
-          background: 'rgba(0,0,0,0.3)',
-          border: '1px solid rgba(201, 168, 76, 0.2)',
+          filter: 'drop-shadow(0 4px 12px rgba(201, 168, 76, 0.35))',
         }}
       >
         <img
-          src="/brand/02_icon_mark.png"
+          src="/brand/heaven_stat_engine_icon.png"
           alt="Heaven Stat Engine"
           width={iconDim}
           height={iconDim}
