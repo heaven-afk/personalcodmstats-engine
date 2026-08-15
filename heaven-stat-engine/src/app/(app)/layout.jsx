@@ -2,9 +2,12 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import Sidebar from '@/components/layout/Sidebar';
+import Wordmark from '@/components/ui/Wordmark';
+import UserAvatar from '@/components/ui/UserAvatar';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { Menu, Zap } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 const OWNER_ONLY_PREFIXES = [
   '/comparison',
@@ -16,7 +19,7 @@ const OWNER_ONLY_PREFIXES = [
 ];
 
 export default function AppLayout({ children }) {
-  const { user, loading, isOperator } = useAuth();
+  const { user, profile, displayName, loading, isOperator, role, isOwner } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -49,20 +52,46 @@ export default function AppLayout({ children }) {
   return (
     <div className="app-shell">
       {/* Mobile Topbar */}
-      <header className="mobile-topbar" style={{ display: 'none' }}>
-        <div className="mobile-logo">
-          <div className="mobile-logo-icon">
-            <Zap size={16} className="text-black" />
-          </div>
-          <span className="mobile-logo-title">Heaven</span>
+      <header className="mobile-topbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button 
+            className="mobile-nav-toggle"
+            onClick={toggleSidebar}
+            aria-label="Toggle navigation"
+          >
+            <Menu size={18} />
+          </button>
+          <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center' }}>
+            <Wordmark size="sm" />
+          </Link>
         </div>
-        <button 
-          className="mobile-nav-toggle"
-          onClick={toggleSidebar}
-          aria-label="Toggle navigation"
-        >
-          <Menu size={20} />
-        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {role && (
+            <span style={{
+              fontSize: '0.62rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              padding: '2px 6px',
+              borderRadius: 4,
+              fontWeight: 700,
+              background: isOwner ? 'rgba(201,168,76,0.15)' : 'rgba(59,130,246,0.15)',
+              color: isOwner ? 'var(--gold)' : '#60a5fa',
+              border: `1px solid ${isOwner ? 'rgba(201,168,76,0.3)' : 'rgba(59,130,246,0.3)'}`,
+            }}>
+              {isOwner ? '👑' : '🛠️'}
+            </span>
+          )}
+          <Link href="/profile" style={{ display: 'flex', alignItems: 'center' }} title="Profile & Settings">
+            <UserAvatar
+              src={profile?.avatarUrl}
+              name={displayName}
+              uid={user?.uid}
+              size="sm"
+              showPresence={true}
+            />
+          </Link>
+        </div>
       </header>
 
       {/* Sidebar Backdrop Overlay */}

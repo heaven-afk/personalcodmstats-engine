@@ -101,6 +101,10 @@ input, select, textarea { font-family: var(--font); }
   background: var(--bg-app);
 }
 
+.mobile-topbar {
+  display: none;
+}
+
 /* ═══════════════════════════════════════════════════════════
    SIDEBAR
 ═══════════════════════════════════════════════════════════ */
