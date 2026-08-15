@@ -6,13 +6,15 @@ import Wordmark from '@/components/ui/Wordmark';
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
-  const { login, isDemoMode } = useAuth();
+  const { login, isDemoMode, authError } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  const displayError = errorMsg || authError;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -108,7 +110,7 @@ export default function LoginPage() {
         )}
 
         {/* Error Alert Message Box */}
-        {errorMsg && (
+        {displayError && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -123,7 +125,7 @@ export default function LoginPage() {
             lineHeight: 1.4,
           }}>
             <AlertCircle size={18} style={{ flexShrink: 0 }} />
-            <span>{errorMsg}</span>
+            <span>{displayError}</span>
           </div>
         )}
 

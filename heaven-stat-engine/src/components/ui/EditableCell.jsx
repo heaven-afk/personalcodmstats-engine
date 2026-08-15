@@ -19,21 +19,23 @@ export default function EditableCell({
   cellId,
 }) {
   const [editing, setEditing] = useState(false);
-  const [localVal, setLocalVal] = useState(value ?? '');
+  const [draftVal, setDraftVal] = useState(null);
   const inputRef = useRef(null);
 
-  useEffect(() => { setLocalVal(value ?? ''); }, [value]);
+  const localVal = draftVal !== null ? draftVal : (value ?? '');
 
   const startEdit = () => {
     if (disabled) return;
+    setDraftVal(value ?? '');
     setEditing(true);
     setTimeout(() => inputRef.current?.select(), 0);
   };
 
   const commit = useCallback(() => {
     setEditing(false);
-    if (onBlur) onBlur(localVal);
-  }, [localVal, onBlur]);
+    if (onBlur && draftVal !== null) onBlur(draftVal);
+    setDraftVal(null);
+  }, [draftVal, onBlur]);
 
   const handleKey = (e) => {
     if (e.key === 'Enter' || e.key === 'Tab') {
@@ -46,7 +48,10 @@ export default function EditableCell({
         cells[idx + 1].click();
       }
     }
-    if (e.key === 'Escape') { setLocalVal(value ?? ''); setEditing(false); }
+    if (e.key === 'Escape') {
+      setDraftVal(null);
+      setEditing(false);
+    }
   };
 
   const displayVal = (localVal !== '' && localVal !== null && localVal !== undefined)
@@ -64,7 +69,10 @@ export default function EditableCell({
         step={step}
         autoFocus
         className={`editable-input ${className}`}
-        onChange={(e) => { setLocalVal(e.target.value); if (onChange) onChange(e.target.value); }}
+        onChange={(e) => {
+          setDraftVal(e.target.value);
+          if (onChange) onChange(e.target.value);
+        }}
         onBlur={commit}
         onKeyDown={handleKey}
       />

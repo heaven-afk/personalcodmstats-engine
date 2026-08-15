@@ -95,6 +95,23 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
+    // ─── User Allowlist & Identity ─────────────────────────────────────
+    // Any authenticated user can read allowlist documents (needed for profile & presence lookups)
+    // Only owners can create or delete allowed users.
+    // Users can update their own profile fields (username, avatarUrl) but cannot change role, email, or addedBy.
+    match /allowedUsers/{email} {
+      allow read: if isSignedIn();
+      allow create, delete: if isOwner();
+      allow update: if isSignedIn() && (
+        isOwner() || (
+          request.auth.token.email.lower() == email.lower() &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.addedBy == resource.data.addedBy &&
+          request.resource.data.addedAt == resource.data.addedAt
+        )
+      );
+    }
+
     // ─── Fallback rule for any other collection ───────────────────────
     match /{document=**} {
       allow read: if true;

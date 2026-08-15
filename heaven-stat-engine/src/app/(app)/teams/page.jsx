@@ -16,10 +16,58 @@ import { scanForDuplicates, cleanTeamName } from '@/lib/utils/similarity';
 import { cleanImageUrl } from '@/lib/utils/image';
 import { useAuth } from '@/contexts/AuthContext';
 
+import useSWR from 'swr';
+
+async function fetchTeamsData() {
+  const [allTeams, allTourneys] = await Promise.all([
+    getTeams(),
+    getTournaments()
+  ]);
+
+  const regsPromises = allTourneys.map(t => getTeamRegistrations(t.id));
+  const resPromises = allTourneys.map(t => getTeamMatchResults(t.id));
+  const bonusPromises = allTourneys.map(t => getBonusPoints(t.id));
+
+  const allRegs = await Promise.all(regsPromises);
+  const allRes = await Promise.all(resPromises);
+  const allBonuses = await Promise.all(bonusPromises);
+
+  const teamStatsMap = {};
+  allTeams.forEach(t => {
+    teamStatsMap[t.id] = {
+      ...t,
+      careerWins: 0,
+      careerTotalPts: 0,
+      tournamentsCount: 0,
+    };
+  });
+
+  allTourneys.forEach((t, index) => {
+    const tRegs = allRegs[index];
+    const tRes = allRes[index];
+    const tBonuses = allBonuses[index];
+
+    const ranking = computeTeamRanking(tRes, tBonuses, t.scoring || {});
+
+    ranking.forEach(tr => {
+      const teamReg = tRegs.find(r => r.teamId === tr.teamId);
+      if (teamReg) {
+        const tid = teamReg.teamId;
+        if (teamStatsMap[tid]) {
+          teamStatsMap[tid].careerWins += tr.wins || 0;
+          teamStatsMap[tid].careerTotalPts += tr.totalPts || 0;
+          teamStatsMap[tid].tournamentsCount += 1;
+        }
+      }
+    });
+  });
+
+  return Object.values(teamStatsMap);
+}
+
 export default function TeamsPage() {
   const { isOwner } = useAuth();
-  const [teams, setTeams] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: teams = [], isLoading: loading, mutate } = useSWR('teams-data', fetchTeamsData);
   const [reloading, setReloading] = useState(false);
 
   // Filters
@@ -36,63 +84,9 @@ export default function TeamsPage() {
   const [cleanPreviews, setCleanPreviews] = useState([]);
   const [cleaning, setCleaning] = useState(false);
 
-  async function loadTeamsData() {
-    try {
-      const [allTeams, allTourneys] = await Promise.all([
-        getTeams(),
-        getTournaments()
-      ]);
-
-      const regsPromises = allTourneys.map(t => getTeamRegistrations(t.id));
-      const resPromises = allTourneys.map(t => getTeamMatchResults(t.id));
-      const bonusPromises = allTourneys.map(t => getBonusPoints(t.id));
-
-      const allRegs = await Promise.all(regsPromises);
-      const allRes = await Promise.all(resPromises);
-      const allBonuses = await Promise.all(bonusPromises);
-
-      const teamStatsMap = {};
-      allTeams.forEach(t => {
-        teamStatsMap[t.id] = {
-          ...t,
-          careerWins: 0,
-          careerTotalPts: 0,
-          tournamentsCount: 0,
-        };
-      });
-
-      allTourneys.forEach((t, index) => {
-        const tRegs = allRegs[index];
-        const tRes = allRes[index];
-        const tBonuses = allBonuses[index];
-
-        const ranking = computeTeamRanking(tRes, tBonuses, t.scoring || {});
-
-        ranking.forEach(tr => {
-          const teamReg = tRegs.find(r => r.teamId === tr.teamId);
-          if (teamReg) {
-            const tid = teamReg.teamId;
-            if (teamStatsMap[tid]) {
-              teamStatsMap[tid].careerWins += tr.wins || 0;
-              teamStatsMap[tid].careerTotalPts += tr.totalPts || 0;
-              teamStatsMap[tid].tournamentsCount += 1;
-            }
-          }
-        });
-      });
-
-      setTeams(Object.values(teamStatsMap));
-    } catch (err) {
-      toast.error('Failed to load teams: ' + err.message);
-    } finally {
-      setLoading(false);
-      setReloading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadTeamsData();
-  }, []);
+  const loadTeamsData = async () => {
+    return mutate();
+  };
 
   // Scan for duplicate pairs Reactively
   const duplicatePairs = scanForDuplicates(teams, 0.75);

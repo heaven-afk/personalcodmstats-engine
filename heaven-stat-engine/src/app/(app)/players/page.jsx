@@ -11,85 +11,75 @@ import { Users, Search, ExternalLink, Award, Cpu, Globe, Trash2 } from 'lucide-r
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
+import useSWR from 'swr';
+
+async function fetchPlayersData() {
+  const [allPlayers, allTourneys] = await Promise.all([
+    getPlayers(),
+    getTournaments(),
+  ]);
+
+  // Fetch match data for all tournaments to aggregate career stats dynamically
+  const resultsPromises = allTourneys.map(t => getPlayerMatchResults(t.id));
+  const regsPromises = allTourneys.map(t => getPlayerRegistrations(t.id));
+  
+  const allResults = await Promise.all(resultsPromises);
+  const allRegs = await Promise.all(regsPromises);
+
+  // Aggregate stats
+  const playerStatsMap = {};
+  allPlayers.forEach(p => {
+    playerStatsMap[p.id] = {
+      ...p,
+      careerKills: 0,
+      careerMatches: 0,
+      tournamentsCount: 0,
+      lastClass: 'Class 1',
+    };
+  });
+
+  allTourneys.forEach((t, index) => {
+    const tResults = allResults[index];
+    const tRegs = allRegs[index];
+
+    // Map registrations for this tournament
+    const regMap = {};
+    tRegs.forEach(r => {
+      regMap[r.playerId] = r;
+    });
+
+    // Accumulate kills & matches
+    tResults.forEach(res => {
+      const pid = res.playerId;
+      if (playerStatsMap[pid]) {
+        playerStatsMap[pid].careerKills += res.kills || 0;
+        playerStatsMap[pid].careerMatches += 1;
+      }
+    });
+
+    // Increment tournament count
+    tRegs.forEach(r => {
+      const pid = r.playerId;
+      if (playerStatsMap[pid]) {
+        playerStatsMap[pid].tournamentsCount += 1;
+        if (r.class) {
+          playerStatsMap[pid].lastClass = r.class;
+        }
+      }
+    });
+  });
+
+  return Object.values(playerStatsMap);
+}
+
 export default function PlayersPage() {
   const { isOwner } = useAuth();
-  const [players, setPlayers] = useState([]);
-  const [tournaments, setTournaments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: players = [], isLoading: loading, mutate } = useSWR('players-data', fetchPlayersData);
   
   // Filters
   const [search, setSearch] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
-
-  useEffect(() => {
-    async function loadPlayersData() {
-      try {
-        const [allPlayers, allTourneys] = await Promise.all([
-          getPlayers(),
-          getTournaments(),
-        ]);
-        setTournaments(allTourneys);
-
-        // Fetch match data for all tournaments to aggregate career stats dynamically
-        const resultsPromises = allTourneys.map(t => getPlayerMatchResults(t.id));
-        const regsPromises = allTourneys.map(t => getPlayerRegistrations(t.id));
-        
-        const allResults = await Promise.all(resultsPromises);
-        const allRegs = await Promise.all(regsPromises);
-
-        // Aggregate stats
-        const playerStatsMap = {};
-        allPlayers.forEach(p => {
-          playerStatsMap[p.id] = {
-            ...p,
-            careerKills: 0,
-            careerMatches: 0,
-            tournamentsCount: 0,
-            lastClass: 'Class 1',
-          };
-        });
-
-        allTourneys.forEach((t, index) => {
-          const tResults = allResults[index];
-          const tRegs = allRegs[index];
-
-          // Map registrations for this tournament
-          const regMap = {};
-          tRegs.forEach(r => {
-            regMap[r.playerId] = r;
-          });
-
-          // Accumulate kills & matches
-          tResults.forEach(res => {
-            const pid = res.playerId;
-            if (playerStatsMap[pid]) {
-              playerStatsMap[pid].careerKills += res.kills || 0;
-              playerStatsMap[pid].careerMatches += 1;
-            }
-          });
-
-          // Increment tournament count
-          tRegs.forEach(r => {
-            const pid = r.playerId;
-            if (playerStatsMap[pid]) {
-              playerStatsMap[pid].tournamentsCount += 1;
-              if (r.class) {
-                playerStatsMap[pid].lastClass = r.class;
-              }
-            }
-          });
-        });
-
-        setPlayers(Object.values(playerStatsMap));
-      } catch (err) {
-        toast.error('Failed to load players: ' + err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadPlayersData();
-  }, []);
 
   // Filter players
   const filteredPlayers = players.filter(p => {
@@ -111,7 +101,8 @@ export default function PlayersPage() {
     try {
       await deletePlayer(id);
       toast.success(`Player "${name}" deleted from registry`);
-      setPlayers(prev => prev.filter(p => p.id !== id));
+      mutate(players.filter(p => p.id !== id), false);
+      mutate();
     } catch (e) {
       toast.error('Failed to delete player: ' + e.message);
     }

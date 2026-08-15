@@ -12,12 +12,13 @@ import Modal from '@/components/ui/Modal';
 import { Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search, Medal, Eye, Edit3, ShieldAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import useSWR from 'swr';
+
 const STATUS_OPTIONS = ['all', 'setup', 'active', 'completed', 'archived'];
 
 export default function TournamentsListPage() {
   const { user, isOwner, isOperator } = useAuth();
-  const [tournaments, setTournaments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: tournaments = [], isLoading: loading, mutate } = useSWR('tournaments', getTournaments);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
@@ -50,20 +51,14 @@ export default function TournamentsListPage() {
       await deleteTournament(deletingId);
       toast.success('Tournament deleted successfully');
       closeDeleteModal();
-      const updated = await getTournaments();
-      setTournaments(updated);
+      mutate(tournaments.filter(t => t.id !== deletingId), false);
+      mutate();
     } catch (err) {
       toast.error('Failed to delete tournament: ' + err.message);
     } finally {
       setConfirming(false);
     }
   };
-
-  useEffect(() => {
-    getTournaments()
-      .then(setTournaments)
-      .finally(() => setLoading(false));
-  }, []);
 
   const filtered = tournaments.filter(t => {
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
