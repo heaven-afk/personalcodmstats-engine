@@ -7,7 +7,7 @@ import { getPlacementPoints, applyTiebreakers } from './scoring';
 
 // ─── Daily standings ──────────────────────────────────────────────────────────
 export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConfig, day) {
-  const { killPointValue = 2, placementPoints = [] } = scoringConfig;
+  const { killPointValue = 2, placementPoints = [] } = scoringConfig || {};
 
   const dayResults = teamMatchResults.filter((r) => r.day === day);
   const dayBonuses = bonusPoints.filter((b) => b.day === day);
@@ -74,7 +74,7 @@ export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConf
 
 // ─── Season collation ─────────────────────────────────────────────────────────
 export function computeSeasonStandings(teamMatchResults, bonusPoints, scoringConfig) {
-  const { killPointValue = 2, placementPoints = [] } = scoringConfig;
+  const { killPointValue = 2, placementPoints = [] } = scoringConfig || {};
 
   const teamMap = {};
 

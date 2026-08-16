@@ -87,6 +87,7 @@ export default function StandingsPage() {
   const [newTournamentName, setNewTournamentName] = useState('');
   const [advancing, setAdvancing] = useState(false);
 
+  const scoring = tournament?.scoring || { killPointValue: 2, placementPoints: [], bonusTypes: [] };
   const isQualifier = tournament?.type === 'qualifier';
 
   const { data, isLoading, mutate } = useSWR(
@@ -184,10 +185,16 @@ export default function StandingsPage() {
   }, [playerRegs, selectedGroupId]);
 
   // Compute standings per group using EXACT unmodified core engine functions
-  const daily = useMemo(() => computeDailyStandings(groupTeamResults, groupBonuses, tournament.scoring, selectedDay), [groupTeamResults, groupBonuses, tournament.scoring, selectedDay]);
-  const season = useMemo(() => computeSeasonStandings(groupTeamResults, groupBonuses, tournament.scoring), [groupTeamResults, groupBonuses, tournament.scoring]);
-  const teamRanking = useMemo(() => computeTeamRanking(groupTeamResults, groupBonuses, tournament.scoring), [groupTeamResults, groupBonuses, tournament.scoring]);
+  const daily = useMemo(() => computeDailyStandings(groupTeamResults, groupBonuses, scoring, selectedDay), [groupTeamResults, groupBonuses, scoring, selectedDay]);
+  const season = useMemo(() => computeSeasonStandings(groupTeamResults, groupBonuses, scoring), [groupTeamResults, groupBonuses, scoring]);
+  const teamRanking = useMemo(() => computeTeamRanking(groupTeamResults, groupBonuses, scoring), [groupTeamResults, groupBonuses, scoring]);
   const clanRanking = useMemo(() => computeClanRanking(teamRanking), [teamRanking]);
+
+  // Group-scoped player stats
+  const groupPlayerStats = useMemo(() => computePlayerStats(groupPlayerResults, groupPlayerRegs, tournament), [groupPlayerResults, groupPlayerRegs, tournament]);
+  const set1Players = useMemo(() => filterSet1Players(groupPlayerStats), [groupPlayerStats]);
+  const set2Players = useMemo(() => filterSet2Players(groupPlayerStats), [groupPlayerStats]);
+  const combined = useMemo(() => sortCombined(groupPlayerStats), [groupPlayerStats]);
 
   // Map-filtered statistics using activeMapConfig
   const activeMapConfig = getActiveMapConfig(tournament, selectedGroup);
@@ -205,8 +212,8 @@ export default function StandingsPage() {
   }, [groupPlayerResults, activeMapConfig, selectedMapSubTab]);
 
   const mapTeamRanking = useMemo(() => {
-    return computeTeamRanking(mapFilteredTeamResults, mapFilteredBonuses, tournament.scoring);
-  }, [mapFilteredTeamResults, mapFilteredBonuses, tournament.scoring]);
+    return computeTeamRanking(mapFilteredTeamResults, mapFilteredBonuses, scoring);
+  }, [mapFilteredTeamResults, mapFilteredBonuses, scoring]);
 
   const mapPlayerStats = useMemo(() => {
     return computePlayerStats(mapFilteredPlayerResults, groupPlayerRegs, tournament);
@@ -665,7 +672,7 @@ export default function StandingsPage() {
               {mapTeamRanking.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No team matches played on {selectedMapSubTab} yet.</p>
               ) : (
-                <TeamTable data={mapTeamRanking} scoring={tournament.scoring} showRank={true} teamMap={teamMap} />
+                <TeamTable data={mapTeamRanking} scoring={scoring} showRank={true} teamMap={teamMap} />
               )}
             </div>
 
