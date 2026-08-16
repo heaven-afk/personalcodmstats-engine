@@ -1,6 +1,7 @@
 'use client';
 
-import { Coins, Sparkles, Trophy, Users, Shield, Zap, Flame } from 'lucide-react';
+import Link from 'next/link';
+import { Coins, Sparkles, Trophy, Users, Shield, Zap, Flame, ChevronRight } from 'lucide-react';
 
 export default function FantasyPage() {
   return (
@@ -175,6 +176,32 @@ export default function FantasyPage() {
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
               Real-time point updates as tournament matches conclude with Captain multiplier bonuses.
             </p>
+          </div>
+        </div>
+
+        {/* See Player Pricing CTA Button */}
+        <div style={{ marginTop: 36, textAlign: 'center' }}>
+          <Link
+            href="/fantasy/pricing"
+            className="btn btn-primary"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '12px 28px',
+              fontSize: '0.95rem',
+              fontWeight: 700,
+              borderRadius: 10,
+              boxShadow: '0 4px 16px rgba(201, 168, 76, 0.3)',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <Coins size={18} />
+            <span>See Player Pricing</span>
+            <ChevronRight size={16} />
+          </Link>
+          <div style={{ marginTop: 10, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            Preview current player pricing ahead of the full contest launch.
           </div>
         </div>
       </div>

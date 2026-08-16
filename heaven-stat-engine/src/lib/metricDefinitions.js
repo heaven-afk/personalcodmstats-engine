@@ -128,6 +128,11 @@ const DEFINITIONS = {
     name: 'Rank Volatility (Consistency)',
     measures: 'Standard deviation of overall event standings finishes across played events. Requires a minimum of 3 played events.',
     interpretation: 'Lower volatility indicates a more consistent team whose event placements do not fluctuate wildly.'
+  },
+  fantasy_cost: {
+    name: 'Fantasy Cost (Credits)',
+    measures: 'Player salary valuation (10–40 credits) calibrated from 60% career KPM and 40% rolling Global Form.',
+    interpretation: 'Higher credit costs represent top-tier, high-fragging, and in-form slayers. Total team salary cap is 100 credits for a 4-player roster.'
   }
 };
 
@@ -477,10 +482,16 @@ const ALIASES = {
   'podium%': 'podium_rate',
   'podium': 'podium_rate',
   'top 3 event rate': 'podium_rate',
-  'top-3 rate': 'podium_rate',
   'rank volatility': 'rank_volatility',
   'volatility': 'rank_volatility',
-  'rank consistency': 'rank_volatility'
+  'rank consistency': 'rank_volatility',
+
+  'cost': 'fantasy_cost',
+  'fantasy cost': 'fantasy_cost',
+  'cost (credits)': 'fantasy_cost',
+  'credits': 'fantasy_cost',
+  'player cost': 'fantasy_cost',
+  'salary': 'fantasy_cost'
 };
 
 export function getMetricDefinition(key) {
