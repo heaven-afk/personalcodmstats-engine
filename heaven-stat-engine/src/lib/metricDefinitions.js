@@ -108,6 +108,26 @@ const DEFINITIONS = {
     name: 'Playstyle',
     measures: 'An automatically generated profile based on a team\'s strengths across Power, Placement Control, Conversion, and Form.',
     interpretation: 'Used to classify a team\'s tactical style (e.g. Aggressive, Tactical, Balanced).'
+  },
+  avg_rank: {
+    name: 'Average Rank',
+    measures: 'Average overall standings finish position across all events played in the season. Missed events (DNP) are excluded.',
+    interpretation: 'Lower values indicate superior placement across events (Rank 1 is the best possible).'
+  },
+  peak_rank: {
+    name: 'Peak Rank',
+    measures: 'The highest (best) single-event overall standings finish achieved during the season.',
+    interpretation: 'Lower numbers represent a better finish (#1 is a tournament/event victory).'
+  },
+  podium_rate: {
+    name: 'Top-3 / Podium Rate',
+    measures: 'Percentage of played events where the team achieved a Top 3 finish in overall event standings.',
+    interpretation: 'Higher percentages indicate consistent podium finishes in events.'
+  },
+  rank_volatility: {
+    name: 'Rank Volatility (Consistency)',
+    measures: 'Standard deviation of overall event standings finishes across played events. Requires a minimum of 3 played events.',
+    interpretation: 'Lower volatility indicates a more consistent team whose event placements do not fluctuate wildly.'
   }
 };
 
@@ -443,7 +463,24 @@ const ALIASES = {
   'top5 rate': 'top_5_finish_rate',
   'top 5 rate': 'top_5_finish_rate',
   'top3vs5spread': 'top_3_vs_5_spread',
-  'top 3 vs 5 spread': 'top_3_vs_5_spread'
+  'top 3 vs 5 spread': 'top_3_vs_5_spread',
+
+  'avg rank': 'avg_rank',
+  'average rank': 'avg_rank',
+  'avg. rank': 'avg_rank',
+  'peak rank': 'peak_rank',
+  'best rank': 'peak_rank',
+  'peak': 'peak_rank',
+  'podium rate': 'podium_rate',
+  'podium rate%': 'podium_rate',
+  'podium %': 'podium_rate',
+  'podium%': 'podium_rate',
+  'podium': 'podium_rate',
+  'top 3 event rate': 'podium_rate',
+  'top-3 rate': 'podium_rate',
+  'rank volatility': 'rank_volatility',
+  'volatility': 'rank_volatility',
+  'rank consistency': 'rank_volatility'
 };
 
 export function getMetricDefinition(key) {

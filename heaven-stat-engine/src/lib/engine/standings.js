@@ -3,7 +3,7 @@
  * Computes all standings views from raw match data + tournament config.
  * All functions are pure — no Firestore calls.
  */
-import { getPlacementPoints, applyTiebreakers } from './scoring';
+import { getPlacementPoints, applyTiebreakers } from './scoring.js';
 
 // ─── Daily standings ──────────────────────────────────────────────────────────
 export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConfig, day) {

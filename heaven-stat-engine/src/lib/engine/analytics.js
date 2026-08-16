@@ -4,7 +4,7 @@
  * Implements analytics from Team_Stats_Analysis_2026_v2.xlsx and Detailed_Team_Analysics_V1.xlsx
  */
 
-import { computeSeasonStandings } from './standings';
+import { computeSeasonStandings, computeDailyStandings } from './standings.js';
 
 // ─── Standard deviation helper ────────────────────────────────────────────────
 function stdDev(values) {
@@ -16,6 +16,75 @@ function stdDev(values) {
 
 function round2(n) { return Math.round(n * 100) / 100; }
 function round1(n) { return Math.round(n * 10) / 10; }
+
+// ─── Shared Season Placements Helper ──────────────────────────────────────────
+/**
+ * Returns an array of a team's finishing placements (1-based ranks) across all events (days)
+ * they actually played in the season/tournament.
+ * DNP events (days where the team did not participate) are completely excluded.
+ *
+ * @param {string} teamId - The team ID
+ * @param {Array} teamMatchResults - Match results for the season/tournament
+ * @param {Array} bonusPoints - Bonus points for the season/tournament
+ * @param {Object} scoringConfig - Scoring configuration
+ * @returns {number[]} Array of 1-based event placements (e.g. [1, 4, 2])
+ */
+export function getTeamSeasonPlacements(teamId, teamMatchResults = [], bonusPoints = [], scoringConfig = {}) {
+  if (!teamId || !teamMatchResults || teamMatchResults.length === 0) return [];
+
+  // Determine all distinct event days present in the match results
+  const daysSet = new Set(teamMatchResults.map((r) => r.day).filter((d) => typeof d === 'number'));
+  const days = Array.from(daysSet).sort((a, b) => a - b);
+
+  const placements = [];
+
+  for (const day of days) {
+    const dailyStandings = computeDailyStandings(teamMatchResults, bonusPoints, scoringConfig, day);
+    const teamEntry = dailyStandings.find((t) => t.teamId === teamId);
+    
+    // DNP exclusion: only count days where team actually played matches
+    if (teamEntry && teamEntry.matches > 0) {
+      const rankIndex = dailyStandings.findIndex((t) => t.teamId === teamId);
+      placements.push(rankIndex + 1);
+    }
+  }
+
+  return placements;
+}
+
+/**
+ * Computes the 4 season rank metrics from a list of per-event placements.
+ * @param {number[]} placements - Array of 1-based placements
+ * @returns {Object} { avgRank, peakRank, podiumRate, rankVolatility, placements }
+ */
+export function computeRankMetrics(placements = []) {
+  if (!placements || placements.length === 0) {
+    return {
+      placements: [],
+      avgRank: null,
+      peakRank: null,
+      podiumRate: 0,
+      rankVolatility: null,
+    };
+  }
+
+  const sum = placements.reduce((s, p) => s + p, 0);
+  const avgRank = round2(sum / placements.length);
+  const peakRank = Math.min(...placements);
+  const podiumCount = placements.filter((p) => p <= 3).length;
+  const podiumRate = round2((podiumCount / placements.length) * 100);
+  
+  // Small sample size suppression: Volatility requires at least 3 played events
+  const rankVolatility = placements.length >= 3 ? round2(stdDev(placements)) : null;
+
+  return {
+    placements,
+    avgRank,
+    peakRank,
+    podiumRate,
+    rankVolatility,
+  };
+}
 
 // ─── Core analytics per team ──────────────────────────────────────────────────
 function computeCoreAnalytics(team, scoringConfig) {
@@ -183,17 +252,39 @@ export function computeTeamAnalytics(teamMatchResults, bonusPoints, scoringConfi
 
   const allTeamsTotalPts = seasonStandings.reduce((sum, t) => sum + t.totalPts, 0);
 
-  // Step 1: Core analytics per team
+  // Precompute daily standings for all distinct event days in this tournament/season
+  const daysSet = new Set(teamMatchResults.map((r) => r.day).filter((d) => typeof d === 'number'));
+  const days = Array.from(daysSet).sort((a, b) => a - b);
+  const dailyStandingsByDay = {};
+  for (const day of days) {
+    dailyStandingsByDay[day] = computeDailyStandings(teamMatchResults, bonusPoints, scoringConfig, day);
+  }
+
+  // Step 1: Core analytics per team + Season Rank Metrics
   let enriched = seasonStandings.map((team) => {
     const analytics = computeCoreAnalytics(team, scoringConfig);
     const pointsShareRatio = allTeamsTotalPts > 0
       ? round2((team.totalPts / allTeamsTotalPts) * 100)
       : 0;
 
+    // Extract per-event placements excluding DNP days
+    const placements = [];
+    for (const day of days) {
+      const daily = dailyStandingsByDay[day] || [];
+      const teamEntry = daily.find((t) => t.teamId === team.teamId);
+      if (teamEntry && teamEntry.matches > 0) {
+        const rankIndex = daily.findIndex((t) => t.teamId === team.teamId);
+        placements.push(rankIndex + 1);
+      }
+    }
+
+    const rankMetrics = computeRankMetrics(placements);
+
     return {
       ...team,
       analytics: {
         ...analytics,
+        ...rankMetrics,
         pointsShareRatio,
       },
       normalization: {},

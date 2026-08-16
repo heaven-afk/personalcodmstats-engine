@@ -902,23 +902,39 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
           </div>
 
           {/* Quick Score Pill Summary */}
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--bg-header)', borderRadius: 8 }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>PPM</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.PPM}</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ textAlign: 'center', padding: '8px 12px', background: 'var(--bg-header)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Avg Rank</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.avgRank ?? '—'}</div>
             </div>
-            <div style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--bg-header)', borderRadius: 8 }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>KPM</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.KPM}</div>
+            <div style={{ textAlign: 'center', padding: '8px 12px', background: 'var(--bg-header)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Peak Rank</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.peakRank != null ? `#${team.analytics.peakRank}` : '—'}</div>
             </div>
-            <div style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--bg-header)', borderRadius: 8 }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Win Rate</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.winRate}%</div>
+            <div style={{ textAlign: 'center', padding: '8px 12px', background: 'var(--bg-header)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Podium%</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.podiumRate ?? 0}%</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '8px 12px', background: 'var(--bg-header)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Volatility</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.rankVolatility ?? '—'}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '8px 12px', background: 'var(--bg-header)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>PPM</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.PPM}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '8px 12px', background: 'var(--bg-header)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>KPM</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.KPM}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '8px 12px', background: 'var(--bg-header)', borderRadius: 8 }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Win Rate</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{team.analytics?.winRate}%</div>
             </div>
             {globalForm && globalForm.confidence !== 'unranked' && (
-              <div style={{ textAlign: 'center', padding: '8px 14px', background: 'rgba(201, 168, 76, 0.1)', borderRadius: 8, border: '1px solid var(--border-gold)' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', fontWeight: 700 }}>Global Form</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{globalForm.decayedForm}</div>
+              <div style={{ textAlign: 'center', padding: '8px 12px', background: 'rgba(201, 168, 76, 0.1)', borderRadius: 8, border: '1px solid var(--border-gold)' }}>
+                <div style={{ fontSize: '0.68rem', color: 'var(--gold)', textTransform: 'uppercase', fontWeight: 700 }}>Global Form</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{globalForm.decayedForm}</div>
               </div>
             )}
           </div>

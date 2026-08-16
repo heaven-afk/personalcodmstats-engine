@@ -510,28 +510,67 @@ export default function AnalyticsPage() {
 
             {/* Stat Comparison Rows */}
             {(() => {
-              const renderCompRow = (label, lv, rv, decimalPlaces = 0, isPercent = false) => {
-                const l = Number(lv) || 0, r = Number(rv) || 0;
-                const leftWins = l > r;
-                const rightWins = r > l;
-                const maxVal = Math.max(l, r) || 1;
+              const renderCompRow = (label, lv, rv, decimalPlaces = 0, isPercent = false, lowerIsBetter = false, prefix = '') => {
+                const l = Number(lv);
+                const r = Number(rv);
+                const lValid = lv != null && !isNaN(l);
+                const rValid = rv != null && !isNaN(r);
+                
+                let leftWins = false;
+                let rightWins = false;
+                if (lValid && rValid) {
+                  if (lowerIsBetter) {
+                    leftWins = l < r;
+                    rightWins = r < l;
+                  } else {
+                    leftWins = l > r;
+                    rightWins = r > l;
+                  }
+                } else if (lValid && !rValid) {
+                  leftWins = true;
+                } else if (rValid && !lValid) {
+                  rightWins = true;
+                }
+
+                const maxVal = Math.max(l || 0, r || 0) || 1;
                 const fmt = (v) => {
+                  if (v == null || isNaN(v)) return '—';
                   const s = Number(v).toFixed(decimalPlaces);
-                  return isPercent ? `${s}%` : s;
+                  return isPercent ? `${s}%` : `${prefix}${s}`;
                 };
+
+                let leftWidth = 0;
+                let rightWidth = 0;
+                if (lValid && rValid) {
+                  if (lowerIsBetter) {
+                    const total = l + r;
+                    leftWidth = total > 0 ? ((total - l) / total) * 100 : 50;
+                    rightWidth = total > 0 ? ((total - r) / total) * 100 : 50;
+                  } else {
+                    leftWidth = (l / maxVal) * 100;
+                    rightWidth = (r / maxVal) * 100;
+                  }
+                } else {
+                  leftWidth = lValid ? 100 : 0;
+                  rightWidth = rValid ? 100 : 0;
+                }
+
                 return (
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600, marginBottom: 4 }}>
-                      <span style={{ color: leftWins ? '#C9A84C' : 'var(--text-secondary)' }}>{fmt(l)}</span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-                      <span style={{ color: rightWins ? '#38BDF8' : 'var(--text-secondary)' }}>{fmt(r)}</span>
+                      <span style={{ color: leftWins ? '#C9A84C' : 'var(--text-secondary)' }}>{fmt(lv)}</span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        {label}
+                        <MetricTooltip metricKey={label} />
+                      </span>
+                      <span style={{ color: rightWins ? '#38BDF8' : 'var(--text-secondary)' }}>{fmt(rv)}</span>
                     </div>
                     <div style={{ display: 'flex', width: '100%', gap: 12 }}>
                       <div style={{ width: '50%', height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 99, display: 'flex', justifyContent: 'flex-end', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${(l / maxVal) * 100}%`, background: leftWins ? '#C9A84C' : 'var(--text-muted)', borderRadius: 99 }} />
+                        <div style={{ height: '100%', width: `${Math.min(100, leftWidth)}%`, background: leftWins ? '#C9A84C' : 'var(--text-muted)', borderRadius: 99 }} />
                       </div>
                       <div style={{ width: '50%', height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 99, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${(r / maxVal) * 100}%`, background: rightWins ? '#38BDF8' : 'var(--text-muted)', borderRadius: 99 }} />
+                        <div style={{ height: '100%', width: `${Math.min(100, rightWidth)}%`, background: rightWins ? '#38BDF8' : 'var(--text-muted)', borderRadius: 99 }} />
                       </div>
                     </div>
                   </div>
@@ -542,6 +581,10 @@ export default function AnalyticsPage() {
                 <div>
                   {renderCompRow('Total Points', compLeftTeam.totalPts, compRightTeam.totalPts, 0)}
                   {renderCompRow('Team Rating', compLeftTeam.scores?.TEAM_RATING, compRightTeam.scores?.TEAM_RATING, 1)}
+                  {renderCompRow('Avg Rank', compLeftTeam.analytics?.avgRank, compRightTeam.analytics?.avgRank, 2, false, true)}
+                  {renderCompRow('Peak Rank', compLeftTeam.analytics?.peakRank, compRightTeam.analytics?.peakRank, 0, false, true, '#')}
+                  {renderCompRow('Podium Rate', compLeftTeam.analytics?.podiumRate, compRightTeam.analytics?.podiumRate, 1, true, false)}
+                  {renderCompRow('Rank Volatility', compLeftTeam.analytics?.rankVolatility, compRightTeam.analytics?.rankVolatility, 2, false, true)}
                   {renderCompRow('Wins', compLeftTeam.wins, compRightTeam.wins, 0)}
                   {renderCompRow('Matches', compLeftTeam.matches, compRightTeam.matches, 0)}
                   {renderCompRow('Kills', compLeftTeam.kills, compRightTeam.kills, 0)}
@@ -580,6 +623,30 @@ export default function AnalyticsPage() {
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     Team Rating
                     <MetricTooltip metricKey="Team Rating" />
+                  </span>
+                </th>
+                <th>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    Avg Rank
+                    <MetricTooltip metricKey="Avg Rank" />
+                  </span>
+                </th>
+                <th>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    Peak Rank
+                    <MetricTooltip metricKey="Peak Rank" />
+                  </span>
+                </th>
+                <th>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    Podium%
+                    <MetricTooltip metricKey="Podium Rate" />
+                  </span>
+                </th>
+                <th>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    Volatility
+                    <MetricTooltip metricKey="Rank Volatility" />
                   </span>
                 </th>
                 <th>
@@ -707,6 +774,12 @@ export default function AnalyticsPage() {
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{row.kills}</td>
                       <td className="col-gold">{row.totalPts}</td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)' }}>{s.FINAL_RATING?.toFixed(1)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{a.avgRank != null ? a.avgRank : '—'}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{a.peakRank != null ? `#${a.peakRank}` : '—'}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{a.podiumRate != null ? `${a.podiumRate}%` : '—'}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', color: a.rankVolatility == null ? 'var(--text-muted)' : undefined }}>
+                        {a.rankVolatility != null ? a.rankVolatility : (a.placements?.length < 3 ? '—' : '—')}
+                      </td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.PPM}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.KPM}</td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{a.killPct}%</td>
@@ -724,7 +797,7 @@ export default function AnalyticsPage() {
                     </tr>
                     {isExpanded && (
                       <tr key={`${row.teamId}-expanded`}>
-                        <td colSpan={24} style={{ padding: 0, background: 'var(--bg-alt-row)' }}>
+                        <td colSpan={28} style={{ padding: 0, background: 'var(--bg-alt-row)' }}>
                           <TeamDeepDive team={row} />
                         </td>
                       </tr>
@@ -805,6 +878,10 @@ function TeamDeepDive({ team }) {
         </div>
         <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[
+            ['Avg Rank', a.avgRank != null ? a.avgRank : '—'],
+            ['Peak Rank', a.peakRank != null ? `#${a.peakRank}` : '—'],
+            ['Podium Rate', a.podiumRate != null ? `${a.podiumRate}%` : '—'],
+            ['Rank Volatility', a.rankVolatility != null ? a.rankVolatility : (a.placements?.length < 3 ? 'Insufficient data' : '—')],
             ['PPM', a.PPM], ['KPM', a.KPM], ['Avg Place', a.avgPlace], ['Kill%', `${a.killPct}%`],
             ['Win Rate', `${a.winRate}%`], ['Top3 Rate', `${a.top3Rate}%`],
             ['F.MI', a.forwardMI], ['St.Dev CS', a.stdDevCS],
@@ -814,7 +891,7 @@ function TeamDeepDive({ team }) {
                 {label}
                 <MetricTooltip metricKey={label} />
               </div>
-              <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: 'var(--text-primary)' }}>{val}</div>
+              <div style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{val}</div>
             </div>
           ))}
         </div>
