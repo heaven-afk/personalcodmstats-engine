@@ -6,7 +6,7 @@ import Wordmark from '@/components/ui/Wordmark';
 import UserAvatar from '@/components/ui/UserAvatar';
 import {
   LayoutDashboard, Trophy, Users, Shield, BarChart3, Settings, LogOut, GitCompare,
-  FlaskConical, Sparkles, X, User as UserIcon
+  FlaskConical, Sparkles, Coins, X, User as UserIcon
 } from 'lucide-react';
 
 const NAV = [
@@ -14,6 +14,7 @@ const NAV = [
   { href: '/tournaments', label: 'Tournaments', icon: Trophy },
   { href: '/players',     label: 'Players',     icon: Users },
   { href: '/teams',       label: 'Teams',       icon: Shield },
+  { href: '/fantasy',     label: 'BR Fantasy',  icon: Coins },
   { href: '/comparison',  label: 'Comparison',  icon: GitCompare },
   { href: '/rankings',    label: 'Rankings',    icon: BarChart3 },
   { href: '/analysis',    label: 'Deep Analysis', icon: Sparkles },
