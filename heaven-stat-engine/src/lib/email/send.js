@@ -1,5 +1,3 @@
-import nodemailer from 'nodemailer';
-
 /**
  * Universal Email Sender for Heaven Stat Engine
  * Supports:
@@ -15,6 +13,9 @@ export async function sendEmail({ to, subject, html }) {
 
   if (smtpUser && smtpPass) {
     try {
+      // Dynamic import keeps nodemailer out of the module-level bundle
+      const nodemailer = (await import('nodemailer')).default;
+
       const port = parseInt(process.env.SMTP_PORT || '465', 10);
       const isSecure = port === 465;
 

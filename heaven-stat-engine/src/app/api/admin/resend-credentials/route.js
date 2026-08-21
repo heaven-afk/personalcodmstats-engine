@@ -1,16 +1,11 @@
 import { NextResponse } from 'next/server';
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
-import { readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
 import crypto from 'crypto';
-import { buildPlatformInviteEmail } from '@/lib/email/templates';
-import { sendEmail } from '@/lib/email/send';
 
 export const dynamic = 'force-dynamic';
 
-function getAdminApp() {
+async function getAdminApp() {
+  const { initializeApp, cert, getApps } = await import('firebase-admin/app');
+
   if (getApps().length > 0) {
     return getApps()[0];
   }
@@ -27,10 +22,14 @@ function getAdminApp() {
     }
   }
 
-  if (serviceAccountPath && existsSync(resolve(serviceAccountPath))) {
+  if (serviceAccountPath) {
     try {
-      const parsed = JSON.parse(readFileSync(resolve(serviceAccountPath), 'utf8'));
-      return initializeApp({ credential: cert(parsed) });
+      const { readFileSync, existsSync } = await import('fs');
+      const { resolve } = await import('path');
+      if (existsSync(resolve(serviceAccountPath))) {
+        const parsed = JSON.parse(readFileSync(resolve(serviceAccountPath), 'utf8'));
+        return initializeApp({ credential: cert(parsed) });
+      }
     } catch (e) {
       console.warn('Failed to read FIREBASE_SERVICE_ACCOUNT_PATH:', e.message);
     }
@@ -39,22 +38,14 @@ function getAdminApp() {
   return initializeApp();
 }
 
-function getAdminAuth() {
-  try {
-    return getAuth(getAdminApp());
-  } catch (e) {
-    console.warn('getAdminAuth fallback error:', e.message);
-    return null;
-  }
+async function getAdminAuth() {
+  const { getAuth } = await import('firebase-admin/auth');
+  return getAuth(await getAdminApp());
 }
 
-function getAdminFirestore() {
-  try {
-    return getFirestore(getAdminApp());
-  } catch (e) {
-    console.warn('getAdminFirestore fallback error:', e.message);
-    return null;
-  }
+async function getAdminFirestore() {
+  const { getFirestore } = await import('firebase-admin/firestore');
+  return getFirestore(await getAdminApp());
 }
 
 async function verifyOwner(req) {
@@ -66,21 +57,20 @@ async function verifyOwner(req) {
   }
 
   try {
-    const adminAuth = getAdminAuth();
-    if (!adminAuth) {
-      // If admin auth isn't fully initialized, check fallback header or fail securely
-      return { error: 'Admin Auth service not available', status: 503 };
-    }
+    const adminAuth = await getAdminAuth();
     const decoded = await adminAuth.verifyIdToken(token);
 
-    const isOwner = decoded.role === 'owner' || (process.env.OWNER_EMAIL && decoded.email?.toLowerCase() === process.env.OWNER_EMAIL.toLowerCase());
+    const isOwner =
+      decoded.role === 'owner' ||
+      (process.env.OWNER_EMAIL &&
+        decoded.email?.toLowerCase() === process.env.OWNER_EMAIL.toLowerCase());
     if (!isOwner) {
       return { error: 'Forbidden: Owner permission required', status: 403 };
     }
 
     return { caller: decoded, adminAuth };
   } catch (err) {
-    console.error('Error verifying token in verifyOwner:', err.message);
+    console.error('Error verifying token:', err.message);
     return { error: 'Authentication failed: ' + err.message, status: 401 };
   }
 }
@@ -101,76 +91,66 @@ export async function POST(req) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const adminDb = getAdminFirestore();
+    const adminDb = await getAdminFirestore();
 
     // 1. Generate fresh secure temporary password
     const tempPassword = crypto.randomBytes(12).toString('base64url');
 
-    // 2. Fetch or create user in Firebase Auth
+    // 2. Fetch role from Firestore
     let uid = null;
     let role = 'operator';
-
-    if (adminDb) {
-      try {
-        const userDoc = await adminDb.collection('allowedUsers').doc(normalizedEmail).get();
-        if (userDoc.exists) {
-          role = userDoc.data().role || 'operator';
-        }
-      } catch (dbErr) {
-        console.warn('Error reading allowedUsers doc:', dbErr.message);
+    try {
+      const userDoc = await adminDb.collection('allowedUsers').doc(normalizedEmail).get();
+      if (userDoc.exists) {
+        role = userDoc.data().role || 'operator';
       }
+    } catch (dbErr) {
+      console.warn('Error reading allowedUsers doc:', dbErr.message);
     }
 
-    if (adminAuth) {
+    // 3. Update or create user in Firebase Auth
+    try {
+      const existingAuthUser = await adminAuth.getUserByEmail(normalizedEmail);
+      uid = existingAuthUser.uid;
+      await adminAuth.updateUser(uid, { password: tempPassword });
+      await adminAuth.setCustomUserClaims(uid, { role });
+    } catch {
       try {
-        const existingAuthUser = await adminAuth.getUserByEmail(normalizedEmail);
-        uid = existingAuthUser.uid;
-        // Update password & custom claims in Auth
-        await adminAuth.updateUser(uid, { password: tempPassword });
+        const createdUser = await adminAuth.createUser({
+          email: normalizedEmail,
+          password: tempPassword,
+          displayName: normalizedEmail,
+        });
+        uid = createdUser.uid;
         await adminAuth.setCustomUserClaims(uid, { role });
-      } catch (notFoundErr) {
-        try {
-          // Create user if not existing in Auth yet
-          const createdUser = await adminAuth.createUser({
-            email: normalizedEmail,
-            password: tempPassword,
-            displayName: normalizedEmail,
-          });
-          uid = createdUser.uid;
-          await adminAuth.setCustomUserClaims(uid, { role });
-        } catch (createErr) {
-          console.warn('Error creating user in Auth:', createErr.message);
-        }
+      } catch (createErr) {
+        console.warn('Error creating user in Auth:', createErr.message);
       }
     }
 
-    // 3. Mark mustChangePassword in Firestore
-    if (adminDb) {
-      try {
-        await adminDb.collection('allowedUsers').doc(normalizedEmail).set(
-          {
-            email: normalizedEmail,
-            role,
-            mustChangePassword: true,
-            uid,
-            lastCredentialsSentAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      } catch (setErr) {
-        console.warn('Error saving allowedUsers state:', setErr.message);
-      }
+    // 4. Mark mustChangePassword in Firestore
+    try {
+      await adminDb.collection('allowedUsers').doc(normalizedEmail).set(
+        {
+          email: normalizedEmail,
+          role,
+          mustChangePassword: true,
+          uid,
+          lastCredentialsSentAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (setErr) {
+      console.warn('Error saving allowedUsers state:', setErr.message);
     }
 
-    // 4. Dispatch Email with new credentials
+    // 5. Dispatch Email with new credentials
     let emailDispatched = false;
     let emailErrorMsg = null;
     try {
-      const emailTemplate = buildPlatformInviteEmail({
-        toEmail: normalizedEmail,
-        tempPassword,
-        role,
-      });
+      const { buildPlatformInviteEmail } = await import('@/lib/email/templates');
+      const { sendEmail } = await import('@/lib/email/send');
+      const emailTemplate = buildPlatformInviteEmail({ toEmail: normalizedEmail, tempPassword, role });
       const sendResult = await sendEmail({
         to: normalizedEmail,
         subject: emailTemplate.subject,
@@ -195,7 +175,7 @@ export async function POST(req) {
       emailError: emailErrorMsg,
       message: emailDispatched
         ? `New credentials sent to ${normalizedEmail}!`
-        : `New credentials generated for ${normalizedEmail}. Copy credentials to share directly.`,
+        : `Credentials generated for ${normalizedEmail}. Copy them to share manually.`,
     });
   } catch (err) {
     console.error('Fatal error in /api/admin/resend-credentials:', err);
