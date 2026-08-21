@@ -1,17 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: [
-    'firebase-admin',
-    'firebase-admin/app',
-    'firebase-admin/auth',
-    'firebase-admin/firestore',
-    'firebase-admin/database',
-    'firebase-admin/storage',
-    'nodemailer',
-    'jwks-rsa',
-    'jose',
-    'node-fetch',
-  ],
+  serverExternalPackages: ['firebase-admin', 'nodemailer'],
   allowedDevOrigins: ['10.31.178.27'],
   images: {
     remotePatterns: [
