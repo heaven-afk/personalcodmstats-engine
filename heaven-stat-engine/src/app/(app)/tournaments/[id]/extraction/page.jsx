@@ -486,12 +486,24 @@ export default function ExtractionPage() {
 
   const { rows, columns } = getExtractData();
 
-  const getFileSuffix = () => {
-    const daySuffix = selectedDay === 'all' ? '' : `_day_${selectedDay}`;
+  const getFileName = (ext) => {
+    // Sanitise tournament name for use as a filename
+    const safeName = (tournament?.name || 'Tournament')
+      .replace(/[/\\:*?"<>|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Human-readable preset label
+    const preset = PRESETS.find(p => p.id === activePreset);
+    const presetLabel = preset ? preset.name : activePreset;
+
+    // Day / Group suffix
+    const daySuffix = selectedDay === 'all' ? '' : ` Day ${selectedDay}`;
     const groupSuffix = (isQualifier && selectedGroupId !== 'all' && selectedGroupObj)
-      ? `_${selectedGroupObj.groupName.replace(/\s+/g, '_')}`
+      ? ` - ${selectedGroupObj.groupName}`
       : '';
-    return `${daySuffix}${groupSuffix}`;
+
+    return `${safeName} - ${presetLabel}${groupSuffix}${daySuffix}.${ext}`;
   };
 
   // ─── Downloader Actions ──────────────────────────────────────────────────────
@@ -511,7 +523,7 @@ export default function ExtractionPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${activePreset}${getFileSuffix()}_export.csv`);
+      link.setAttribute('download', getFileName('csv'));
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -527,7 +539,7 @@ export default function ExtractionPage() {
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Data Extract');
-      XLSX.writeFile(wb, `${activePreset}${getFileSuffix()}_export.xlsx`);
+      XLSX.writeFile(wb, getFileName('xlsx'));
       toast.success('Excel file downloaded!');
     } catch (e) {
       toast.error('Failed to download Excel file: ' + e.message);

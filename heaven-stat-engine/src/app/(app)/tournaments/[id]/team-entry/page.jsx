@@ -217,6 +217,7 @@ export default function TeamEntryPage() {
   const [ocrQueueActiveIndex, setOcrQueueActiveIndex] = useState(null);
   const [lobbyPreviews, setLobbyPreviews] = useState({});
   const [isOcrMode, setIsOcrMode] = useState(false);
+  const [ocrConcurrency, setOcrConcurrency] = useState(4);
   const ocrFileRef = useRef(null);
 
   const refresh = useCallback(async () => {
@@ -512,7 +513,21 @@ export default function TeamEntryPage() {
       return item;
     }));
 
-    const promises = pendingItems.map(async (item) => {
+    // Pool-based concurrency runner — limits simultaneous Gemini calls
+    const runPool = async (tasks, concurrency) => {
+      const results = [];
+      let idx = 0;
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (idx < tasks.length) {
+          const current = idx++;
+          await tasks[current]();
+        }
+      });
+      await Promise.all(workers);
+      return results;
+    };
+
+    const tasks = pendingItems.map((item) => async () => {
       let progressInterval = null;
       try {
         progressInterval = setInterval(() => {
@@ -573,7 +588,7 @@ export default function TeamEntryPage() {
       }
     });
 
-    await Promise.all(promises);
+    await runPool(tasks, ocrConcurrency);
     toast.success('Batch scan completed!');
   };
 
@@ -1273,7 +1288,7 @@ export default function TeamEntryPage() {
                       ))}
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-primary btn-sm"
                         onClick={handleOcrProcessAll}
@@ -1287,6 +1302,20 @@ export default function TeamEntryPage() {
                       >
                         Clear Queue
                       </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Parallel Workers:</span>
+                        <select
+                          className="form-select"
+                          style={{ fontSize: '0.72rem', padding: '3px 6px', width: 60 }}
+                          value={ocrConcurrency}
+                          onChange={e => setOcrConcurrency(Number(e.target.value))}
+                          title="Number of images processed simultaneously"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                 )}

@@ -116,7 +116,7 @@ export async function savePlayerMatchResult(tournamentId, data) {
   }
   const ref = await addDoc(
     collection(db, 'tournaments', tournamentId, 'playerMatchResults'),
-    { playerId: '', day: 1, lobby: 1, kills: 0, damage: 0, accuracy: 0, ...data }
+    { playerId: '', day: 1, lobby: 1, kills: 0, damage: 0, accuracy: 0, reviveType: 'auto', ...data }
   );
   return { id: ref.id, ...data };
 }

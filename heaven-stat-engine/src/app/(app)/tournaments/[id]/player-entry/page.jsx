@@ -25,6 +25,15 @@ const LOBBY_COLORS = [
 ];
 const getLobbyColor = (n) => LOBBY_COLORS[(n - 1) % LOBBY_COLORS.length];
 
+// ─── Revive Types ────────────────────────────────────────────────────────────
+export const REVIVE_TYPES = [
+  { id: 'auto',     label: 'Auto Revive',        color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.4)' },
+  { id: 'teammate', label: 'Teammate Recovery',  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.4)' },
+  { id: 'dogtag',   label: 'Dog Tag',            color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.4)' },
+  { id: 'none',     label: 'None / N​A',         color: '#6b7280', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.4)' },
+];
+const getReviveType = (id) => REVIVE_TYPES.find(r => r.id === id) || REVIVE_TYPES[0];
+
 // ─── Smart Spreadsheet Parser ────────────────────────────────────────────────
 function parseSmartSpreadsheet(grid) {
   let headerRowIndex = -1;
@@ -704,7 +713,19 @@ export default function PlayerEntryPage() {
   const [ocrQueueActiveIndex, setOcrQueueActiveIndex] = useState(null);
   const [lobbyPreviews, setLobbyPreviews] = useState({});
   const [isOcrMode, setIsOcrMode] = useState(false);
+  const [ocrConcurrency, setOcrConcurrency] = useState(4);
   const ocrFileRef = useRef(null);
+
+  // Revive config: per-lobby revive type. Default to 'auto' for completed tournaments
+  const defaultRevive = tournament?.status === 'completed' ? 'auto' : 'auto';
+  const [reviveConfig, setReviveConfig] = useState(() => {
+    const cfg = {};
+    const lobbiesCount = tournament?.structure?.lobbiesPerDay || 4;
+    for (let l = 1; l <= lobbiesCount; l++) {
+      cfg[l] = defaultRevive;
+    }
+    return cfg;
+  });
 
   // Live preview parse effect
   useEffect(() => {
@@ -897,6 +918,7 @@ export default function PlayerEntryPage() {
       damage: isDamageEmpty ? null : (parseFloat(row.damage) ?? 0),
       accuracy: isAccuracyEmpty ? null : (parseFloat(row.accuracy) ?? 0),
       ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {}),
+      reviveType: reviveConfig[lobbyNum] || 'auto',
     };
 
     try {
@@ -1084,7 +1106,19 @@ export default function PlayerEntryPage() {
       return item;
     }));
 
-    const promises = pendingItems.map(async (item) => {
+    // Pool-based concurrency runner — limits simultaneous Gemini calls
+    const runPool = async (tasks, concurrency) => {
+      let idx = 0;
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (idx < tasks.length) {
+          const current = idx++;
+          await tasks[current]();
+        }
+      });
+      await Promise.all(workers);
+    };
+
+    const tasks = pendingItems.map((item) => async () => {
       let progressInterval = null;
       try {
         progressInterval = setInterval(() => {
@@ -1148,7 +1182,7 @@ export default function PlayerEntryPage() {
       }
     });
 
-    await Promise.all(promises);
+    await runPool(tasks, ocrConcurrency);
     toast.success('Batch scan completed!');
   };
 
@@ -1801,7 +1835,7 @@ export default function PlayerEntryPage() {
                 ))}
               </div>
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={handleOcrProcessAll}
@@ -1815,6 +1849,20 @@ export default function PlayerEntryPage() {
                 >
                   Clear Queue
                 </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Parallel Workers:</span>
+                  <select
+                    className="form-select"
+                    style={{ fontSize: '0.72rem', padding: '3px 6px', width: 60 }}
+                    value={ocrConcurrency}
+                    onChange={e => setOcrConcurrency(Number(e.target.value))}
+                    title="Number of images processed simultaneously"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           )}
@@ -2338,12 +2386,68 @@ export default function PlayerEntryPage() {
 
       {/* ── SECTION A: Kills ─────────────────────────────── */}
       {section === 'kills' && smartImportRows.length === 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
-          gap: '14px',
-          marginTop: '16px'
-        }}>
+        <>
+          {/* Revive Type Config Bar */}
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-md)',
+            borderRadius: 10,
+            padding: '12px 16px',
+            marginTop: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            flexWrap: 'wrap'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.06em' }}>
+                REVIVE TYPE
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1 }}>
+              {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
+                const col = getLobbyColor(l);
+                const currentRevive = reviveConfig[l] || 'auto';
+                const revType = getReviveType(currentRevive);
+                return (
+                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: '0.65rem', fontWeight: 700, color: col.text,
+                      background: col.bg, border: `1px solid ${col.border}`,
+                      borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap'
+                    }}>L{l}</span>
+                    <select
+                      className="form-select"
+                      style={{
+                        fontSize: '0.72rem', padding: '2px 6px',
+                        borderColor: revType.border,
+                        background: revType.bg,
+                        color: revType.color,
+                        fontWeight: 700
+                      }}
+                      value={currentRevive}
+                      onChange={e => setReviveConfig(prev => ({ ...prev, [l]: e.target.value }))}
+                      disabled={isLocked}
+                    >
+                      {REVIVE_TYPES.map(rt => (
+                        <option key={rt.id} value={rt.id}>{rt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', flexShrink: 0 }}>
+              Per-lobby revive mode
+            </span>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+            gap: '14px',
+            marginTop: '16px'
+          }}>
           {teams.map(teamName => {
             const teamPlayers = playersByTeam[teamName] || [];
             if (teamPlayers.length === 0) return null;
@@ -2471,6 +2575,7 @@ export default function PlayerEntryPage() {
             );
           })}
         </div>
+        </>
       )}
 
       {/* ── SECTION B: Damage & Accuracy ────────────────── */}

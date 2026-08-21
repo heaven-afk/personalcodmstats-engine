@@ -2,11 +2,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useTournament } from '../layout';
-import { updateTournament, deleteTournament } from '@/lib/firestore/tournaments';
+import { updateTournament, deleteTournament, setTournamentRanked } from '@/lib/firestore/tournaments';
+import { rankEvent } from '@/lib/firestore/rankEvent';
 import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
-import { Plus, Trash2, Check, Zap, ChevronLeft } from 'lucide-react';
+import { Plus, Trash2, Check, Zap, ChevronLeft, Medal } from 'lucide-react';
 
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 
@@ -241,6 +242,31 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
   };
 
   const isLocked = tournament.status !== 'setup';
+
+  // Ranked event state (Owner-only)
+  const TIER_OPTIONS_CFG = ['Tier 1', 'Tier 2', 'Tier 3'];
+  const [showRankPanel, setShowRankPanel] = useState(false);
+  const [selectedTier, setSelectedTier] = useState(tournament?.rankedTier || 'Tier 1');
+  const [rankingInProgress, setRankingInProgress] = useState(false);
+
+  const handleRankEvent = async (isRanked) => {
+    if (isRanked && !selectedTier) { toast.error('Please select a tier.'); return; }
+    setRankingInProgress(true);
+    try {
+      const result = await rankEvent(id, isRanked, selectedTier);
+      toast.success(
+        isRanked
+          ? `Tournament ranked as ${selectedTier}! ${result.teamsUpdated} teams & ${result.playersUpdated} players updated.`
+          : `Ranking removed. ${result.teamsUpdated} teams & ${result.playersUpdated} players recalculated.`
+      );
+      setShowRankPanel(false);
+      await refresh();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setRankingInProgress(false);
+    }
+  };
 
   // Player class helpers
   const addClass = () => setPlayerClasses(p => [...p, { className: '', activeDays: [], badgeColor: '#C9A84C' }]);
@@ -628,6 +654,86 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
           </button>
         </div>
       </div>
+
+      {/* Ranked Event Panel (Owner Only) */}
+      {!isOperator && (
+        <div className="card" style={{ border: tournament.isRanked ? '1px solid rgba(201,168,76,0.45)' : '1px solid var(--border-md)', marginTop: 24, position: 'relative', overflow: 'hidden' }}>
+          {tournament.isRanked && (
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #b8860b, #C9A84C, #d4a017)' }} />
+          )}
+          <div className="flex-between" style={{ marginBottom: showRankPanel ? 16 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: tournament.isRanked ? 'linear-gradient(135deg,#b8860b,#d4a017)' : 'var(--bg-alt-row)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Medal size={18} style={{ color: tournament.isRanked ? '#fff' : 'var(--text-muted)' }} />
+              </div>
+              <div>
+                <h2 className="card-title" style={{ margin: 0 }}>Ranked Event Status</h2>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, marginTop: 2 }}>
+                  {tournament.isRanked
+                    ? `Ranked as ${tournament.rankedTier}. Tier labels applied to all registered teams & players.`
+                    : 'Mark this event as ranked to apply tier labels to all participants.'}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {tournament.isRanked ? (
+                <>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setShowRankPanel(v => !v)}>
+                    Change Tier
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleRankEvent(false)}
+                    disabled={rankingInProgress}
+                  >
+                    {rankingInProgress ? 'Removing...' : 'Remove Ranking'}
+                  </button>
+                </>
+              ) : (
+                <button className="btn btn-primary btn-sm" onClick={() => setShowRankPanel(v => !v)}>
+                  <Medal size={14} /> Rank This Event
+                </button>
+              )}
+            </div>
+          </div>
+
+          {showRankPanel && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                Select the tier level for this tournament. All registered teams and players will have this tier assigned to their career record.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {TIER_OPTIONS_CFG.map(tier => (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => setSelectedTier(tier)}
+                    style={{
+                      padding: '8px 16px', borderRadius: 8, fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
+                      border: `1px solid ${selectedTier === tier ? 'var(--gold)' : 'var(--border-md)'}`,
+                      background: selectedTier === tier ? 'rgba(201,168,76,0.18)' : 'var(--bg-alt-row)',
+                      color: selectedTier === tier ? 'var(--gold)' : 'var(--text-secondary)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {tier}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowRankPanel(false)}>Cancel</button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => handleRankEvent(true)}
+                  disabled={rankingInProgress}
+                >
+                  {rankingInProgress ? 'Calculating...' : `Confirm as ${selectedTier}`}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Database Utilities */}
       <div className="card" style={{ border: '1px solid var(--border-md)', marginTop: 24 }}>
