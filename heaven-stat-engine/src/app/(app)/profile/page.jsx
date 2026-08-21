@@ -41,6 +41,7 @@ export default function ProfilePage() {
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('operator');
   const [addingUser, setAddingUser] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
 
   // Tournament Access Management State
   const [tournaments, setTournaments] = useState([]);
@@ -217,6 +218,32 @@ export default function ProfilePage() {
       toast.error('Error adding user: ' + err.message);
     } finally {
       setAddingUser(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    if (!user?.email) {
+      toast.error('No logged in user email found');
+      return;
+    }
+    setTestingEmail(true);
+    try {
+      const res = await fetch('/api/admin/test-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: user.email }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        const msg = data.error?.message || data.error || 'Failed to send test email';
+        toast.error(`Resend Error: ${msg}`, { duration: 6000 });
+      } else {
+        toast.success(data.message || `Test email dispatched to ${user.email}!`, { duration: 5000 });
+      }
+    } catch (err) {
+      toast.error('Network error testing email: ' + err.message);
+    } finally {
+      setTestingEmail(false);
     }
   };
 
@@ -562,13 +589,25 @@ export default function ProfilePage() {
                 </p>
               </div>
 
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => setAddUserModalOpen(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <Plus size={14} /> Add User
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleTestEmail}
+                  disabled={testingEmail}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}
+                  title="Send a test email to your account to verify Resend delivery"
+                >
+                  <Mail size={14} className={testingEmail ? 'animate-spin' : ''} />
+                  {testingEmail ? 'Sending Test...' : 'Test Email Connection'}
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setAddUserModalOpen(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Plus size={14} /> Add User
+                </button>
+              </div>
             </div>
 
             {loadingUsers ? (

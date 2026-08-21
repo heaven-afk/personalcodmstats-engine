@@ -4,7 +4,12 @@
 
 export async function sendEmail({ to, subject, html }) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL || 'Heaven Stat Engine <noreply@resend.dev>';
+  let from = process.env.RESEND_FROM_EMAIL;
+  
+  // If no custom domain or unconfigured placeholder, use Resend's default onboarding address
+  if (!from || from.includes('yourdomain.com') || from.includes('noreply@resend.dev')) {
+    from = 'Heaven Stat Engine <onboarding@resend.dev>';
+  }
 
   if (!apiKey) {
     console.warn('[Email Service] RESEND_API_KEY is not configured. Email skipped for:', to);
