@@ -8,6 +8,8 @@ import crypto from 'crypto';
 import { buildPlatformInviteEmail } from '@/lib/email/templates';
 import { sendEmail } from '@/lib/email/send';
 
+export const dynamic = 'force-dynamic';
+
 function getAdminApp() {
   if (getApps().length > 0) {
     return getApps()[0];

@@ -198,7 +198,9 @@ export default function ProfilePage() {
               username: cleanEmail,
             }),
           });
-          const data = await res.json();
+          const text = await res.text();
+          let data = {};
+          try { data = JSON.parse(text); } catch {}
           if (data.tempPassword) {
             setCreatedCredentialsModal({
               email: cleanEmail,
@@ -234,15 +236,19 @@ export default function ProfilePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: user.email }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'HTML Error'}). Vercel might still be deploying.`);
+      }
       if (!res.ok || !data.success) {
         const msg = data.error?.message || data.error || 'Failed to send test email';
-        toast.error(`Resend Error: ${msg}`, { duration: 6000 });
+        toast.error(`Email Error: ${msg}`, { duration: 6000 });
       } else {
         toast.success(data.message || `Test email dispatched to ${user.email}!`, { duration: 5000 });
       }
     } catch (err) {
-      toast.error('Network error testing email: ' + err.message);
+      toast.error(err.message || 'Error testing email');
     } finally {
       setTestingEmail(false);
     }
@@ -261,7 +267,11 @@ export default function ProfilePage() {
         },
         body: JSON.stringify({ email: targetEmail }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch {
+        throw new Error(`Server returned status ${res.status} (${res.statusText || 'HTML Error'}). Vercel might still be deploying.`);
+      }
       if (!res.ok || !data.success) {
         toast.error(data.error || 'Failed to send credentials');
       } else {
@@ -274,7 +284,7 @@ export default function ProfilePage() {
         });
       }
     } catch (err) {
-      toast.error('Network error: ' + err.message);
+      toast.error(err.message || 'Error sending credentials');
     } finally {
       setSendingCredentialsFor(null);
     }
