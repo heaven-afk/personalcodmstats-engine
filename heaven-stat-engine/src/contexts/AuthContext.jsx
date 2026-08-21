@@ -1,12 +1,12 @@
 'use client';
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
 import { auth, isFirebaseConfigured } from '@/lib/firebase';
 import { getAllowedUser, subscribeAllowedUser, updateAllowedUserProfile, addAllowedUser } from '@/lib/firestore/allowedUsers';
 import { setupPresence, setPresenceOffline } from '@/lib/presence';
 
 const AuthContext = createContext(null);
-const AUTHORIZED_OWNER_EMAIL = 'ogadizion01@gmail.com';
 
 function getInitialDemoState() {
   if (isFirebaseConfigured || typeof window === 'undefined') {
@@ -43,10 +43,12 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(initialDemo.role);
   const [loading, setLoading] = useState(!initialDemo.user && isFirebaseConfigured);
   const [authError, setAuthError] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   const isDemoAllowed = !isFirebaseConfigured && process.env.NODE_ENV !== 'production';
   const unsubscribeProfileRef = useRef(null);
   const cleanupPresenceRef = useRef(null);
+  const router = useRouter();
 
   const cleanupSubscriptions = useCallback(() => {
     if (unsubscribeProfileRef.current) {
@@ -93,6 +95,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         setProfile(null);
         setRole(null);
+        setMustChangePassword(false);
         setLoading(false);
         return;
       }
@@ -103,27 +106,14 @@ export function AuthProvider({ children }) {
         setUser(null);
         setProfile(null);
         setRole(null);
+        setMustChangePassword(false);
         setLoading(false);
         return;
       }
 
       try {
         // Step 1: Query allowedUsers collection
-        let allowedDoc = await getAllowedUser(email);
-
-        // Self-heal default owner account if freshly seeded
-        if (!allowedDoc && email === AUTHORIZED_OWNER_EMAIL) {
-          try {
-            allowedDoc = await addAllowedUser({
-              email: AUTHORIZED_OWNER_EMAIL,
-              role: 'owner',
-              username: 'Tournament Owner',
-              addedBy: u.uid,
-            });
-          } catch (createErr) {
-            console.warn('Owner self-healing allowlist notice:', createErr);
-          }
-        }
+        const allowedDoc = await getAllowedUser(email);
 
         if (!allowedDoc) {
           console.warn(`Unauthorized login attempt by non-allowlisted email: ${email}`);
@@ -131,16 +121,18 @@ export function AuthProvider({ children }) {
           setUser(null);
           setProfile(null);
           setRole(null);
-          setAuthError("This email doesn't have access. Contact the tournament owner.");
+          setMustChangePassword(false);
+          setAuthError("You don't have access to this platform.");
           setLoading(false);
+          router.replace('/no-access');
           return;
         }
 
         // Step 2: Establish user session & live profile subscription
-        const initialRole = allowedDoc.role || (email === AUTHORIZED_OWNER_EMAIL ? 'owner' : 'operator');
         setUser(u);
-        setRole(initialRole);
+        setRole(allowedDoc.role || 'operator');
         setProfile(allowedDoc);
+        setMustChangePassword(allowedDoc.mustChangePassword === true);
         setAuthError(null);
 
         // Step 3: Realtime Database Presence Tracking
@@ -158,7 +150,9 @@ export function AuthProvider({ children }) {
               setUser(null);
               setProfile(null);
               setRole(null);
-              setAuthError("This email doesn't have access. Contact the tournament owner.");
+              setMustChangePassword(false);
+              setAuthError("You don't have access to this platform.");
+              router.replace('/no-access');
               return;
             }
 
@@ -166,6 +160,7 @@ export function AuthProvider({ children }) {
             if (liveDoc.role) {
               setRole(liveDoc.role);
             }
+            setMustChangePassword(liveDoc.mustChangePassword === true);
           },
           (err) => {
             console.error('Error listening to allowedUser updates:', err);
@@ -177,6 +172,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         setProfile(null);
         setRole(null);
+        setMustChangePassword(false);
         setAuthError(err.message || 'Authentication error');
       } finally {
         setLoading(false);
@@ -187,7 +183,7 @@ export function AuthProvider({ children }) {
       unsubscribeAuth();
       cleanupSubscriptions();
     };
-  }, [cleanupSubscriptions]);
+  }, [cleanupSubscriptions, router]);
 
   const login = async (email, password) => {
     setAuthError(null);
@@ -198,11 +194,10 @@ export function AuthProvider({ children }) {
         return new Promise((resolve, reject) => {
           setTimeout(async () => {
             const allowedDoc = await getAllowedUser(normalizedEmail);
-            const isOwnerEmail = normalizedEmail === AUTHORIZED_OWNER_EMAIL;
             const isOperatorEmail = normalizedEmail?.includes('operator');
 
-            if (!allowedDoc && !isOwnerEmail && !isOperatorEmail) {
-              const err = new Error("This email doesn't have access. Contact the tournament owner.");
+            if (!allowedDoc && !isOperatorEmail) {
+              const err = new Error("You don't have access to this platform.");
               setAuthError(err.message);
               reject(err);
               return;
@@ -233,12 +228,12 @@ export function AuthProvider({ children }) {
     const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
     if (credential?.user) {
       const allowedDoc = await getAllowedUser(normalizedEmail);
-      if (!allowedDoc && normalizedEmail !== AUTHORIZED_OWNER_EMAIL) {
+      if (!allowedDoc) {
         await signOut(auth);
         setUser(null);
         setProfile(null);
         setRole(null);
-        const err = new Error("This email doesn't have access. Contact the tournament owner.");
+        const err = new Error("You don't have access to this platform.");
         setAuthError(err.message);
         throw err;
       }
@@ -258,11 +253,13 @@ export function AuthProvider({ children }) {
       setUser(null);
       setProfile(null);
       setRole(null);
+      setMustChangePassword(false);
       return;
     }
 
     setRole(null);
     setProfile(null);
+    setMustChangePassword(false);
     return signOut(auth);
   };
 
@@ -281,12 +278,12 @@ export function AuthProvider({ children }) {
         isOperator,
         loading,
         authError,
+        mustChangePassword,
         login,
         logout,
         refreshProfile,
         updateProfile: updateProfileData,
         isDemoMode: isDemoAllowed,
-        authorizedEmail: AUTHORIZED_OWNER_EMAIL,
       }}
     >
       {children}

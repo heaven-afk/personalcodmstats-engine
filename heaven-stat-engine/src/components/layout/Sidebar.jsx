@@ -10,15 +10,16 @@ import {
 } from 'lucide-react';
 
 const NAV = [
-  { href: '/dashboard',   label: 'Dashboard',  icon: LayoutDashboard },
-  { href: '/tournaments', label: 'Tournaments', icon: Trophy },
-  { href: '/players',     label: 'Players',     icon: Users },
-  { href: '/teams',       label: 'Teams',       icon: Shield },
-  { href: '/fantasy',     label: 'BR Fantasy',  icon: Coins },
-  { href: '/comparison',  label: 'Comparison',  icon: GitCompare },
-  { href: '/rankings',    label: 'Rankings',    icon: BarChart3 },
+  { href: '/dashboard',   label: 'Dashboard',     icon: LayoutDashboard },
+  { href: '/tournaments', label: 'Tournaments',   icon: Trophy },
+  { href: '/players',     label: 'Players',       icon: Users },
+  { href: '/teams',       label: 'Teams',         icon: Shield },
+  { href: '/fantasy',     label: 'BR Fantasy',    icon: Coins },
+  { href: '/comparison',  label: 'Comparison',    icon: GitCompare },
+  { href: '/rankings',    label: 'Rankings',      icon: BarChart3 },
   { href: '/analysis',    label: 'Deep Analysis', icon: Sparkles },
-  { href: '/simulate',    label: 'Simulate',    icon: FlaskConical },
+  { href: '/simulate',    label: 'Simulate',      icon: FlaskConical },
+  { href: '/settings',    label: 'Settings',      icon: Settings },
 ];
 
 export default function Sidebar({ mobileOpen, onClose }) {
@@ -29,10 +30,10 @@ export default function Sidebar({ mobileOpen, onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Role-gate navigation
+  // Role-gate navigation: operators see Dashboard, Tournaments, Players, Teams, Settings
   const visibleNav = NAV.filter(item => {
     if (isOperator) {
-      return item.href === '/tournaments' || item.href === '/players' || item.href === '/teams';
+      return ['/dashboard', '/tournaments', '/players', '/teams', '/settings'].includes(item.href);
     }
     return true;
   });
@@ -154,12 +155,6 @@ export default function Sidebar({ mobileOpen, onClose }) {
           <UserIcon size={17} style={{ color: pathname === '/profile' ? 'var(--gold)' : 'inherit' }} />
           <span>Profile {isOwner && '& Admin'}</span>
         </Link>
-        {isOwner && (
-          <Link href="/settings" onClick={onClose} className={`sidebar-link ${pathname === '/settings' ? 'active' : ''}`}>
-            <Settings size={17} style={{ color: pathname === '/settings' ? 'var(--gold)' : 'inherit' }} />
-            <span>Settings</span>
-          </Link>
-        )}
         <button className="sidebar-link sidebar-logout" onClick={() => { onClose?.(); logout(); }}>
           <LogOut size={17} />
           <span>Sign Out</span>

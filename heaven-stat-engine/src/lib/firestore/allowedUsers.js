@@ -14,9 +14,9 @@ function getLocalAllowedUsers() {
   } catch {}
   return [
     {
-      email: 'ogadizion01@gmail.com',
+      email: 'demo@example.com',
       role: 'owner',
-      username: 'ogadizion01@gmail.com',
+      username: 'Demo Owner',
       avatarUrl: null,
       editorUids: [],
       addedAt: new Date().toISOString(),
@@ -181,3 +181,23 @@ export async function removeAllowedUser(email) {
   const docRef = doc(db, 'allowedUsers', normalizedEmail);
   await deleteDoc(docRef);
 }
+
+export async function clearMustChangePassword(email) {
+  if (!email) return;
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!isFirebaseConfigured) {
+    const list = getLocalAllowedUsers().map(u => {
+      if (u.email.toLowerCase() === normalizedEmail) {
+        return { ...u, mustChangePassword: false };
+      }
+      return u;
+    });
+    saveLocalAllowedUsers(list);
+    return;
+  }
+
+  const docRef = doc(db, 'allowedUsers', normalizedEmail);
+  await updateDoc(docRef, { mustChangePassword: false });
+}
+

@@ -16,6 +16,8 @@ import { matchOcrRowToTeam } from '@/lib/importers/ocrTeamMatcher';
 import { cleanTeamName } from '@/lib/utils/similarity';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig } from '@/lib/utils/mapConfig';
+import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
+import { getActiveReviveConfig, getReviveTypeForMatch } from '@/lib/utils/reviveConfig';
 
 // Distinct color per lobby slot (cycles if >6 lobbies)
 const LOBBY_COLORS = [
@@ -245,6 +247,7 @@ export default function TeamEntryPage() {
   const selectedGroup = hasGroups ? groups.find(g => g.id === selectedGroupId) : null;
   const activeStructure = (selectedGroup?.structure) || (tournament?.structure || {});
   const activeMapConfig = getActiveMapConfig(tournament, selectedGroup);
+  const activeReviveConfig = getActiveReviveConfig(tournament, selectedGroup);
   const totalDays = activeStructure.totalDays || 6;
   const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
   const { scoring = {} } = tournament;
@@ -272,6 +275,31 @@ export default function TeamEntryPage() {
       await refresh();
     } catch (err) {
       toast.error('Failed to update map schedule: ' + err.message);
+    }
+  };
+
+  const handleFlexibleReviveChange = async (lobbyNum, newRevive) => {
+    const currentConfig = activeReviveConfig || { mode: 'flexible', reviveType: 'auto', schedule: {} };
+    const updatedSchedule = {
+      ...(currentConfig.schedule || {}),
+      [`day${day}_lobby${lobbyNum}`]: newRevive,
+    };
+    const updatedReviveConfig = {
+      ...currentConfig,
+      mode: currentConfig.mode || 'flexible',
+      schedule: updatedSchedule,
+    };
+
+    try {
+      if (isQualifier && selectedGroupId) {
+        await updateGroup(id, selectedGroupId, { reviveConfig: updatedReviveConfig });
+      } else {
+        await updateTournament(id, { reviveConfig: updatedReviveConfig });
+      }
+      toast.success(`Day ${day} Lobby ${lobbyNum} Revive Type set to ${getReviveType(newRevive).label}`);
+      await refresh();
+    } catch (err) {
+      toast.error('Failed to update revive schedule: ' + err.message);
     }
   };
 
@@ -329,6 +357,7 @@ export default function TeamEntryPage() {
           lobby,
           placement: 0,
           kills: 0,
+          reviveType: getReviveTypeForMatch(activeReviveConfig, day, lobby),
           [field]: numVal,
           ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {})
         });
@@ -1628,6 +1657,51 @@ export default function TeamEntryPage() {
                   Map: <strong style={{ color: 'var(--gold)' }}>{activeMapConfig?.map || AVAILABLE_MAPS[0]}</strong> <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(locked — set in Tournament Configuration)</span>
                 </div>
               )}
+            </div>
+
+            {/* Revive Type Assignment Row */}
+            <div style={{
+              padding: '10px 18px',
+              background: 'var(--bg-card)',
+              borderBottom: '1px solid var(--border-md)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--gold)' }}>
+                  Revive Type for Day {day}:
+                </span>
+                {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => {
+                  const currentRevive = getReviveTypeForMatch(activeReviveConfig, day, l);
+                  const revMeta = getReviveType(currentRevive);
+                  return (
+                    <div key={`lobby-revive-${l}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
+                      <span style={{ fontWeight: 700, color: lc(l).text }}>L{l}:</span>
+                      <select
+                        className="form-select"
+                        style={{
+                          fontSize: '0.78rem',
+                          padding: '3px 8px',
+                          color: revMeta.color,
+                          borderColor: revMeta.border,
+                          backgroundColor: 'var(--bg-app)',
+                          fontWeight: 600,
+                        }}
+                        value={currentRevive}
+                        onChange={e => handleFlexibleReviveChange(l, e.target.value)}
+                      >
+                        {REVIVE_TYPES.map(rt => (
+                          <option key={rt.id} value={rt.id} style={{ color: '#E2E8F0', backgroundColor: '#121824' }}>
+                            {rt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="data-table-scroll">

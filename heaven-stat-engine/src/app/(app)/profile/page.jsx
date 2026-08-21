@@ -11,7 +11,7 @@ import UserAvatar from '@/components/ui/UserAvatar';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   User, Shield, Key, Camera, Upload, Trash2, Plus, Users, Trophy,
-  CheckCircle, AlertCircle, RefreshCw, X, ShieldAlert, Sparkles, Clock, Mail
+  CheckCircle, AlertCircle, RefreshCw, X, ShieldAlert, Sparkles, Clock, Mail, Copy, Check
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -33,10 +33,11 @@ export default function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
-  // Admin Dashboard State (Owner-Only)
+  // Admin Dashboard State
   const [allowedUsersList, setAllowedUsersList] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [addUserModalOpen, setAddUserModalOpen] = useState(false);
+  const [createdCredentialsModal, setCreatedCredentialsModal] = useState(null);
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('operator');
   const [addingUser, setAddingUser] = useState(false);
@@ -183,7 +184,7 @@ export default function ProfilePage() {
         try {
           const auth = getAuth();
           const token = await auth.currentUser?.getIdToken();
-          await fetch('/api/admin/users', {
+          const res = await fetch('/api/admin/users', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -195,6 +196,14 @@ export default function ProfilePage() {
               username: cleanEmail,
             }),
           });
+          const data = await res.json();
+          if (data.tempPassword) {
+            setCreatedCredentialsModal({
+              email: cleanEmail,
+              tempPassword: data.tempPassword,
+              role: newRole,
+            });
+          }
         } catch (claimErr) {
           console.warn('Custom claim sync note:', claimErr);
         }
@@ -215,8 +224,8 @@ export default function ProfilePage() {
     const nextRole = currentRole === 'owner' ? 'operator' : 'owner';
     const normalizedEmail = targetEmail.trim().toLowerCase();
 
-    if (normalizedEmail === 'ogadizion01@gmail.com' && nextRole !== 'owner') {
-      toast.error('Primary owner role cannot be changed');
+    if (normalizedEmail === user?.email?.toLowerCase() && nextRole !== 'owner') {
+      toast.error('You cannot demote your own account from owner');
       return;
     }
 
@@ -250,8 +259,8 @@ export default function ProfilePage() {
 
   const handleRemoveUser = async (targetEmail) => {
     const normalizedEmail = targetEmail.trim().toLowerCase();
-    if (normalizedEmail === 'ogadizion01@gmail.com') {
-      toast.error('Cannot remove primary owner account');
+    if (normalizedEmail === user?.email?.toLowerCase()) {
+      toast.error('Cannot remove your own account');
       return;
     }
 
@@ -585,7 +594,7 @@ export default function ProfilePage() {
                     {allowedUsersList.map((u) => {
                       const userPresence = presenceMap[u.uid] || { state: 'offline' };
                       const isUserOnline = userPresence.state === 'online';
-                      const isPrimaryOwner = u.email?.toLowerCase() === 'ogadizion01@gmail.com';
+                      const isSelf = u.email?.toLowerCase() === user?.email?.toLowerCase();
 
                       return (
                         <tr key={u.email}>
@@ -609,11 +618,11 @@ export default function ProfilePage() {
                           </td>
                           <td>
                             <button
-                              onClick={() => !isPrimaryOwner && handleRoleToggle(u.email, u.role)}
-                              disabled={isPrimaryOwner}
-                              title={isPrimaryOwner ? 'Primary owner role cannot be changed' : 'Click to toggle role'}
+                              onClick={() => !isSelf && handleRoleToggle(u.email, u.role)}
+                              disabled={isSelf}
+                              title={isSelf ? 'Cannot modify your own role' : 'Click to toggle role'}
                               style={{
-                                cursor: isPrimaryOwner ? 'default' : 'pointer',
+                                cursor: isSelf ? 'default' : 'pointer',
                                 fontSize: '0.72rem',
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.06em',
@@ -639,7 +648,7 @@ export default function ProfilePage() {
                             ) : '—'}
                           </td>
                           <td style={{ textAlign: 'right' }}>
-                            {!isPrimaryOwner && (
+                            {!isSelf && (
                               <button
                                 onClick={() => handleRemoveUser(u.email)}
                                 className="btn btn-danger btn-sm"
@@ -929,6 +938,72 @@ export default function ProfilePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Manual Credentials Modal (When Resend is not configured) ───────────── */}
+      {createdCredentialsModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 99999,
+          background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+            borderRadius: 14, padding: 24, width: '100%', maxWidth: 460,
+            boxShadow: '0 24px 64px rgba(0,0,0,0.6)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h3 style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Key size={18} />
+                User Account Created
+              </h3>
+              <button
+                onClick={() => setCreatedCredentialsModal(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 16 }}>
+              Because automatic email sending is not active, please copy and share these temporary login credentials directly with the user (e.g. via Discord or direct message).
+            </p>
+
+            <div style={{
+              background: 'var(--bg-app)', border: '1px solid var(--border-subtle)',
+              borderRadius: 8, padding: '12px 16px', fontSize: '0.82rem', fontFamily: 'var(--font-mono)',
+              lineHeight: 1.8, marginBottom: 18
+            }}>
+              <div><strong>Email:</strong> {createdCredentialsModal.email}</div>
+              <div><strong>Temporary Password:</strong> <span style={{ color: 'var(--gold)', fontWeight: 700 }}>{createdCredentialsModal.tempPassword}</span></div>
+              <div><strong>Role:</strong> {createdCredentialsModal.role}</div>
+              <div><strong>Login URL:</strong> {typeof window !== 'undefined' ? `${window.location.origin}/login` : '/login'}</div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `Heaven Stat Engine Login Credentials:\nEmail: ${createdCredentialsModal.email}\nTemporary Password: ${createdCredentialsModal.tempPassword}\nRole: ${createdCredentialsModal.role}\nLogin URL: ${window.location.origin}/login\n\n(You will be prompted to choose a new password upon first sign in.)`;
+                  navigator.clipboard.writeText(text);
+                  toast.success('Credentials copied to clipboard!');
+                }}
+                className="btn btn-primary btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Copy size={14} /> Copy Credentials
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreatedCredentialsModal(null)}
+                className="btn btn-secondary btn-sm"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

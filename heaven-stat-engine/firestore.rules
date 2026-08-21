@@ -9,8 +9,7 @@ service cloud.firestore {
 
     function isOwner() {
       return isSignedIn() && (
-        (request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'owner') ||
-        request.auth.token.email == 'ogadizion01@gmail.com'
+        request.auth.token.keys().hasAny(['role']) && request.auth.token.role == 'owner'
       );
     }
 
@@ -110,6 +109,13 @@ service cloud.firestore {
           request.resource.data.addedAt == resource.data.addedAt
         )
       );
+    }
+
+    // ─── Rate Limiting Collection ─────────────────────────────────────
+    // Completely forbidden from client-side direct access.
+    // Managed exclusively through Next.js server API routes using Admin SDK.
+    match /loginRateLimits/{document=**} {
+      allow read, write: if false;
     }
 
     // ─── Fallback rule for any other collection ───────────────────────

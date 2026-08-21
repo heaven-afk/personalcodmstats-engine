@@ -8,6 +8,7 @@ import { getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getGroups } from '@/lib/firestore/groups';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig, getMapForMatch } from '@/lib/utils/mapConfig';
+import { useAuth } from '@/contexts/AuthContext';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
 import { ClassBadge, TierBadge } from '@/components/ui/Badge';
@@ -48,6 +49,7 @@ function HistoryList({ label, items, renderItem }) {
 export default function PlayerProfilePage() {
   const { id } = useParams();
   const router = useRouter();
+  const { isOwner } = useAuth();
 
   const [player, setPlayer] = useState(null);
   const [history, setHistory] = useState([]);
@@ -226,6 +228,10 @@ export default function PlayerProfilePage() {
   };
 
   const handleSavePhoto = async () => {
+    if (!isOwner) {
+      toast.error('Only the owner can edit player photos');
+      return;
+    }
     setSavingPhoto(true);
     try {
       const finalUrl = photoInputUrl.trim();
@@ -241,6 +247,10 @@ export default function PlayerProfilePage() {
   };
 
   const handleRemovePhoto = async () => {
+    if (!isOwner) {
+      toast.error('Only the owner can remove player photos');
+      return;
+    }
     setSavingPhoto(true);
     try {
       await updatePlayer(id, { photoUrl: '' });
@@ -333,34 +343,36 @@ export default function PlayerProfilePage() {
                 {initial}
               </div>
             )}
-            <button
-              onClick={() => {
-                setPhotoInputUrl(player.photoUrl || '');
-                setPhotoModalOpen(true);
-              }}
-              title="Edit Player Photo"
-              style={{
-                position: 'absolute',
-                bottom: -2,
-                right: -2,
-                width: 22,
-                height: 22,
-                borderRadius: '50%',
-                background: 'var(--gold)',
-                color: '#000',
-                border: '2px solid var(--bg-card)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                transition: 'transform 0.15s'
-              }}
-              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.15)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              <Camera size={11} />
-            </button>
+            {isOwner && (
+              <button
+                onClick={() => {
+                  setPhotoInputUrl(player.photoUrl || '');
+                  setPhotoModalOpen(true);
+                }}
+                title="Edit Player Photo"
+                style={{
+                  position: 'absolute',
+                  bottom: -2,
+                  right: -2,
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  background: 'var(--gold)',
+                  color: '#000',
+                  border: '2px solid var(--bg-card)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                  transition: 'transform 0.15s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.15)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <Camera size={11} />
+              </button>
+            )}
           </div>
 
           <div>
@@ -398,16 +410,18 @@ export default function PlayerProfilePage() {
                 <User size={18} className="text-gold" />
                 Player Details
               </h2>
-              <button
-                onClick={() => {
-                  setPhotoInputUrl(player.photoUrl || '');
-                  setPhotoModalOpen(true);
-                }}
-                className="btn btn-secondary btn-sm"
-                style={{ fontSize: '0.72rem', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-              >
-                <Camera size={12} /> Edit Photo
-              </button>
+              {isOwner && (
+                <button
+                  onClick={() => {
+                    setPhotoInputUrl(player.photoUrl || '');
+                    setPhotoModalOpen(true);
+                  }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: '0.72rem', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <Camera size={12} /> Edit Photo
+                </button>
+              )}
             </div>
 
             {/* Avatar Spotlight Banner */}
@@ -633,7 +647,7 @@ export default function PlayerProfilePage() {
       </div>
 
       {/* Edit Photo / Avatar Modal */}
-      {photoModalOpen && (
+      {isOwner && photoModalOpen && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
           background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',

@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import crypto from 'crypto';
+import { buildPlatformInviteEmail } from '@/lib/email/templates';
+import { sendEmail } from '@/lib/email/send';
 
-function getAdminAuth() {
+function getAdminApp() {
   if (getApps().length > 0) {
-    return getAuth(getApps()[0]);
+    return getApps()[0];
   }
 
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
@@ -15,21 +19,26 @@ function getAdminAuth() {
   if (serviceAccountKey) {
     try {
       const parsed = JSON.parse(serviceAccountKey);
-      const app = initializeApp({ credential: cert(parsed) });
-      return getAuth(app);
+      return initializeApp({ credential: cert(parsed) });
     } catch {}
   }
 
   if (serviceAccountPath && existsSync(resolve(serviceAccountPath))) {
     try {
       const parsed = JSON.parse(readFileSync(resolve(serviceAccountPath), 'utf8'));
-      const app = initializeApp({ credential: cert(parsed) });
-      return getAuth(app);
+      return initializeApp({ credential: cert(parsed) });
     } catch {}
   }
 
-  const app = initializeApp();
-  return getAuth(app);
+  return initializeApp();
+}
+
+function getAdminAuth() {
+  return getAuth(getAdminApp());
+}
+
+function getAdminFirestore() {
+  return getFirestore(getAdminApp());
 }
 
 async function verifyOwner(req) {
@@ -43,7 +52,7 @@ async function verifyOwner(req) {
   const adminAuth = getAdminAuth();
   const decoded = await adminAuth.verifyIdToken(token);
 
-  const isOwner = decoded.role === 'owner' || decoded.email === 'ogadizion01@gmail.com';
+  const isOwner = decoded.role === 'owner' || (process.env.OWNER_EMAIL && decoded.email?.toLowerCase() === process.env.OWNER_EMAIL.toLowerCase());
   if (!isOwner) {
     return { error: 'Forbidden: Owner permission required', status: 403 };
   }
@@ -51,7 +60,7 @@ async function verifyOwner(req) {
   return { caller: decoded, adminAuth };
 }
 
-// POST: Sync user custom claims on add
+// POST: Create or sync user in Firebase Auth with temp password + custom claims
 export async function POST(req) {
   try {
     const authCheck = await verifyOwner(req);
@@ -61,7 +70,7 @@ export async function POST(req) {
 
     const { adminAuth } = authCheck;
     const body = await req.json();
-    const { email, role = 'operator' } = body;
+    const { email, role = 'operator', username } = body;
 
     if (!email) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
@@ -72,16 +81,82 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Invalid role. Must be "owner" or "operator".' }, { status: 400 });
     }
 
-    // Try setting custom claim if account already exists in Firebase Auth
     let uid = null;
+    let isNewAccount = false;
+    let tempPassword = null;
+
     try {
-      const authUser = await adminAuth.getUserByEmail(normalizedEmail);
-      if (authUser) {
-        uid = authUser.uid;
-        await adminAuth.setCustomUserClaims(authUser.uid, { role });
+      const existingUser = await adminAuth.getUserByEmail(normalizedEmail);
+      if (existingUser) {
+        uid = existingUser.uid;
+        await adminAuth.setCustomUserClaims(existingUser.uid, { role });
       }
-    } catch {
-      // User might not have signed up in Firebase Auth yet — claim will sync at login
+    } catch (notFoundErr) {
+      // User does not exist in Firebase Auth yet — generate a unique random temp password and create the account
+      isNewAccount = true;
+      tempPassword = crypto.randomBytes(12).toString('base64url');
+
+      const createdUser = await adminAuth.createUser({
+        email: normalizedEmail,
+        password: tempPassword,
+        displayName: username || normalizedEmail,
+        emailVerified: false,
+      });
+
+      uid = createdUser.uid;
+      await adminAuth.setCustomUserClaims(uid, { role });
+    }
+
+    // If new user was created, mark mustChangePassword in Firestore & send invite email
+    if (isNewAccount && tempPassword) {
+      try {
+        const adminDb = getAdminFirestore();
+        await adminDb.collection('allowedUsers').doc(normalizedEmail).set(
+          {
+            email: normalizedEmail,
+            role,
+            mustChangePassword: true,
+            uid,
+          },
+          { merge: true }
+        );
+      } catch (dbErr) {
+        console.warn('Could not update Firestore mustChangePassword flag:', dbErr);
+      }
+
+      // Fire invite email with temp password
+      let emailDispatched = false;
+      try {
+        const emailTemplate = buildPlatformInviteEmail({
+          toEmail: normalizedEmail,
+          tempPassword,
+          role,
+        });
+        const sendResult = await sendEmail({
+          to: normalizedEmail,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html,
+        });
+        if (sendResult?.success) {
+          emailDispatched = true;
+        }
+      } catch (emailErr) {
+        console.warn('Failed to send platform invite email:', emailErr);
+      }
+
+      return NextResponse.json({
+        success: true,
+        email: normalizedEmail,
+        uid,
+        role,
+        isNewAccount: true,
+        emailSent: emailDispatched,
+        // If email was not sent automatically via Resend, return tempPassword so owner can share it manually
+        tempPassword: emailDispatched ? undefined : tempPassword,
+        message: emailDispatched
+          ? `Account created for ${normalizedEmail} with role "${role}" and invite email dispatched.`
+          : `Account created for ${normalizedEmail}. Email was not sent (Resend unconfigured). Copy credentials to share manually.`,
+      });
     }
 
     return NextResponse.json({
@@ -89,10 +164,11 @@ export async function POST(req) {
       email: normalizedEmail,
       uid,
       role,
-      message: `User ${normalizedEmail} claim synchronized with role "${role}"`
+      isNewAccount: false,
+      message: `User ${normalizedEmail} claim synchronized with role "${role}"`,
     });
   } catch (err) {
-    console.error('Error syncing allowed user claim:', err);
+    console.error('Error in POST /api/admin/users:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
@@ -128,7 +204,7 @@ export async function PATCH(req) {
 
     return NextResponse.json({
       success: true,
-      message: `Auth claim for ${normalizedEmail} updated to "${role}"`
+      message: `Auth claim for ${normalizedEmail} updated to "${role}"`,
     });
   } catch (err) {
     console.error('Error updating allowed user role:', err);
@@ -155,7 +231,7 @@ export async function DELETE(req) {
     const normalizedEmail = email.trim().toLowerCase();
 
     // Prevent deleting owner account
-    if (normalizedEmail === 'ogadizion01@gmail.com') {
+    if (process.env.OWNER_EMAIL && normalizedEmail === process.env.OWNER_EMAIL.toLowerCase()) {
       return NextResponse.json({ error: 'Cannot remove primary owner account' }, { status: 400 });
     }
 
@@ -170,7 +246,7 @@ export async function DELETE(req) {
 
     return NextResponse.json({
       success: true,
-      message: `Tokens and claims revoked for ${normalizedEmail}`
+      message: `Tokens and claims revoked for ${normalizedEmail}`,
     });
   } catch (err) {
     console.error('Error revoking user claims:', err);

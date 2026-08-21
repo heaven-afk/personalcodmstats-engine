@@ -14,12 +14,11 @@ const OWNER_ONLY_PREFIXES = [
   '/analysis',
   '/simulate',
   '/rankings',
-  '/settings',
-  '/dashboard'
+  '/fantasy',
 ];
 
 export default function AppLayout({ children }) {
-  const { user, profile, displayName, loading, isOperator, role, isOwner } = useAuth();
+  const { user, profile, displayName, loading, isOperator, role, isOwner, mustChangePassword } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -30,13 +29,21 @@ export default function AppLayout({ children }) {
       return;
     }
 
-    if (!loading && isOperator) {
-      const isRestricted = OWNER_ONLY_PREFIXES.some(prefix => pathname.startsWith(prefix));
-      if (isRestricted) {
-        router.replace('/tournaments');
+    if (!loading && user) {
+      // If user must change password, force them to /settings before accessing any other page
+      if (mustChangePassword && pathname !== '/settings') {
+        router.replace('/settings');
+        return;
+      }
+
+      if (isOperator) {
+        const isRestricted = OWNER_ONLY_PREFIXES.some(prefix => pathname.startsWith(prefix));
+        if (isRestricted) {
+          router.replace('/dashboard');
+        }
       }
     }
-  }, [user, loading, isOperator, pathname, router]);
+  }, [user, loading, isOperator, mustChangePassword, pathname, router]);
 
   if (loading) return (
     <div className="full-page-center">

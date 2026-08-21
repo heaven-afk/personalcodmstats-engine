@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { readFileSync, existsSync } from 'fs';
@@ -45,7 +45,7 @@ export async function POST(req) {
     const decoded = await adminAuth.verifyIdToken(token);
 
     // Only owner can assign roles
-    const isOwner = decoded.role === 'owner' || decoded.email === 'ogadizion01@gmail.com';
+    const isOwner = decoded.role === 'owner' || decoded.email === process.env.OWNER_EMAIL;
     if (!isOwner) {
       return NextResponse.json({ error: 'Forbidden: Owner permission required' }, { status: 403 });
     }

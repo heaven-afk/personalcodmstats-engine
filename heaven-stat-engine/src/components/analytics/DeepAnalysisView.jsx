@@ -19,6 +19,8 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { cleanImageUrl } from '@/lib/utils/image';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getMapForMatch, filterResultsByMap } from '@/lib/utils/mapConfig';
+import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
+import { getReviveTypeForMatch, getActiveReviveConfig } from '@/lib/utils/reviveConfig';
 
 import { computeTeamAnalytics, getTeamRatingRankLabel } from '@/lib/engine/analytics';
 import { computePlayerAnalytics, computePlayerStats } from '@/lib/engine/playerStats';
@@ -1209,6 +1211,7 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
                 <th>Day</th>
                 <th>Lobby</th>
                 <th>Map</th>
+                <th>Revive</th>
                 <th>Placement</th>
                 <th>Kills</th>
                 <th>Place Pts</th>
@@ -1218,9 +1221,11 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
             </thead>
             <tbody>
               {matches.length === 0 ? (
-                <tr><td colSpan={8} className="empty-row">No matches recorded for this team yet.</td></tr>
+                <tr><td colSpan={9} className="empty-row">No matches recorded for this team yet.</td></tr>
               ) : matches.map((m, idx) => {
-                const mapName = getMapForMatch(activeMapConfig, m.day, m.lobby) || '—';
+                const mapName = getMapForMatch(activeMapConfig, m.day, m.lobby, m) || '—';
+                const revId = getReviveTypeForMatch(tournamentField?.reviveConfig, m.day, m.lobby, m);
+                const revMeta = getReviveType(revId);
                 const placePts = m.placementPts ?? 0;
                 const killPts = (m.kills || 0) * 2;
                 const totPts = m.totalPts ?? (placePts + killPts);
@@ -1230,6 +1235,19 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
                     <td style={{ fontFamily: 'var(--font-mono)' }}>D{m.day}</td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>L{m.lobby}</td>
                     <td style={{ color: mapName !== '—' ? 'var(--gold)' : 'var(--text-muted)' }}>{mapName}</td>
+                    <td>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        color: revMeta.color,
+                        background: revMeta.bg,
+                        border: `1px solid ${revMeta.border}`,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        fontWeight: 700
+                      }}>
+                        {revMeta.label}
+                      </span>
+                    </td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontWeight: m.placement === 1 ? 800 : 400, color: m.placement === 1 ? 'var(--gold)' : undefined }}>
                       {m.placement === 1 ? '🏆 1st' : `#${m.placement}`}
                     </td>
@@ -1622,6 +1640,7 @@ function TournamentPlayerView({ player, tournamentField, playerMatchResults, tea
                 <th>Day</th>
                 <th>Lobby</th>
                 <th>Map</th>
+                <th>Revive</th>
                 <th>Team Placement</th>
                 <th className="col-gold">Kills</th>
                 <th>Damage</th>
@@ -1630,14 +1649,29 @@ function TournamentPlayerView({ player, tournamentField, playerMatchResults, tea
             </thead>
             <tbody>
               {matches.length === 0 ? (
-                <tr><td colSpan={7} className="empty-row">No match results recorded for this player yet.</td></tr>
+                <tr><td colSpan={8} className="empty-row">No match results recorded for this player yet.</td></tr>
               ) : matches.map((m, idx) => {
-                const mapName = getMapForMatch(activeMapConfig, m.day, m.lobby) || '—';
+                const mapName = getMapForMatch(activeMapConfig, m.day, m.lobby, m) || '—';
+                const revId = getReviveTypeForMatch(tournamentField?.reviveConfig, m.day, m.lobby, m);
+                const revMeta = getReviveType(revId);
                 return (
                   <tr key={`p-match-${m.id || idx}`}>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>D{m.day}</td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>L{m.lobby}</td>
                     <td style={{ color: mapName !== '—' ? 'var(--gold)' : 'var(--text-muted)' }}>{mapName}</td>
+                    <td>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        color: revMeta.color,
+                        background: revMeta.bg,
+                        border: `1px solid ${revMeta.border}`,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        fontWeight: 700
+                      }}>
+                        {revMeta.label}
+                      </span>
+                    </td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>
                       {m.teamPlacement === 1 ? '🏆 1st' : `#${m.teamPlacement}`}
                     </td>

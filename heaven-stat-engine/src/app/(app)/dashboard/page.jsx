@@ -4,19 +4,22 @@ import Link from 'next/link';
 import { getTournaments } from '@/lib/firestore/tournaments';
 import { getPlayers, getTeams } from '@/lib/firestore/registry';
 import { getTeamMatchResults } from '@/lib/firestore/matchData';
+import { useAuth } from '@/contexts/AuthContext';
 import { StatusBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star, Sparkles, ArrowRight, Flame } from 'lucide-react';
+import { Trophy, Users, Shield, Zap, ExternalLink, Play, ClipboardList, BarChart2, Star, Sparkles, ArrowRight, Flame, FolderGit2 } from 'lucide-react';
 import { formatEventDates } from '@/lib/utils/dateUtils';
 import { computeTeamGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 export default function DashboardPage() {
+  const { user, isOwner } = useAuth();
   const [stats, setStats] = useState({
     totalTournaments: 0,
     activeTournaments: 0,
     totalPlayers: 0,
     totalTeams: 0,
   });
+  const [allTournaments, setAllTournaments] = useState([]);
   const [activeTourneys, setActiveTourneys] = useState([]);
   const [recentTourneys, setRecentTourneys] = useState([]);
   const [topPlayers, setTopPlayers] = useState([]);
@@ -50,6 +53,7 @@ export default function DashboardPage() {
           totalTeams: teams.length,
         });
 
+        setAllTournaments(tourneys);
         setActiveTourneys([...active, ...setup]);
         setRecentTourneys(completed.slice(0, 5));
 
@@ -319,6 +323,85 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Left Column: Tournaments */}
         <div className="lg:col-span-2" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          {/* My Projects Section (Tournaments where user is an assigned editor) */}
+          {user?.uid && (
+            <div className="card" style={{
+              background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(201, 168, 76, 0.3)',
+              borderRadius: '16px',
+              padding: '24px',
+            }}>
+              <div className="flex-between mb-4">
+                <div>
+                  <h2 className="card-title flex items-center gap-2" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)', margin: 0 }}>
+                    <FolderGit2 size={20} />
+                    My Projects
+                  </h2>
+                  <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: '4px 0 0' }}>
+                    Tournaments you created or have editor collaboration access to.
+                  </p>
+                </div>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gold)', background: 'rgba(201,168,76,0.15)', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(201,168,76,0.3)' }}>
+                  {allTournaments.filter(t => t.editorUids && t.editorUids.includes(user?.uid)).length} Project{allTournaments.filter(t => t.editorUids && t.editorUids.includes(user?.uid)).length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {allTournaments.filter(t => t.editorUids && t.editorUids.includes(user?.uid)).length === 0 ? (
+                <div className="text-center py-6 text-text-muted text-sm border border-dashed border-border/60 rounded-xl" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
+                  You haven't been added to any tournament projects yet. Create a tournament or ask an administrator for invite access.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {allTournaments
+                    .filter(t => t.editorUids && t.editorUids.includes(user?.uid))
+                    .map((tourney) => {
+                      const dateRange = formatEventDates(tourney.eventStartDate, tourney.eventEndDate);
+                      return (
+                        <div key={tourney.id} style={{
+                          background: 'rgba(15, 23, 42, 0.85)',
+                          border: '1px solid rgba(201, 168, 76, 0.25)',
+                          borderRadius: '12px',
+                          padding: '16px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                        }}>
+                          <div>
+                            <div className="flex-between mb-2">
+                              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                                Season {tourney.season || '—'}
+                              </span>
+                              <StatusBadge status={tourney.status} />
+                            </div>
+                            <h3 style={{ fontSize: '0.98rem', fontWeight: 800, color: '#FFFFFF', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {tourney.name}
+                            </h3>
+                            {dateRange && (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 600, marginTop: 3 }}>
+                                {dateRange}
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                            <Link
+                              href={`/tournaments/${tourney.id}`}
+                              className="btn btn-sm btn-primary"
+                              style={{ flex: 1, fontSize: '0.75rem', padding: '6px 10px', justifyContent: 'center' }}
+                            >
+                              Manage Hub <ArrowRight size={12} />
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="card" style={{
             background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
             backdropFilter: 'blur(16px)',

@@ -26,13 +26,8 @@ const LOBBY_COLORS = [
 const getLobbyColor = (n) => LOBBY_COLORS[(n - 1) % LOBBY_COLORS.length];
 
 // ─── Revive Types ────────────────────────────────────────────────────────────
-export const REVIVE_TYPES = [
-  { id: 'auto',     label: 'Auto Revive',        color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.4)' },
-  { id: 'teammate', label: 'Teammate Recovery',  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.4)' },
-  { id: 'dogtag',   label: 'Dog Tag',            color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.4)' },
-  { id: 'none',     label: 'None / N​A',         color: '#6b7280', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.4)' },
-];
-const getReviveType = (id) => REVIVE_TYPES.find(r => r.id === id) || REVIVE_TYPES[0];
+import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
+import { getActiveReviveConfig, getReviveTypeForMatch } from '@/lib/utils/reviveConfig';
 
 // ─── Smart Spreadsheet Parser ────────────────────────────────────────────────
 function parseSmartSpreadsheet(grid) {
@@ -716,16 +711,8 @@ export default function PlayerEntryPage() {
   const [ocrConcurrency, setOcrConcurrency] = useState(4);
   const ocrFileRef = useRef(null);
 
-  // Revive config: per-lobby revive type. Default to 'auto' for completed tournaments
-  const defaultRevive = tournament?.status === 'completed' ? 'auto' : 'auto';
-  const [reviveConfig, setReviveConfig] = useState(() => {
-    const cfg = {};
-    const lobbiesCount = tournament?.structure?.lobbiesPerDay || 4;
-    for (let l = 1; l <= lobbiesCount; l++) {
-      cfg[l] = defaultRevive;
-    }
-    return cfg;
-  });
+  // Active revive configuration from tournament / group (configured in Team Entry)
+  const activeReviveConfig = getActiveReviveConfig(tournament, selectedGroup);
 
   // Live preview parse effect
   useEffect(() => {
@@ -918,7 +905,7 @@ export default function PlayerEntryPage() {
       damage: isDamageEmpty ? null : (parseFloat(row.damage) ?? 0),
       accuracy: isAccuracyEmpty ? null : (parseFloat(row.accuracy) ?? 0),
       ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {}),
-      reviveType: reviveConfig[lobbyNum] || 'auto',
+      reviveType: getReviveTypeForMatch(activeReviveConfig, day, lobbyNum),
     };
 
     try {
@@ -2387,7 +2374,7 @@ export default function PlayerEntryPage() {
       {/* ── SECTION A: Kills ─────────────────────────────── */}
       {section === 'kills' && smartImportRows.length === 0 && (
         <>
-          {/* Revive Type Config Bar */}
+          {/* Revive Type Display Bar */}
           <div style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border-md)',
@@ -2400,14 +2387,14 @@ export default function PlayerEntryPage() {
             flexWrap: 'wrap'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.06em' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.06em' }}>
                 REVIVE TYPE
               </span>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1 }}>
               {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
                 const col = getLobbyColor(l);
-                const currentRevive = reviveConfig[l] || 'auto';
+                const currentRevive = getReviveTypeForMatch(activeReviveConfig, day, l);
                 const revType = getReviveType(currentRevive);
                 return (
                   <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2416,29 +2403,23 @@ export default function PlayerEntryPage() {
                       background: col.bg, border: `1px solid ${col.border}`,
                       borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap'
                     }}>L{l}</span>
-                    <select
-                      className="form-select"
-                      style={{
-                        fontSize: '0.72rem', padding: '2px 6px',
-                        borderColor: revType.border,
-                        background: revType.bg,
-                        color: revType.color,
-                        fontWeight: 700
-                      }}
-                      value={currentRevive}
-                      onChange={e => setReviveConfig(prev => ({ ...prev, [l]: e.target.value }))}
-                      disabled={isLocked}
-                    >
-                      {REVIVE_TYPES.map(rt => (
-                        <option key={rt.id} value={rt.id}>{rt.label}</option>
-                      ))}
-                    </select>
+                    <span style={{
+                      fontSize: '0.72rem', padding: '2px 8px',
+                      borderColor: revType.border,
+                      border: `1px solid ${revType.border}`,
+                      background: revType.bg,
+                      color: revType.color,
+                      borderRadius: 4,
+                      fontWeight: 700
+                    }}>
+                      {revType.label}
+                    </span>
                   </div>
                 );
               })}
             </div>
             <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', flexShrink: 0 }}>
-              Per-lobby revive mode
+              Configured on Team Entry page
             </span>
           </div>
 

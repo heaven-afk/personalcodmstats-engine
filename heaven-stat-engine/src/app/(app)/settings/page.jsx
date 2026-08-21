@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import { clearMustChangePassword } from '@/lib/firestore/allowedUsers';
+
 // ─── Migration progress step label map ────────────────────────────────────────
 const STEP_LABELS = {
   players: 'Players',
@@ -20,7 +22,7 @@ const STEP_LABELS = {
 };
 
 export default function SettingsPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, mustChangePassword, refreshProfile } = useAuth();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [updating, setUpdating] = useState(false);
@@ -36,13 +38,22 @@ export default function SettingsPage() {
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     if (!newPassword) { toast.error('Password cannot be empty'); return; }
+    if (newPassword.length < 6) { toast.error('Password must be at least 6 characters'); return; }
     if (newPassword !== confirmPassword) { toast.error('Passwords do not match'); return; }
     setUpdating(true);
     try {
       const auth = getAuth();
       if (auth.currentUser) {
         await updatePassword(auth.currentUser, newPassword);
-        toast.success('Password updated successfully!');
+        if (user?.email) {
+          try {
+            await clearMustChangePassword(user.email);
+            if (refreshProfile) await refreshProfile();
+          } catch (flagErr) {
+            console.warn('Could not clear mustChangePassword flag:', flagErr);
+          }
+        }
+        toast.success('Password updated successfully! Full platform access enabled.');
         setNewPassword('');
         setConfirmPassword('');
       } else {
@@ -100,6 +111,28 @@ export default function SettingsPage() {
           <p className="page-subtitle">Manage your account credentials, database, and system settings</p>
         </div>
       </div>
+
+      {/* ── First Login Force Password Banner ───────────────────────────────── */}
+      {mustChangePassword && (
+        <div style={{
+          padding: '16px 20px',
+          borderRadius: 12,
+          background: 'rgba(239, 68, 68, 0.12)',
+          border: '1px solid rgba(239, 68, 68, 0.4)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 14,
+          color: '#fca5a5'
+        }}>
+          <AlertCircle size={22} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <strong style={{ color: '#ffffff', fontSize: '0.95rem' }}>Password Update Required</strong>
+            <p style={{ margin: '4px 0 0', fontSize: '0.84rem', color: '#cbd5e1', lineHeight: 1.5 }}>
+              You were provisioned with a temporary password. Please set a new permanent password below to unlock full access to the platform.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Database Mode Status ─────────────────────────────────────────────── */}
       <div className="card" style={{

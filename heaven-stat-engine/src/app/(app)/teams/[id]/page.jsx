@@ -14,12 +14,13 @@ import DataTable from '@/components/ui/DataTable';
 import MetricTooltip from '@/components/ui/MetricTooltip';
 import { ChevronLeft, Trophy, Shield, Star, Link2, Image as ImageIcon, Flame } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { cleanImageUrl } from '@/lib/utils/image';
+import { useAuth } from '@/contexts/AuthContext';
 import { computeTeamGlobalForm } from '@/lib/engine/globalForm';
 
 export default function TeamProfilePage() {
   const { id } = useParams();
   const router = useRouter();
+  const { isOwner } = useAuth();
 
   const [team, setTeam] = useState(null);
   const [history, setHistory] = useState([]);
@@ -156,6 +157,10 @@ export default function TeamProfilePage() {
   const [updatingImages, setUpdatingImages] = useState(false);
 
   const handleSaveImages = async () => {
+    if (!isOwner) {
+      toast.error('Only the owner can edit team images');
+      return;
+    }
     setUpdatingImages(true);
     try {
       const updates = {
@@ -265,93 +270,95 @@ export default function TeamProfilePage() {
           </div>
 
           {/* Team Logo & Banner Card */}
-          <div className="card">
-            <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
-              <ImageIcon size={18} className="text-gold" />
-              Team Images
-            </h2>
+          {isOwner && (
+            <div className="card">
+              <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
+                <ImageIcon size={18} className="text-gold" />
+                Team Images
+              </h2>
 
-            {/* Logo */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Logo</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              {/* Logo */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Logo</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{
+                    width: 64, height: 64, borderRadius: 10, flexShrink: 0,
+                    background: 'var(--bg-header)', border: '2px solid var(--border-gold)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                  }}>
+                    {logoUrlInput || team.logo ? (
+                      <img src={cleanImageUrl(logoUrlInput || team.logo)} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                    ) : (
+                      <Shield size={28} style={{ color: 'var(--gold)' }} />
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }} className="form-field">
+                    <label className="form-label text-[10px] mb-1">Logo Image URL</label>
+                    <input
+                      type="text"
+                      className="form-input text-xs"
+                      style={{ padding: '6px 10px', height: 'auto' }}
+                      value={logoUrlInput}
+                      onChange={(e) => setLogoUrlInput(e.target.value)}
+                      placeholder="https://i.imgur.com/...png"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Banner */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Banner</div>
                 <div style={{
-                  width: 64, height: 64, borderRadius: 10, flexShrink: 0,
-                  background: 'var(--bg-header)', border: '2px solid var(--border-gold)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                  width: '100%', height: 85, borderRadius: 8, overflow: 'hidden',
+                  background: 'var(--bg-header)', border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: 10, position: 'relative',
                 }}>
-                  {logoUrlInput || team.logo ? (
-                    <img src={cleanImageUrl(logoUrlInput || team.logo)} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
+                  {bannerUrlInput ? (
+                    <img src={cleanImageUrl(bannerUrlInput)} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
                   ) : (
-                    <Shield size={28} style={{ color: 'var(--gold)' }} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No banner set</span>
                   )}
                 </div>
-                <div style={{ flex: 1 }} className="form-field">
-                  <label className="form-label text-[10px] mb-1">Logo Image URL</label>
+                <div className="form-field">
+                  <label className="form-label text-[10px] mb-1">Banner Image URL</label>
                   <input
                     type="text"
                     className="form-input text-xs"
                     style={{ padding: '6px 10px', height: 'auto' }}
-                    value={logoUrlInput}
-                    onChange={(e) => setLogoUrlInput(e.target.value)}
+                    value={bannerUrlInput}
+                    onChange={(e) => setBannerUrlInput(e.target.value)}
                     placeholder="https://i.imgur.com/...png"
                   />
                 </div>
               </div>
-            </div>
 
-            {/* Banner */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Banner</div>
+              {/* Guide Info Box */}
               <div style={{
-                width: '100%', height: 85, borderRadius: 8, overflow: 'hidden',
-                background: 'var(--bg-header)', border: '1px solid var(--border)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                marginBottom: 10, position: 'relative',
+                padding: '10px 12px',
+                background: 'rgba(212, 175, 55, 0.05)',
+                border: '1px dashed rgba(212, 175, 55, 0.25)',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                color: 'var(--text-muted)',
+                marginBottom: 16,
+                lineHeight: '1.4',
               }}>
-                {bannerUrlInput ? (
-                  <img src={cleanImageUrl(bannerUrlInput)} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} referrerPolicy="no-referrer" />
-                ) : (
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No banner set</span>
-                )}
+                💡 <strong>Tip:</strong> Upload your logo and banner files to <a href="https://imgur.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'underline' }}>imgur.com</a> or another host, and paste the <strong>Direct Link</strong> (must end in .png, .jpg, or .webp) here.
               </div>
-              <div className="form-field">
-                <label className="form-label text-[10px] mb-1">Banner Image URL</label>
-                <input
-                  type="text"
-                  className="form-input text-xs"
-                  style={{ padding: '6px 10px', height: 'auto' }}
-                  value={bannerUrlInput}
-                  onChange={(e) => setBannerUrlInput(e.target.value)}
-                  placeholder="https://i.imgur.com/...png"
-                />
-              </div>
-            </div>
 
-            {/* Guide Info Box */}
-            <div style={{
-              padding: '10px 12px',
-              background: 'rgba(212, 175, 55, 0.05)',
-              border: '1px dashed rgba(212, 175, 55, 0.25)',
-              borderRadius: '6px',
-              fontSize: '0.72rem',
-              color: 'var(--text-muted)',
-              marginBottom: 16,
-              lineHeight: '1.4',
-            }}>
-              💡 <strong>Tip:</strong> Upload your logo and banner files to <a href="https://imgur.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'underline' }}>imgur.com</a> or another host, and paste the <strong>Direct Link</strong> (must end in .png, .jpg, or .webp) here.
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ width: '100%' }}
+                disabled={updatingImages || (logoUrlInput.trim() === (team.logoUrl || '') && bannerUrlInput.trim() === (team.bannerUrl || ''))}
+                onClick={handleSaveImages}
+              >
+                {updatingImages ? 'Saving Images...' : 'Save Team Images'}
+              </button>
             </div>
-
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ width: '100%' }}
-              disabled={updatingImages || (logoUrlInput.trim() === (team.logoUrl || '') && bannerUrlInput.trim() === (team.bannerUrl || ''))}
-              onClick={handleSaveImages}
-            >
-              {updatingImages ? 'Saving Images...' : 'Save Team Images'}
-            </button>
-          </div>
+          )}
 
           {/* Career Stats */}
           <div className="card">

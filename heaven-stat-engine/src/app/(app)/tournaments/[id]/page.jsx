@@ -6,6 +6,7 @@ import { Calendar, Trophy, Crosshair, Award, Plus, Trash2, Edit, Check, Shield, 
 import { useRouter } from 'next/navigation';
 import { setTournamentStatus, updateTournamentEditors } from '@/lib/firestore/tournaments';
 import { getGroups, createGroup, updateGroup, deleteGroup } from '@/lib/firestore/groups';
+import { auth } from '@/lib/firebase';
 import toast from 'react-hot-toast';
 import { useState, useEffect, useCallback } from 'react';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
@@ -21,25 +22,69 @@ export default function TournamentOverviewPage() {
 
   const canEdit = isOwner || (tournament?.editorUids && tournament.editorUids.includes(user?.uid));
 
-  // Access management state (Owner only)
-  const [newEditorUid, setNewEditorUid] = useState('');
+  // Access management state (Owner + tournament editors)
+  const [newEditorInput, setNewEditorInput] = useState('');
   const [updatingEditors, setUpdatingEditors] = useState(false);
 
   const handleAddEditor = async () => {
-    if (!newEditorUid.trim()) return;
-    const cleanUid = newEditorUid.trim();
-    const currentEditors = tournament.editorUids || [];
-    if (currentEditors.includes(cleanUid)) {
-      toast.error('This user UID already has access');
-      return;
-    }
+    if (!newEditorInput.trim()) return;
+    const cleanInput = newEditorInput.trim();
     setUpdatingEditors(true);
     try {
-      const updated = [...currentEditors, cleanUid];
+      let resolvedUid = cleanInput;
+      let resolvedEmail = cleanInput.includes('@') ? cleanInput.toLowerCase() : null;
+
+      // Lookup user if live Firebase
+      try {
+        const token = await auth?.currentUser?.getIdToken();
+        if (token) {
+          const res = await fetch(`/api/admin/lookup-uid?query=${encodeURIComponent(cleanInput)}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.uid) resolvedUid = data.uid;
+            if (data.email) resolvedEmail = data.email;
+          }
+        }
+      } catch (lookupErr) {
+        console.warn('User lookup note:', lookupErr);
+      }
+
+      const currentEditors = tournament.editorUids || [];
+      if (currentEditors.includes(resolvedUid)) {
+        toast.error('This user already has editor access to this tournament');
+        return;
+      }
+
+      const updated = [...currentEditors, resolvedUid];
       await updateTournamentEditors(tournament.id, updated);
       await refresh();
-      setNewEditorUid('');
-      toast.success(`Access granted to ${cleanUid}`);
+      setNewEditorInput('');
+
+      // Send tournament invite email if live Firebase
+      try {
+        const token = await auth?.currentUser?.getIdToken();
+        if (token) {
+          await fetch('/api/admin/tournament-invite', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              tournamentId: tournament.id,
+              tournamentName: tournament.name,
+              inviteeEmail: resolvedEmail,
+              inviteeUid: resolvedUid,
+            })
+          });
+        }
+      } catch (inviteErr) {
+        console.warn('Failed to dispatch tournament invite email:', inviteErr);
+      }
+
+      toast.success(`Access granted! Invite dispatched.`);
     } catch (err) {
       toast.error('Failed to grant access: ' + err.message);
     } finally {
@@ -227,17 +272,17 @@ export default function TournamentOverviewPage() {
         </div>
       </div>
 
-      {/* ── Owner-Only Access Management ─────────────────────────────── */}
-      {isOwner && (
+      {/* ── Collaborator & Operator Access Management ─────────────────────────────── */}
+      {canEdit && (
         <div className="card" style={{ marginBottom: 24, border: '1px solid rgba(201,168,76,0.3)' }}>
           <div className="flex-between" style={{ marginBottom: 14 }}>
             <div>
               <h3 className="card-title flex items-center gap-2" style={{ color: 'var(--gold)' }}>
                 <UserCheck size={18} />
-                Operator Access Management
+                {isOwner ? 'Operator Access Management' : 'Collaborator Access Management'}
               </h3>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                Grant or revoke operator editor access for this specific tournament.
+                Grant or revoke collaborator editor access for this specific tournament.
               </p>
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'var(--bg-alt-row)', padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)' }}>
@@ -249,7 +294,7 @@ export default function TournamentOverviewPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {(!tournament.editorUids || tournament.editorUids.length === 0) ? (
               <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
-                No operators assigned. Only the Owner currently has edit access.
+                No collaborator editors assigned yet.
               </p>
             ) : (
               tournament.editorUids.map(uid => (
@@ -263,7 +308,7 @@ export default function TournamentOverviewPage() {
                   border: '1px solid var(--border-md)'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 700 }}>UID:</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 700 }}>Editor UID:</span>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--text-primary)' }}>
                       {uid}
                     </span>
@@ -274,7 +319,7 @@ export default function TournamentOverviewPage() {
                     style={{ color: 'var(--danger)', padding: '3px 8px', fontSize: '0.78rem' }}
                     onClick={() => handleRemoveEditor(uid)}
                     disabled={updatingEditors}
-                    title="Revoke operator access"
+                    title="Revoke collaborator access"
                   >
                     <UserX size={13} /> Revoke
                   </button>
@@ -283,20 +328,20 @@ export default function TournamentOverviewPage() {
             )}
           </div>
 
-          {/* Add operator form */}
+          {/* Add operator / collaborator form */}
           <div style={{ display: 'flex', gap: 10 }}>
             <input
               className="form-input"
-              placeholder="Enter Operator User UID..."
-              value={newEditorUid}
-              onChange={e => setNewEditorUid(e.target.value)}
+              placeholder="Enter collaborator email or user UID..."
+              value={newEditorInput}
+              onChange={e => setNewEditorInput(e.target.value)}
               style={{ flex: 1, fontSize: '0.85rem' }}
             />
             <button
               type="button"
               className="btn btn-primary btn-sm"
               onClick={handleAddEditor}
-              disabled={updatingEditors || !newEditorUid.trim()}
+              disabled={updatingEditors || !newEditorInput.trim()}
             >
               <UserPlus size={14} /> Grant Access
             </button>
