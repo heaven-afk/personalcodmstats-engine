@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  serverExternalPackages: ['firebase-admin', 'nodemailer'],
   allowedDevOrigins: ['10.31.178.27'],
   images: {
     remotePatterns: [

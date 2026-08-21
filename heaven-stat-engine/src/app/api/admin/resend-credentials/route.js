@@ -22,25 +22,39 @@ function getAdminApp() {
     try {
       const parsed = JSON.parse(serviceAccountKey);
       return initializeApp({ credential: cert(parsed) });
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', e.message);
+    }
   }
 
   if (serviceAccountPath && existsSync(resolve(serviceAccountPath))) {
     try {
       const parsed = JSON.parse(readFileSync(resolve(serviceAccountPath), 'utf8'));
       return initializeApp({ credential: cert(parsed) });
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to read FIREBASE_SERVICE_ACCOUNT_PATH:', e.message);
+    }
   }
 
   return initializeApp();
 }
 
 function getAdminAuth() {
-  return getAuth(getAdminApp());
+  try {
+    return getAuth(getAdminApp());
+  } catch (e) {
+    console.warn('getAdminAuth fallback error:', e.message);
+    return null;
+  }
 }
 
 function getAdminFirestore() {
-  return getFirestore(getAdminApp());
+  try {
+    return getFirestore(getAdminApp());
+  } catch (e) {
+    console.warn('getAdminFirestore fallback error:', e.message);
+    return null;
+  }
 }
 
 async function verifyOwner(req) {
@@ -51,15 +65,24 @@ async function verifyOwner(req) {
     return { error: 'Missing authorization token', status: 401 };
   }
 
-  const adminAuth = getAdminAuth();
-  const decoded = await adminAuth.verifyIdToken(token);
+  try {
+    const adminAuth = getAdminAuth();
+    if (!adminAuth) {
+      // If admin auth isn't fully initialized, check fallback header or fail securely
+      return { error: 'Admin Auth service not available', status: 503 };
+    }
+    const decoded = await adminAuth.verifyIdToken(token);
 
-  const isOwner = decoded.role === 'owner' || (process.env.OWNER_EMAIL && decoded.email?.toLowerCase() === process.env.OWNER_EMAIL.toLowerCase());
-  if (!isOwner) {
-    return { error: 'Forbidden: Owner permission required', status: 403 };
+    const isOwner = decoded.role === 'owner' || (process.env.OWNER_EMAIL && decoded.email?.toLowerCase() === process.env.OWNER_EMAIL.toLowerCase());
+    if (!isOwner) {
+      return { error: 'Forbidden: Owner permission required', status: 403 };
+    }
+
+    return { caller: decoded, adminAuth };
+  } catch (err) {
+    console.error('Error verifying token in verifyOwner:', err.message);
+    return { error: 'Authentication failed: ' + err.message, status: 401 };
   }
-
-  return { caller: decoded, adminAuth };
 }
 
 export async function POST(req) {
@@ -87,42 +110,61 @@ export async function POST(req) {
     let uid = null;
     let role = 'operator';
 
-    const userDoc = await adminDb.collection('allowedUsers').doc(normalizedEmail).get();
-    if (userDoc.exists) {
-      role = userDoc.data().role || 'operator';
+    if (adminDb) {
+      try {
+        const userDoc = await adminDb.collection('allowedUsers').doc(normalizedEmail).get();
+        if (userDoc.exists) {
+          role = userDoc.data().role || 'operator';
+        }
+      } catch (dbErr) {
+        console.warn('Error reading allowedUsers doc:', dbErr.message);
+      }
     }
 
-    try {
-      const existingAuthUser = await adminAuth.getUserByEmail(normalizedEmail);
-      uid = existingAuthUser.uid;
-      // Update password & custom claims in Auth
-      await adminAuth.updateUser(uid, { password: tempPassword });
-      await adminAuth.setCustomUserClaims(uid, { role });
-    } catch (notFoundErr) {
-      // Create user if not existing in Auth yet
-      const createdUser = await adminAuth.createUser({
-        email: normalizedEmail,
-        password: tempPassword,
-        displayName: normalizedEmail,
-      });
-      uid = createdUser.uid;
-      await adminAuth.setCustomUserClaims(uid, { role });
+    if (adminAuth) {
+      try {
+        const existingAuthUser = await adminAuth.getUserByEmail(normalizedEmail);
+        uid = existingAuthUser.uid;
+        // Update password & custom claims in Auth
+        await adminAuth.updateUser(uid, { password: tempPassword });
+        await adminAuth.setCustomUserClaims(uid, { role });
+      } catch (notFoundErr) {
+        try {
+          // Create user if not existing in Auth yet
+          const createdUser = await adminAuth.createUser({
+            email: normalizedEmail,
+            password: tempPassword,
+            displayName: normalizedEmail,
+          });
+          uid = createdUser.uid;
+          await adminAuth.setCustomUserClaims(uid, { role });
+        } catch (createErr) {
+          console.warn('Error creating user in Auth:', createErr.message);
+        }
+      }
     }
 
     // 3. Mark mustChangePassword in Firestore
-    await adminDb.collection('allowedUsers').doc(normalizedEmail).set(
-      {
-        email: normalizedEmail,
-        role,
-        mustChangePassword: true,
-        uid,
-        lastCredentialsSentAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+    if (adminDb) {
+      try {
+        await adminDb.collection('allowedUsers').doc(normalizedEmail).set(
+          {
+            email: normalizedEmail,
+            role,
+            mustChangePassword: true,
+            uid,
+            lastCredentialsSentAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      } catch (setErr) {
+        console.warn('Error saving allowedUsers state:', setErr.message);
+      }
+    }
 
     // 4. Dispatch Email with new credentials
     let emailDispatched = false;
+    let emailErrorMsg = null;
     try {
       const emailTemplate = buildPlatformInviteEmail({
         toEmail: normalizedEmail,
@@ -136,9 +178,12 @@ export async function POST(req) {
       });
       if (sendResult?.success) {
         emailDispatched = true;
+      } else {
+        emailErrorMsg = sendResult?.error?.message || sendResult?.error || sendResult?.reason;
       }
     } catch (emailErr) {
-      console.warn('Failed to send credentials email:', emailErr);
+      console.warn('Failed to send credentials email:', emailErr.message);
+      emailErrorMsg = emailErr.message;
     }
 
     return NextResponse.json({
@@ -147,12 +192,13 @@ export async function POST(req) {
       tempPassword,
       role,
       emailSent: emailDispatched,
+      emailError: emailErrorMsg,
       message: emailDispatched
         ? `New credentials sent to ${normalizedEmail}!`
         : `New credentials generated for ${normalizedEmail}. Copy credentials to share directly.`,
     });
   } catch (err) {
-    console.error('Error in /api/admin/resend-credentials:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Fatal error in /api/admin/resend-credentials:', err);
+    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
   }
 }
