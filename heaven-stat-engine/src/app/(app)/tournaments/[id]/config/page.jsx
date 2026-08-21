@@ -67,21 +67,28 @@ const PRESETS = {
 };
 
 import { useAuth } from '@/contexts/AuthContext';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 export default function EditTournamentConfigPage() {
   const router = useRouter();
   const { id } = useParams();
   const { tournament, refresh, setTournament } = useTournament();
-  const { isOperator, loading: authLoading } = useAuth();
+  const { user, isOwner, isOperator, loading: authLoading } = useAuth();
+
+  const canEdit = isOwner || (tournament?.editorUids && tournament.editorUids.includes(user?.uid));
 
   useEffect(() => {
-    if (!authLoading && isOperator) {
+    if (!authLoading && !isOwner && !canEdit) {
       toast.error('Access restricted: you do not have permission to view this page.');
-      router.replace('/tournaments');
+      router.replace(`/tournaments/${id}`);
     }
-  }, [authLoading, isOperator, router]);
+  }, [authLoading, isOwner, canEdit, router, id]);
 
-  if (authLoading || isOperator || !tournament) return null;
+  if (authLoading || !tournament) {
+    return <LoadingSpinner size="lg" text="Loading configuration..." />;
+  }
+
+  if (!isOwner && !canEdit) return null;
 
   return (
     <TournamentConfigForm
@@ -96,6 +103,7 @@ export default function EditTournamentConfigPage() {
 }
 
 function TournamentConfigForm({ tournament, refresh, setTournament, id, router }) {
+  const { user, isOwner, isOperator } = useAuth();
   const [saving, setSaving] = useState(false);
 
   // States mirroring create wizard, initialized from tournament directly
@@ -228,6 +236,10 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
 
   const handleDeleteTournament = async () => {
     if (!deleteChecked1 || !deleteChecked2) return;
+    if (!isOwner) {
+      toast.error('Only the owner can delete a tournament');
+      return;
+    }
     setConfirming(true);
     try {
       await deleteTournament(id);
@@ -269,24 +281,26 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
   };
 
   // Player class helpers
-  const addClass = () => setPlayerClasses(p => [...p, { className: '', activeDays: [], badgeColor: '#C9A84C' }]);
-  const removeClass = (i) => setPlayerClasses(p => p.filter((_, j) => j !== i));
-  const updateClass = (i, field, val) => setPlayerClasses(p => p.map((c, j) => j === i ? { ...c, [field]: val } : c));
+  const addClass = () => setPlayerClasses(p => [...(p || []), { className: '', activeDays: [], badgeColor: '#C9A84C' }]);
+  const removeClass = (i) => setPlayerClasses(p => (p || []).filter((_, j) => j !== i));
+  const updateClass = (i, field, val) => setPlayerClasses(p => (p || []).map((c, j) => j === i ? { ...c, [field]: val } : c));
   const toggleDay = (i, day) => {
-    setPlayerClasses(p => p.map((c, j) => {
+    setPlayerClasses(p => (p || []).map((c, j) => {
       if (j !== i) return c;
-      const days = c.activeDays.includes(day) ? c.activeDays.filter(d => d !== day) : [...c.activeDays, day].sort((a,b)=>a-b);
+      const activeDays = c.activeDays || [];
+      const days = activeDays.includes(day) ? activeDays.filter(d => d !== day) : [...activeDays, day].sort((a,b)=>a-b);
       return { ...c, activeDays: days };
     }));
   };
 
   // Placement table helpers
   const addPlacement = () => {
-    const next = (placementPoints[placementPoints.length - 1]?.position || 0) + 1;
-    setPlacementPoints(p => [...p, { position: next, points: 0 }]);
+    const list = placementPoints || [];
+    const next = (list[list.length - 1]?.position || 0) + 1;
+    setPlacementPoints(p => [...(p || []), { position: next, points: 0 }]);
   };
-  const removePlacement = (i) => setPlacementPoints(p => p.filter((_, j) => j !== i));
-  const updatePlacement = (i, field, val) => setPlacementPoints(p => p.map((pp, j) => j === i ? { ...pp, [field]: Number(val) } : pp));
+  const removePlacement = (i) => setPlacementPoints(p => (p || []).filter((_, j) => j !== i));
+  const updatePlacement = (i, field, val) => setPlacementPoints(p => (p || []).map((pp, j) => j === i ? { ...pp, [field]: Number(val) } : pp));
 
   // Bonus type helpers
   const addBonus = () => setBonusTypes(b => [...b, { name: '' }]);
@@ -539,26 +553,29 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
                 <div>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6 }}>Active Days:</p>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {Array.from({ length: Number(totalDays) }, (_, d) => d + 1).map(day => (
-                      <button
-                        key={day}
-                        onClick={() => !isLocked && toggleDay(i, day)}
-                        disabled={isLocked}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 6,
-                          fontWeight: 700,
-                          fontSize: '0.8rem',
-                          border: '2px solid ' + (cls.activeDays.includes(day) ? cls.badgeColor : 'var(--border-md)'),
-                          background: cls.activeDays.includes(day) ? cls.badgeColor + '33' : 'var(--bg-input)',
-                          color: cls.activeDays.includes(day) ? cls.badgeColor : 'var(--text-muted)',
-                          cursor: isLocked ? 'default' : 'pointer'
-                        }}
-                      >
-                        {day}
-                      </button>
-                    ))}
+                    {Array.from({ length: Number(totalDays) }, (_, d) => d + 1).map(day => {
+                      const isActive = (cls.activeDays || []).includes(day);
+                      return (
+                        <button
+                          key={day}
+                          onClick={() => !isLocked && toggleDay(i, day)}
+                          disabled={isLocked}
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 6,
+                            fontWeight: 700,
+                            fontSize: '0.8rem',
+                            border: '2px solid ' + (isActive ? cls.badgeColor : 'var(--border-md)'),
+                            background: isActive ? cls.badgeColor + '33' : 'var(--bg-input)',
+                            color: isActive ? cls.badgeColor : 'var(--text-muted)',
+                            cursor: isLocked ? 'default' : 'pointer'
+                          }}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -656,7 +673,7 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
       </div>
 
       {/* Ranked Event Panel (Owner Only) */}
-      {!isOperator && (
+      {isOwner && (
         <div className="card" style={{ border: tournament.isRanked ? '1px solid rgba(201,168,76,0.45)' : '1px solid var(--border-md)', marginTop: 24, position: 'relative', overflow: 'hidden' }}>
           {tournament.isRanked && (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #b8860b, #C9A84C, #d4a017)' }} />
@@ -754,21 +771,23 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
       </div>
 
       {/* Danger Zone */}
-      <div className="card" style={{ border: '1px solid var(--danger)', background: 'rgba(239, 68, 68, 0.04)', marginTop: 24 }}>
-        <h2 className="card-title text-danger mb-2 flex items-center gap-2">
-          <Trash2 size={18} /> Danger Zone
-        </h2>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
-          Once you delete a tournament, all of its match results, registrations, bonuses, and stats are permanently lost. This action cannot be undone.
-        </p>
-        <button
-          type="button"
-          className="btn btn-danger"
-          onClick={openDeleteModal}
-        >
-          Delete Tournament
-        </button>
-      </div>
+      {isOwner && (
+        <div className="card" style={{ border: '1px solid var(--danger)', background: 'rgba(239, 68, 68, 0.04)', marginTop: 24 }}>
+          <h2 className="card-title text-danger mb-2 flex items-center gap-2">
+            <Trash2 size={18} /> Danger Zone
+          </h2>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
+            Once you delete a tournament, all of its match results, registrations, bonuses, and stats are permanently lost. This action cannot be undone.
+          </p>
+          <button
+            type="button"
+            className="btn btn-danger"
+            onClick={openDeleteModal}
+          >
+            Delete Tournament
+          </button>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
