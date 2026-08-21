@@ -6,13 +6,13 @@ function getAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 }
 
-function getWordmarkUrl() {
+function getLogoUrl() {
   const baseUrl = getAppUrl().replace(/\/$/, '');
-  return `${baseUrl}/brand/03_wordmark_only.png`;
+  return `${baseUrl}/brand/01_primary_logo.png`;
 }
 
 function emailWrapper(content) {
-  const wordmarkUrl = getWordmarkUrl();
+  const logoUrl = getLogoUrl();
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -25,11 +25,11 @@ function emailWrapper(content) {
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0B0E14; padding: 40px 16px;">
     <tr>
       <td align="center">
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 520px; background-color: #121824; border: 1px solid rgba(201, 168, 76, 0.3); border-radius: 16px; overflow: hidden; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);">
-          <!-- Header with Wordmark -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 520px; background-color: #121824; border: 1px solid rgba(201, 168, 76, 0.35); border-radius: 16px; overflow: hidden; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);">
+          <!-- Header with Primary Brand Logo -->
           <tr>
-            <td align="center" style="padding: 36px 30px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); background: linear-gradient(180deg, rgba(201, 168, 76, 0.08) 0%, rgba(18, 24, 36, 0) 100%);">
-              <img src="${wordmarkUrl}" alt="Heaven Stat Engine" width="180" style="display: block; max-width: 180px; height: auto;" />
+            <td align="center" style="padding: 32px 30px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); background: linear-gradient(180deg, rgba(201, 168, 76, 0.12) 0%, rgba(18, 24, 36, 0) 100%);">
+              <img src="${logoUrl}" alt="Heaven Stat Engine" width="220" style="display: block; max-width: 220px; height: auto; margin: 0 auto;" />
             </td>
           </tr>
           <!-- Body Content -->

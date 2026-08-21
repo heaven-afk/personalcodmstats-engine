@@ -42,6 +42,7 @@ export default function ProfilePage() {
   const [newRole, setNewRole] = useState('operator');
   const [addingUser, setAddingUser] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
+  const [sendingCredentialsFor, setSendingCredentialsFor] = useState(null);
 
   // Tournament Access Management State
   const [tournaments, setTournaments] = useState([]);
@@ -244,6 +245,38 @@ export default function ProfilePage() {
       toast.error('Network error testing email: ' + err.message);
     } finally {
       setTestingEmail(false);
+    }
+  };
+
+  const handleResendCredentials = async (targetEmail) => {
+    setSendingCredentialsFor(targetEmail);
+    try {
+      const auth = getAuth();
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/resend-credentials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email: targetEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        toast.error(data.error || 'Failed to send credentials');
+      } else {
+        toast.success(data.message || `Credentials sent to ${targetEmail}!`);
+        // Open credentials modal with new temp password
+        setCreatedCredentialsModal({
+          email: targetEmail,
+          tempPassword: data.tempPassword,
+          role: data.role || 'operator',
+        });
+      }
+    } catch (err) {
+      toast.error('Network error: ' + err.message);
+    } finally {
+      setSendingCredentialsFor(null);
     }
   };
 
@@ -687,16 +720,28 @@ export default function ProfilePage() {
                             ) : '—'}
                           </td>
                           <td style={{ textAlign: 'right' }}>
-                            {!isSelf && (
+                            <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                               <button
-                                onClick={() => handleRemoveUser(u.email)}
-                                className="btn btn-danger btn-sm"
-                                style={{ padding: '3px 8px', fontSize: '0.72rem' }}
-                                title="Remove User & Revoke Session"
+                                onClick={() => handleResendCredentials(u.email)}
+                                disabled={sendingCredentialsFor === u.email}
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                title="Send default login credentials & temporary password to this user"
                               >
-                                <Trash2 size={12} /> Remove
+                                <Key size={12} className={sendingCredentialsFor === u.email ? 'animate-spin' : 'text-gold'} />
+                                {sendingCredentialsFor === u.email ? 'Sending...' : 'Send Credentials'}
                               </button>
-                            )}
+                              {!isSelf && (
+                                <button
+                                  onClick={() => handleRemoveUser(u.email)}
+                                  className="btn btn-danger btn-sm"
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+                                  title="Remove User & Revoke Session"
+                                >
+                                  <Trash2 size={12} /> Remove
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
