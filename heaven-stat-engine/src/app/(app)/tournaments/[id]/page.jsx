@@ -17,6 +17,9 @@ const STATUS_FLOW = ['setup', 'active', 'completed', 'archived'];
 export default function TournamentOverviewPage() {
   const { tournament, refresh } = useTournament();
   const { user, isOwner, isOperator } = useAuth();
+  const router = useRouter();
+  const [advancing, setAdvancing] = useState(false);
+
   const userEmail = user?.email?.toLowerCase();
   const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
     (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
