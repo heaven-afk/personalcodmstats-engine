@@ -198,6 +198,7 @@ export default function TeamEntryPage() {
   }, [lockKey]);
 
   const handleLock = async () => {
+    if (!canEdit) return;
     // Save all pending cell data before locking
     toast.loading('Saving before lock...');
     try { await refresh(); } catch {}
@@ -208,6 +209,7 @@ export default function TeamEntryPage() {
   };
 
   const handleUnlock = () => {
+    if (!canEdit) return;
     try { localStorage.removeItem(lockKey); } catch {}
     setIsLocked(false);
     toast.success('Day ' + day + ' unlocked 🔓');
@@ -264,6 +266,7 @@ export default function TeamEntryPage() {
   const { killPointValue = 2, placementPoints = [], bonusTypes = [] } = scoring;
 
   const handleFlexibleMapChange = async (lobbyNum, newMap) => {
+    if (!canEdit) return;
     const currentConfig = activeMapConfig || { mode: 'flexible', map: AVAILABLE_MAPS[0], schedule: {} };
     const updatedSchedule = {
       ...(currentConfig.schedule || {}),
@@ -289,6 +292,7 @@ export default function TeamEntryPage() {
   };
 
   const handleFlexibleReviveChange = async (lobbyNum, newRevive) => {
+    if (!canEdit) return;
     const currentConfig = activeReviveConfig || { mode: 'flexible', reviveType: 'auto', schedule: {} };
     const updatedSchedule = {
       ...(currentConfig.schedule || {}),
@@ -347,7 +351,7 @@ export default function TeamEntryPage() {
   const getResult = (teamId, lobby) => dayResults.find(r => r.teamId === teamId && r.lobby === lobby);
 
   const handleCellSave = async (teamId, lobby, field, value) => {
-    if (isLocked) return;
+    if (isLocked || !canEdit) return;
     const key = `${teamId}-${lobby}-${field}`;
     setSaving(s => ({ ...s, [key]: true }));
     try {
@@ -1100,7 +1104,7 @@ export default function TeamEntryPage() {
                 </span>
               )}
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                {!isLocked && (
+                {canEdit && !isLocked && (
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => setShowPaste(v => !v)}
@@ -1109,7 +1113,7 @@ export default function TeamEntryPage() {
                     <ClipboardPaste size={13} style={{ marginRight: 6 }} /> Paste or Upload Day Results
                   </button>
                 )}
-                {isLocked ? (
+                {canEdit && (isLocked ? (
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={handleUnlock}
@@ -1125,12 +1129,12 @@ export default function TeamEntryPage() {
                   >
                     <Lock size={13} /> Save & Lock Day {day}
                   </button>
-                )}
+                ))}
               </div>
             </div>
 
-            {/* Paste Data Panel — hidden when locked */}
-            {showPaste && !isLocked && (
+            {/* Paste Data Panel — hidden when locked or read-only */}
+            {showPaste && !isLocked && canEdit && (
               <div className="card" style={{ margin: '12px 16px', border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)' }}>
                 <div className="flex-between" style={{ marginBottom: 10 }}>
                   <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>
@@ -1664,6 +1668,7 @@ export default function TeamEntryPage() {
                           style={{ fontSize: '0.78rem', padding: '3px 8px', borderColor: isUnset ? 'rgba(245,158,11,0.5)' : undefined }}
                           value={val}
                           onChange={e => handleFlexibleMapChange(l, e.target.value)}
+                          disabled={isLocked || !canEdit}
                         >
                           <option value="" disabled={val !== ''}>— Not Set —</option>
                           {AVAILABLE_MAPS.map(m => (
@@ -1719,6 +1724,7 @@ export default function TeamEntryPage() {
                         }}
                         value={currentRevive}
                         onChange={e => handleFlexibleReviveChange(l, e.target.value)}
+                        disabled={isLocked || !canEdit}
                       >
                         {REVIVE_TYPES.map(rt => (
                           <option key={rt.id} value={rt.id} style={{ color: '#E2E8F0', backgroundColor: '#121824' }}>
@@ -1795,7 +1801,7 @@ export default function TeamEntryPage() {
                             <CellInput
                               value={r.placement === null || r.placement === undefined || r.placement === '' ? '' : r.placement}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'placement', v)}
-                              locked={isLocked}
+                              locked={isLocked || !canEdit}
                               style={{
                                 borderLeft: `2px solid ${lc(li + 1).border}`,
                                 background: `rgba(${li % 2 === 1 ? '255,255,255,0.01' : '0,0,0,0.01'})`
@@ -1804,7 +1810,7 @@ export default function TeamEntryPage() {
                             <CellInput
                               value={r.kills === null || r.kills === undefined || r.kills === '' ? '' : r.kills}
                               onSave={v => handleCellSave(reg.teamId, li + 1, 'kills', v)}
-                              locked={isLocked}
+                              locked={isLocked || !canEdit}
                               style={{
                                 borderRight: `2px solid ${lc(li + 1).border}`,
                                 background: `rgba(${li % 2 === 1 ? '255,255,255,0.01' : '0,0,0,0.01'})`
@@ -1837,6 +1843,7 @@ export default function TeamEntryPage() {
             bonusTypes={bonusTypes}
             onRefresh={refresh}
             groupId={selectedGroupId || null}
+            canEdit={canEdit}
           />
         </div>
 
@@ -1979,12 +1986,13 @@ function CellInput({ value, onSave, locked = false, style = {} }) {
 }
 
 // ─── Bonus Points Panel ──────────────────────────────────────────────────────
-function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRefresh, groupId }) {
+function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRefresh, groupId, canEdit = true }) {
   const [adding, setAdding] = useState(false);
   const [newBonus, setNewBonus] = useState({ teamId: '', type: '', amount: '', note: '' });
   const [saving, setSaving] = useState(false);
 
   const handleAdd = async () => {
+    if (!canEdit) return;
     if (!newBonus.teamId || !newBonus.amount) { toast.error('Team and amount required'); return; }
     setSaving(true);
     try {
@@ -2012,6 +2020,7 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
   };
 
   const handleDelete = async (bId) => {
+    if (!canEdit) return;
     await deleteBonusPoint(tournamentId, bId);
     toast.success('Removed');
     await onRefresh();
@@ -2021,12 +2030,14 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
     <div className="card" style={{ marginTop: 16 }}>
       <div className="flex-between" style={{ marginBottom: 12 }}>
         <h3 className="card-title">Bonus / Penalty Points — Day {day}</h3>
-        <button className="btn btn-secondary btn-sm" onClick={() => setAdding(v => !v)}>
-          <Plus size={13} /> Add
-        </button>
+        {canEdit && (
+          <button className="btn btn-secondary btn-sm" onClick={() => setAdding(v => !v)}>
+            <Plus size={13} /> Add
+          </button>
+        )}
       </div>
 
-      {adding && (
+      {adding && canEdit && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto auto', gap: 8, marginBottom: 14, alignItems: 'end' }}>
           <div className="form-field">
             <label className="form-label">Team</label>
@@ -2067,7 +2078,7 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
               <th>Type</th>
               <th>Amount</th>
               <th>Note</th>
-              <th></th>
+              {canEdit && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -2081,9 +2092,11 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
                     {b.amount > 0 ? '+' : ''}{b.amount}
                   </td>
                   <td style={{ color: 'var(--text-secondary)' }}>{b.note || '—'}</td>
-                  <td>
-                    <button className="btn btn-ghost" style={{ padding: '3px 5px' }} onClick={() => handleDelete(b.id)}><Trash2 size={12} /></button>
-                  </td>
+                  {canEdit && (
+                    <td>
+                      <button className="btn btn-ghost" style={{ padding: '3px 5px' }} onClick={() => handleDelete(b.id)}><Trash2 size={12} /></button>
+                    </td>
+                  )}
                 </tr>
               );
             })}

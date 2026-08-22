@@ -524,6 +524,16 @@ export default function PlayerEntryPage() {
   const [playerRegs, setPlayerRegs] = useState([]);
   const [players, setPlayers] = useState([]);
 
+  const [groups, setGroups] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+
+  const isQualifier = tournament?.type === 'qualifier';
+  const selectedGroup = isQualifier ? groups.find(g => g.id === selectedGroupId) : null;
+  const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
+  const totalDays = activeStructure.totalDays || 6;
+  const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
+  const maxLobbies = lobbiesPerDay; // L1, L2, L3...
+
   const userEmail = user?.email?.toLowerCase();
   const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
     (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
@@ -542,6 +552,7 @@ export default function PlayerEntryPage() {
   }, [lockKey]);
 
   const handleLock = async () => {
+    if (!canEdit) return;
     setSaving(true);
     try {
       for (const pid of Object.keys(formData)) {
@@ -557,6 +568,7 @@ export default function PlayerEntryPage() {
   };
 
   const handleUnlock = () => {
+    if (!canEdit) return;
     try { localStorage.removeItem(lockKey); } catch {}
     setIsLocked(false);
     toast.success(`Day ${day} unlocked 🔓`);
@@ -637,6 +649,10 @@ export default function PlayerEntryPage() {
   };
 
   const handleConfirmSmartImport = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to import stats for this tournament.');
+      return;
+    }
     if (smartImportRows.length === 0) return;
     if (smartImportSelectedLobbies.length === 0) {
       toast.error("Please select at least one lobby to import.");
@@ -775,17 +791,6 @@ export default function PlayerEntryPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pasteText, playerRegs, players]);
 
-  const [groups, setGroups] = useState([]);
-  const [selectedGroupId, setSelectedGroupId] = useState('');
-
-  const isQualifier = tournament?.type === 'qualifier';
-
-  const selectedGroup = isQualifier ? groups.find(g => g.id === selectedGroupId) : null;
-  const activeStructure = isQualifier ? (selectedGroup?.structure || {}) : (tournament?.structure || {});
-  const totalDays = activeStructure.totalDays || 6;
-  const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
-  const maxLobbies = lobbiesPerDay; // L1, L2, L3...
-
   // formData: playerId → { playerId, slot, playerName, ign, teamName, lobbies: { 1: {kills, damage, accuracy, existingId}, ... } }
   const [formData, setFormData] = useState({});
 
@@ -857,6 +862,7 @@ export default function PlayerEntryPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleChange = (playerId, lobbyNum, field, val) => {
+    if (isLocked || !canEdit) return;
     setFormData((prev) => {
       const pForm = prev[playerId] || {};
       const pLobbies = pForm.lobbies || {};
@@ -878,6 +884,7 @@ export default function PlayerEntryPage() {
   };
 
   const saveRow = async (playerId, lobbyNum) => {
+    if (isLocked || !canEdit) return;
     const pForm = formData[playerId];
     if (!pForm || !pForm.lobbies || !pForm.lobbies[lobbyNum]) return;
     const row = pForm.lobbies[lobbyNum];
@@ -1608,7 +1615,7 @@ export default function PlayerEntryPage() {
               <Lock size={11} /> Locked
             </span>
           )}
-          {!isLocked && (
+          {canEdit && !isLocked && (
             <button
               className="btn btn-secondary"
               onClick={() => setShowPaste(v => !v)}
@@ -1617,12 +1624,12 @@ export default function PlayerEntryPage() {
               <ClipboardPaste size={14} style={{ marginRight: 6 }} /> Paste or Upload Stats
             </button>
           )}
-          {!isLocked && (
+          {canEdit && !isLocked && (
             <button className="btn btn-secondary" onClick={handleBulkSave} disabled={saving}>
               <Save size={14} /> {saving ? 'Saving...' : 'Save All'}
             </button>
           )}
-          {isLocked ? (
+          {canEdit && (isLocked ? (
             <button
               className="btn btn-secondary"
               onClick={handleUnlock}
@@ -1639,12 +1646,12 @@ export default function PlayerEntryPage() {
             >
               <Lock size={13} /> {saving ? 'Saving...' : 'Save & Lock'}
             </button>
-          )}
+          ))}
         </div>
       </div>
 
-      {/* Paste Data Panel — hidden when locked */}
-      {showPaste && !isLocked && (
+      {/* Paste Data Panel — hidden when locked or when read-only */}
+      {showPaste && !isLocked && canEdit && (
         <div className="card" style={{ marginBottom: 24, border: '1px solid var(--border-gold)', background: 'rgba(201,168,76,0.02)' }}>
           <div className="flex-between" style={{ marginBottom: 10 }}>
             <span style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--gold)' }}>
@@ -2557,7 +2564,7 @@ export default function PlayerEntryPage() {
 
                         {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => (
                           <div key={l} style={{ width: '46px' }}>
-                            {isLocked ? (
+                            {isLocked || !canEdit ? (
                               <span style={{ display: 'block', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                                 {row.lobbies?.[l]?.kills !== '' && row.lobbies?.[l]?.kills !== null && row.lobbies?.[l]?.kills !== undefined
                                   ? row.lobbies[l].kills
@@ -2693,7 +2700,7 @@ export default function PlayerEntryPage() {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                   <div>
                                     <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: '1px' }}>DMG</span>
-                                    {isLocked ? (
+                                    {isLocked || !canEdit ? (
                                       <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                         {row.lobbies?.[l]?.damage !== '' && row.lobbies?.[l]?.damage !== null && row.lobbies?.[l]?.damage !== undefined
                                           ? Math.round(parseFloat(row.lobbies[l].damage))
@@ -2710,7 +2717,7 @@ export default function PlayerEntryPage() {
                                   </div>
                                   <div>
                                     <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)', display: 'block', marginBottom: '1px' }}>ACC %</span>
-                                    {isLocked ? (
+                                    {isLocked || !canEdit ? (
                                       <span style={{ display: 'block', fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                         {row.lobbies?.[l]?.accuracy !== '' && row.lobbies?.[l]?.accuracy !== null && row.lobbies?.[l]?.accuracy !== undefined
                                           ? `${parseFloat(row.lobbies[l].accuracy).toFixed(1)}%`

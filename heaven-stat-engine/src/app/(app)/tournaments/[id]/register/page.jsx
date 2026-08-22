@@ -670,6 +670,10 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handleAdd = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to register teams for this tournament.');
+      return;
+    }
     if (!newTeam.teamName.trim()) { toast.error('Team name required'); return; }
     
     const name = newTeam.teamName.trim();
@@ -744,6 +748,10 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handleUpdateTeam = async (regId, fields) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to modify team details.');
+      return;
+    }
     try {
       await updateTeamRegistration(tournamentId, regId, fields);
       await onRefresh();
@@ -753,6 +761,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handleDelete = async (regId, teamName) => {
+    if (!canEdit) { toast.error('You do not have permission to delete registrations'); return; }
     if (!isOwner) { toast.error('Only the owner can delete registrations'); return; }
     const currentReg = registrations.find(r => r.id === regId);
     if (!confirm(`Remove ${teamName} from this tournament?`)) return;
@@ -1109,7 +1118,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
 }
 
 // ─── Player Registration Panel ───────────────────────────────────────────────
-function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistrations, globalPlayers, globalTeams, classes, onRefresh, setImportProgress, selectedGroupId }) {
+function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistrations, globalPlayers, globalTeams, classes, onRefresh, setImportProgress, selectedGroupId, canEdit = true, isOwner = false }) {
   const [addingRow, setAddingRow] = useState(false);
   const [newPlayer, setNewPlayer] = useState({ slot: '', professionalName: '', ign: '', teamName: '', category: 'Registered', gender: '', region: '', country: '', device: '', deviceModel: '' });
   const [saving, setSaving] = useState(false);
@@ -1346,6 +1355,10 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   const teamReg = teamRegistrations.find(t => t.teamName?.toLowerCase() === newPlayer.teamName?.toLowerCase());
 
   const handleAdd = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to register players for this tournament.');
+      return;
+    }
     if (!newPlayer.professionalName.trim() && !newPlayer.ign.trim()) { toast.error('Name or IGN required'); return; }
     setSaving(true);
     try {
@@ -1397,6 +1410,10 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   };
 
   const handleUpdatePlayer = async (regId, fields) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to modify player details.');
+      return;
+    }
     const currentReg = registrations.find(r => r.id === regId);
     if (!currentReg) return;
 
@@ -1411,6 +1428,7 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   };
 
   const handleDelete = async (regId, name) => {
+    if (!canEdit) { toast.error('You do not have permission to delete registrations'); return; }
     if (!isOwner) { toast.error('Only the owner can delete registrations'); return; }
     const currentReg = registrations.find(r => r.id === regId);
     if (!confirm(`Remove ${name} from this tournament?`)) return;
