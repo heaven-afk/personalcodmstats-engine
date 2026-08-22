@@ -32,41 +32,29 @@ export default function TournamentLayout({ children }) {
     refresh().finally(() => setLoading(false));
   }, [id]);
 
-  // Access validation: Redirect away if tournament was deleted, doesn't exist, or user lacks access
+  // Redirect away only if tournament was deleted or doesn't exist
   useEffect(() => {
     if (!loading && !authLoading) {
       if (!tournament) {
         toast.error('Tournament not found');
         router.replace('/tournaments');
-        return;
-      }
-
-      if (!isOwner) {
-        const editors = tournament.editorUids || [];
-        const userEmail = user?.email?.toLowerCase();
-        const hasAccess = editors.some(
-          e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
-        );
-
-        if (!hasAccess) {
-          toast.error('Access restricted: You have not been granted access to this tournament.');
-          router.replace('/tournaments');
-        }
       }
     }
-  }, [loading, authLoading, tournament, isOwner, user, router]);
+  }, [loading, authLoading, tournament, router]);
 
   if (loading || authLoading) return <LoadingSpinner size="lg" />;
   if (!tournament) return <LoadingSpinner size="lg" />; // Brief spinner while redirecting
 
-  if (!isOwner) {
-    const editors = tournament.editorUids || [];
-    const userEmail = user?.email?.toLowerCase();
-    const hasAccess = editors.some(
-      e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
-    );
-    if (!hasAccess) return null;
-  }
+  const editors = tournament.editorUids || [];
+  const userEmail = user?.email?.toLowerCase();
+  const isCreator = (tournament.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
+  const isAssignedEditor = editors.some(
+    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  );
+
+  const canEdit = Boolean(isOwner || isCreator || isAssignedEditor);
+  const canManageEditors = Boolean(isOwner || isCreator);
 
   const dateRange = formatEventDates(tournament.eventStartDate, tournament.eventEndDate);
 
@@ -88,8 +76,8 @@ export default function TournamentLayout({ children }) {
 
       <TournamentSubNav tournamentId={id} />
 
-      {/* Pass tournament + refresh to children via a context trick */}
-      <TournamentContext.Provider value={{ tournament, setTournament, refresh }}>
+      {/* Pass tournament + refresh + permissions to children via context */}
+      <TournamentContext.Provider value={{ tournament, setTournament, refresh, canEdit, canManageEditors }}>
         {children}
       </TournamentContext.Provider>
     </div>

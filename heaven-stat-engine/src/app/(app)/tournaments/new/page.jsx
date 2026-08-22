@@ -193,11 +193,13 @@ export default function CreateTournamentPage() {
         };
       }
 
-      if (isOperator && user?.uid) {
-        tournamentPayload.editorUids = [user.uid];
+      tournamentPayload.createdBy = user?.uid || null;
+      tournamentPayload.creatorEmail = user?.email?.toLowerCase() || null;
+      if (user?.uid) {
+        tournamentPayload.editorUids = [user.uid, user.email?.toLowerCase()].filter(Boolean);
       }
 
-      const t = await createTournament(tournamentPayload, role, user?.uid);
+      const t = await createTournament(tournamentPayload, role, user?.uid, user?.email);
 
       if (tournamentType === 'qualifier') {
         for (const g of qualifierGroups) {

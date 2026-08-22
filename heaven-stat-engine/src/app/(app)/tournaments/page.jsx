@@ -60,15 +60,17 @@ export default function TournamentsListPage() {
     }
   };
 
-  const hasAccessToTourney = (t) => {
+  const checkCanEdit = (t) => {
     if (isOwner) return true;
-    const editors = t.editorUids || [];
     const userEmail = user?.email?.toLowerCase();
-    return editors.some(e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail));
+    const isCreator = (t.createdBy && t.createdBy === user?.uid) ||
+      (userEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === userEmail);
+    const editors = t.editorUids || [];
+    const isAssigned = editors.some(e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail));
+    return Boolean(isCreator || isAssigned);
   };
 
   const filtered = tournaments.filter(t => {
-    if (!hasAccessToTourney(t)) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
@@ -86,7 +88,7 @@ export default function TournamentsListPage() {
       render: (t) => {
         const bannerSrc = t.banner || t.bannerUrl;
         const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
-        const canEdit = hasAccessToTourney(t);
+        const canEdit = checkCanEdit(t);
         return (
           <Link href={`/tournaments/${t.id}`} className="text-gold" style={{ fontWeight: 600 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -154,7 +156,7 @@ export default function TournamentsListPage() {
       header: 'Actions',
       key: 'actions',
       render: (t) => {
-        const canEdit = hasAccessToTourney(t);
+        const canEdit = checkCanEdit(t);
         return (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Link href={`/tournaments/${t.id}`} className="btn btn-secondary btn-sm">
@@ -179,23 +181,17 @@ export default function TournamentsListPage() {
 
   if (loading) return <LoadingSpinner size="lg" text="Loading tournaments..." />;
 
-  const visibleTourneysCount = tournaments.filter(hasAccessToTourney);
-
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Tournaments</h1>
-          <p className="page-subtitle">
-            {isOwner ? 'All events — setup, active, completed, archived' : 'Your assigned tournament projects'}
-          </p>
+          <p className="page-subtitle">All events — setup, active, completed, archived</p>
         </div>
-        {isOwner && (
-          <Link href="/tournaments/new" className="btn btn-primary">
-            <Plus size={16} />
-            New Tournament
-          </Link>
-        )}
+        <Link href="/tournaments/new" className="btn btn-primary">
+          <Plus size={16} />
+          New Tournament
+        </Link>
       </div>
 
       {/* Status filter tabs */}
@@ -216,7 +212,7 @@ export default function TournamentsListPage() {
                 padding: '1px 6px',
                 color: 'var(--text-muted)',
               }}>
-                {visibleTourneysCount.filter(t => t.status === s).length}
+                {tournaments.filter(t => t.status === s).length}
               </span>
             )}
           </button>
@@ -261,9 +257,9 @@ export default function TournamentsListPage() {
           icon={Trophy}
           title="No tournaments found"
           text={statusFilter === 'all'
-            ? (isOwner ? 'Create your first tournament to get started.' : 'You have not been assigned to any tournament projects yet.')
+            ? 'Create your first tournament to get started.'
             : `No tournaments with status "${statusFilter}".`}
-          action={statusFilter === 'all' && isOwner && (
+          action={statusFilter === 'all' && (
             <Link href="/tournaments/new" className="btn btn-primary">
               <Plus size={16} /> New Tournament
             </Link>
@@ -275,7 +271,7 @@ export default function TournamentsListPage() {
           {filtered.map(t => {
             const bannerSrc = t.banner || t.bannerUrl;
             const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
-            const canEdit = hasAccessToTourney(t);
+            const canEdit = checkCanEdit(t);
 
             return (
               <div

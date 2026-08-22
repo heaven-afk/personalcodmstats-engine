@@ -22,10 +22,13 @@ export async function getTournament(id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-export async function createTournament(data, userRole, creatorUid) {
-  const editorUids = data.editorUids || (userRole === 'operator' && creatorUid ? [creatorUid] : []);
+export async function createTournament(data, userRole, creatorUid, creatorEmail) {
+  const initialEditors = data.editorUids || (creatorUid ? [creatorUid, creatorEmail?.toLowerCase()].filter(Boolean) : []);
+  const createdBy = data.createdBy || creatorUid || null;
+  const resolvedCreatorEmail = data.creatorEmail || (creatorEmail ? creatorEmail.toLowerCase() : null);
+
   if (!isFirebaseConfigured) {
-    return localDb.localCreateTournament({ ...data, editorUids });
+    return localDb.localCreateTournament({ ...data, editorUids: initialEditors, createdBy, creatorEmail: resolvedCreatorEmail });
   }
   const payload = {
     name: '', season: '', description: '', status: 'setup',
@@ -34,9 +37,11 @@ export async function createTournament(data, userRole, creatorUid) {
     eventEndDate: data.eventEndDate || null,
     createdAt: serverTimestamp(), completedAt: null,
     scoring: { killPointValue: 2, placementPoints: [], bonusTypes: [] },
-    editorUids,
+    createdBy,
+    creatorEmail: resolvedCreatorEmail,
+    editorUids: initialEditors,
     ...data,
-    editorUids: data.editorUids !== undefined ? data.editorUids : editorUids,
+    editorUids: data.editorUids !== undefined ? data.editorUids : initialEditors,
   };
   if (payload.type === 'standard' && !payload.structure) {
     payload.structure = { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] };

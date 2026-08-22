@@ -17,19 +17,25 @@ const STATUS_FLOW = ['setup', 'active', 'completed', 'archived'];
 export default function TournamentOverviewPage() {
   const { tournament, refresh } = useTournament();
   const { user, isOwner, isOperator } = useAuth();
-  const router = useRouter();
-  const [advancing, setAdvancing] = useState(false);
+  const userEmail = user?.email?.toLowerCase();
+  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
+  const isAssigned = (tournament?.editorUids || []).some(
+    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  );
 
-  const canEdit = isOwner || (tournament?.editorUids && (
-    tournament.editorUids.includes(user?.uid) ||
-    (user?.email && tournament.editorUids.some(e => e.toLowerCase() === user.email.toLowerCase()))
-  ));
+  const canEdit = Boolean(isOwner || isCreator || isAssigned);
+  const canManageEditors = Boolean(isOwner || isCreator);
 
-  // Access management state (Owner + tournament editors)
+  // Access management state (Owner or Tournament Creator only)
   const [newEditorInput, setNewEditorInput] = useState('');
   const [updatingEditors, setUpdatingEditors] = useState(false);
 
   const handleAddEditor = async () => {
+    if (!canManageEditors) {
+      toast.error('Only the tournament creator or system administrator can invite collaborators.');
+      return;
+    }
     if (!newEditorInput.trim()) return;
     const cleanInput = newEditorInput.trim();
     setUpdatingEditors(true);
@@ -96,6 +102,10 @@ export default function TournamentOverviewPage() {
   };
 
   const handleRemoveEditor = async (uidToRemove) => {
+    if (!canManageEditors) {
+      toast.error('Only the tournament creator or system administrator can revoke access.');
+      return;
+    }
     setUpdatingEditors(true);
     try {
       const updated = (tournament.editorUids || []).filter(u => u !== uidToRemove);
@@ -275,8 +285,8 @@ export default function TournamentOverviewPage() {
         </div>
       </div>
 
-      {/* ── Collaborator & Operator Access Management ─────────────────────────────── */}
-      {canEdit && (
+      {/* ── Collaborator & Operator Access Management (Creator or Owner Only) ───── */}
+      {canManageEditors && (
         <div className="card" style={{ marginBottom: 24, border: '1px solid rgba(201,168,76,0.3)' }}>
           <div className="flex-between" style={{ marginBottom: 14 }}>
             <div>

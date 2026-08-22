@@ -60,26 +60,28 @@ export async function POST(req) {
       return NextResponse.json({ error: 'tournamentId is required' }, { status: 400 });
     }
 
-    // Verify caller has edit access to this tournament
+    // Verify caller is either the owner or the creator of this tournament
     const isOwner = decoded.role === 'owner' || (process.env.OWNER_EMAIL && decoded.email?.toLowerCase() === process.env.OWNER_EMAIL.toLowerCase());
-    let canEdit = isOwner;
+    let canManage = isOwner;
 
-    if (!canEdit) {
+    if (!canManage) {
       try {
         const tourneyDoc = await adminDb.collection('tournaments').doc(tournamentId).get();
         if (tourneyDoc.exists) {
-          const editorUids = tourneyDoc.data()?.editorUids || [];
-          if (editorUids.includes(decoded.uid)) {
-            canEdit = true;
+          const data = tourneyDoc.data() || {};
+          const isCreator = (data.createdBy && data.createdBy === decoded.uid) ||
+            (decoded.email && data.creatorEmail && data.creatorEmail.toLowerCase() === decoded.email.toLowerCase());
+          if (isCreator) {
+            canManage = true;
           }
         }
       } catch (err) {
-        console.warn('Error checking tournament editor access in API:', err);
+        console.warn('Error checking tournament creator access in API:', err);
       }
     }
 
-    if (!canEdit) {
-      return NextResponse.json({ error: 'Forbidden: Edit access required' }, { status: 403 });
+    if (!canManage) {
+      return NextResponse.json({ error: 'Forbidden: Only the tournament creator or system administrator can invite collaborators' }, { status: 403 });
     }
 
     // Resolve invitee email

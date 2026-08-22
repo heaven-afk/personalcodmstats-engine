@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, Fragment, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
+import { useAuth } from '@/contexts/AuthContext';
 import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, deleteTeamMatchResult, getBonusPoints, addBonusPoint, updateBonusPoint, deleteBonusPoint } from '@/lib/firestore/matchData';
 import { getTeamRegistrations, updateTournament } from '@/lib/firestore/tournaments';
 import { getGroups, updateGroup } from '@/lib/firestore/groups';
@@ -164,6 +165,7 @@ function parseTeamEntryPaste(text, teamRegs, lobbiesCount) {
 export default function TeamEntryPage() {
   const { id } = useParams();
   const { tournament, refresh: refreshLayout } = useTournament();
+  const { user, isOwner, isOperator } = useAuth();
   const [day, setDay] = useState(1);
   const [teamRegs, setTeamRegs] = useState([]);
   const [allResults, setAllResults] = useState([]);
@@ -171,6 +173,14 @@ export default function TeamEntryPage() {
   const [loading, setLoading] = useState(true);
   const [showRef, setShowRef] = useState(false);
   const [saving, setSaving] = useState({});
+
+  const userEmail = user?.email?.toLowerCase();
+  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
+  const isAssigned = (tournament?.editorUids || []).some(
+    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  );
+  const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState('');
@@ -1001,6 +1011,24 @@ export default function TeamEntryPage() {
           <p className="page-subtitle">Match data entry · {tournament.name}</p>
         </div>
       </div>
+
+      {!canEdit && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: 10,
+          background: 'rgba(59, 130, 246, 0.1)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 16,
+          color: '#93c5fd',
+          fontSize: '0.85rem'
+        }}>
+          <AlertCircle size={18} style={{ color: '#60a5fa', flexShrink: 0 }} />
+          <span><strong>Read-Only Mode:</strong> You have view access to this tournament. Team match results and imports cannot be edited until an administrator grants you editor permissions.</span>
+        </div>
+      )}
 
       {/* Group Selector */}
       {groups.length > 0 && (

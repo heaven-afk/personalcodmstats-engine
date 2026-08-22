@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTournament } from '../layout';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   getPlayerMatchResults, getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
 } from '@/lib/firestore/matchData';
@@ -516,11 +517,20 @@ function parsePlayerEntryPaste(text, playerRegs) {
 
 export default function PlayerEntryPage() {
   const { tournament } = useTournament();
+  const { user, isOwner, isOperator } = useAuth();
   const [day, setDay] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [playerRegs, setPlayerRegs] = useState([]);
   const [players, setPlayers] = useState([]);
+
+  const userEmail = user?.email?.toLowerCase();
+  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
+  const isAssigned = (tournament?.editorUids || []).some(
+    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  );
+  const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   // Lock state — persisted per tournament + day in localStorage
   const lockKey = tournament?.id ? `lock_player_${tournament.id}_day${day}` : null;
@@ -1552,6 +1562,24 @@ export default function PlayerEntryPage() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {!canEdit && (
+        <div style={{
+          padding: '12px 16px',
+          borderRadius: 10,
+          background: 'rgba(59, 130, 246, 0.1)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 16,
+          color: '#93c5fd',
+          fontSize: '0.85rem'
+        }}>
+          <AlertCircle size={18} style={{ color: '#60a5fa', flexShrink: 0 }} />
+          <span><strong>Read-Only Mode:</strong> You have viewing access to this tournament. Player stats entry and smart imports cannot be edited until an administrator grants you editor permissions.</span>
         </div>
       )}
 
