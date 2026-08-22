@@ -31,9 +31,15 @@ const PRESET_CATEGORIES = [
     color: '#eab308',
     presets: [
       {
+        id: 'top-teams-avg',
+        name: 'Top Teams by Average (PPM)',
+        badge: 'Avg Rank',
+        desc: 'Teams ranked primarily by Average Points per Match (PPM), with total points, KPM, and tiebreakers.',
+      },
+      {
         id: 'top-teams-pts',
         name: 'Top Teams by Points',
-        badge: 'Standings',
+        badge: 'Total Rank',
         desc: 'Team season standings ranked by total points, placement pts, kills, and tiebreakers.',
       },
       {
@@ -169,7 +175,7 @@ export default function ExtractionPage() {
   const { structure = {}, scoring = {} } = tournament || {};
   const isQualifier = tournament?.type === 'qualifier';
 
-  const [activePreset, setActivePreset] = useState('top-teams-pts');
+  const [activePreset, setActivePreset] = useState('top-teams-avg');
   const [searchQuery, setSearchQuery] = useState('');
   const [limit, setLimit] = useState(10);
   const [loading, setLoading] = useState(true);
@@ -299,7 +305,69 @@ export default function ExtractionPage() {
     }
 
     switch (activePreset) {
-      // 1. Overall Team Standings
+      // 1. Top Teams by Average (PPM) Rankings
+      case 'top-teams-avg': {
+        const ranking = selectedDay === 'all'
+          ? computeTeamRanking(activeTeamResults, activeBonusPoints, scoring)
+          : computeDailyStandings(activeTeamResults, activeBonusPoints, scoring, Number(selectedDay));
+        
+        // Sort primarily by Average Points per Match (PPM), then tiebreak by total points, wins, and kills
+        const sortedByAvg = [...ranking].sort((a, b) => {
+          const aMatches = a.matches || 0;
+          const bMatches = b.matches || 0;
+          const aPPM = aMatches > 0 ? (a.totalPts / aMatches) : 0;
+          const bPPM = bMatches > 0 ? (b.totalPts / bMatches) : 0;
+          if (bPPM !== aPPM) return bPPM - aPPM;
+          if (b.totalPts !== a.totalPts) return b.totalPts - a.totalPts;
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          return (b.kills || 0) - (a.kills || 0);
+        });
+
+        const sliced = limit > 0 ? sortedByAvg.slice(0, limit) : sortedByAvg;
+        const mapped = sliced.map((t, i) => {
+          const matches = t.matches || 0;
+          const ppm = matches > 0 ? (t.totalPts / matches).toFixed(2) : '0.00';
+          const kpm = matches > 0 ? (t.kills / matches).toFixed(2) : '0.00';
+          const avgPlace = matches > 0 ? (t.sumOfPositions / matches).toFixed(1) : '—';
+          const winRate = matches > 0 ? `${Math.round((t.wins / matches) * 100)}%` : '0%';
+          return {
+            'Avg Rank': i + 1,
+            Team: t.teamName,
+            Clan: t.clanName || '—',
+            'Avg Pts / Match (PPM)': ppm,
+            'Total Pts': t.totalPts,
+            Matches: matches,
+            Wins: t.wins,
+            'Win Rate': winRate,
+            'Avg Kills / Match (KPM)': kpm,
+            'Total Kills': t.kills,
+            'Avg Placement': avgPlace,
+            'Place Pts': t.placementPts,
+            'Bonus Pts': t.bonusPts,
+            'Pts Rank': t.rank || '—',
+          };
+        });
+
+        return {
+          rows: mapped,
+          columns: [
+            { header: 'Avg Rank', accessor: 'Avg Rank', width: 65 },
+            { header: 'Team Name', accessor: 'Team' },
+            { header: 'Clan', accessor: 'Clan' },
+            { header: 'Avg Pts / Match (PPM)', accessor: 'Avg Pts / Match (PPM)' },
+            { header: 'Total Pts', accessor: 'Total Pts' },
+            { header: 'Matches', accessor: 'Matches' },
+            { header: 'Wins', accessor: 'Wins' },
+            { header: 'Win %', accessor: 'Win Rate' },
+            { header: 'KPM', accessor: 'Avg Kills / Match (KPM)' },
+            { header: 'Total Kills', accessor: 'Total Kills' },
+            { header: 'Avg Place', accessor: 'Avg Placement' },
+            { header: 'Pts Rank', accessor: 'Pts Rank' },
+          ],
+        };
+      }
+
+      // 2. Overall Team Standings by Total Points
       case 'top-teams-pts': {
         const ranking = selectedDay === 'all'
           ? computeTeamRanking(activeTeamResults, activeBonusPoints, scoring)
@@ -308,20 +376,22 @@ export default function ExtractionPage() {
         const mapped = sliced.map((t, i) => {
           const matches = t.matches || 0;
           const ppm = matches > 0 ? (t.totalPts / matches).toFixed(2) : '0.00';
+          const kpm = matches > 0 ? (t.kills / matches).toFixed(2) : '0.00';
           const winRate = matches > 0 ? `${Math.round((t.wins / matches) * 100)}%` : '0%';
           return {
             Rank: t.rank || i + 1,
             Team: t.teamName,
             Clan: t.clanName || '—',
+            'Total Pts': t.totalPts,
+            'Avg Pts / Match (PPM)': ppm,
             Wins: t.wins,
             Matches: matches,
             'Win Rate': winRate,
+            'Avg Kills / Match (KPM)': kpm,
             'Place Pts': t.placementPts,
             Kills: t.kills,
             'Kill Pts': t.killPts,
             'Bonus Pts': t.bonusPts,
-            'Total Pts': t.totalPts,
-            'Pts / Match': ppm,
           };
         });
 
@@ -331,6 +401,8 @@ export default function ExtractionPage() {
             { header: 'Rank', accessor: 'Rank', width: 60 },
             { header: 'Team Name', accessor: 'Team' },
             { header: 'Clan', accessor: 'Clan' },
+            { header: 'Total Pts', accessor: 'Total Pts' },
+            { header: 'Avg Pts / Match (PPM)', accessor: 'Avg Pts / Match (PPM)' },
             { header: 'Wins', accessor: 'Wins' },
             { header: 'Matches', accessor: 'Matches' },
             { header: 'Win %', accessor: 'Win Rate' },
@@ -338,8 +410,6 @@ export default function ExtractionPage() {
             { header: 'Kills', accessor: 'Kills' },
             { header: 'Kill Pts', accessor: 'Kill Pts' },
             { header: 'Bonus', accessor: 'Bonus Pts' },
-            { header: 'Total Pts', accessor: 'Total Pts' },
-            { header: 'PPM', accessor: 'Pts / Match' },
           ],
         };
       }
@@ -1355,7 +1425,7 @@ export default function ExtractionPage() {
               )}
 
               {/* Day Selector */}
-              {['top-players-combined', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'top-teams-pts', 'clan-rankings', 'team-analytics'].includes(activePreset) && (
+              {['top-teams-avg', 'top-teams-pts', 'top-players-combined', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'clan-rankings', 'team-analytics'].includes(activePreset) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                   <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Day:</span>
                   <select
@@ -1373,7 +1443,7 @@ export default function ExtractionPage() {
               )}
 
               {/* Map Selector */}
-              {['top-players-combined', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'top-teams-pts', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
+              {['top-teams-avg', 'top-teams-pts', 'top-players-combined', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                   <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Map:</span>
                   <select
