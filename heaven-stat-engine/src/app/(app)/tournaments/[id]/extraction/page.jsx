@@ -305,19 +305,15 @@ export default function ExtractionPage() {
     }
 
     switch (activePreset) {
-      // 1. Top Teams by Average Rank (Average Placement)
+      // 1. Top Teams by Average Rank (AVG RANK from Analytics)
       case 'top-teams-avg': {
-        const ranking = selectedDay === 'all'
-          ? computeTeamRanking(activeTeamResults, activeBonusPoints, scoring)
-          : computeDailyStandings(activeTeamResults, activeBonusPoints, scoring, Number(selectedDay));
+        const analyticsList = computeTeamAnalytics(activeTeamResults, activeBonusPoints, scoring);
         
-        // Sort primarily by Average Rank / Placement (lower number is better), then tiebreak by Total Points, Wins, Kills
-        const sortedByAvgRank = [...ranking].sort((a, b) => {
-          const aMatches = a.matches || 0;
-          const bMatches = b.matches || 0;
-          const aAvgRank = aMatches > 0 ? (a.sumOfPositions / aMatches) : 999;
-          const bAvgRank = bMatches > 0 ? (b.sumOfPositions / bMatches) : 999;
-          if (aAvgRank !== bAvgRank) return aAvgRank - bAvgRank; // Lower average rank is better (1st > 2nd)
+        // Sort primarily by AVG RANK (lower number is better: 2.5 > 4.5 > 7.5), then tiebreak by Total Points, Wins, Kills
+        const sortedByAvgRank = [...analyticsList].sort((a, b) => {
+          const aAvg = a.analytics?.avgRank ?? 999;
+          const bAvg = b.analytics?.avgRank ?? 999;
+          if (aAvg !== bAvg) return aAvg - bAvg; // Lower average rank is better
           if (b.totalPts !== a.totalPts) return b.totalPts - a.totalPts; // Higher total points
           if (b.wins !== a.wins) return b.wins - a.wins; // More wins
           return (b.kills || 0) - (a.kills || 0); // More kills
@@ -325,44 +321,46 @@ export default function ExtractionPage() {
 
         const sliced = limit > 0 ? sortedByAvgRank.slice(0, limit) : sortedByAvgRank;
         const mapped = sliced.map((t, i) => {
-          const matches = t.matches || 0;
-          const avgRank = matches > 0 ? (t.sumOfPositions / matches).toFixed(2) : '—';
-          const ppm = matches > 0 ? (t.totalPts / matches).toFixed(2) : '0.00';
-          const kpm = matches > 0 ? (t.kills / matches).toFixed(2) : '0.00';
-          const winRate = matches > 0 ? `${Math.round((t.wins / matches) * 100)}%` : '0%';
+          const a = t.analytics || {};
+          const s = t.scores || {};
+          const avgRankVal = a.avgRank != null ? a.avgRank : (t.matches > 0 ? (t.sumOfPositions / t.matches).toFixed(2) : '—');
           return {
-            'Rank': i + 1,
-            Team: t.teamName,
-            Clan: t.clanName || '—',
-            'Average Rank': avgRank,
-            'Total Pts': t.totalPts,
-            Matches: matches,
-            Wins: t.wins,
-            'Win Rate': winRate,
-            'Avg Kills / Match': kpm,
-            'Total Kills': t.kills,
-            'Avg Pts / Match': ppm,
+            'RK': i + 1,
+            'Team': t.teamName,
+            'Clan': t.clanName || '—',
+            'Wins': t.wins,
+            'Matches': t.matches,
+            'Events': t.events || 0,
             'Place Pts': t.placementPts,
-            'Bonus Pts': t.bonusPts,
-            'Points Rank': t.rank || '—',
+            'Kills': t.kills,
+            'Total Pts': t.totalPts,
+            'Team Rating': s.FINAL_RATING != null ? Number(s.FINAL_RATING.toFixed(1)) : '—',
+            'Avg Rank': avgRankVal,
+            'Peak Rank': a.peakRank != null ? `#${a.peakRank}` : '—',
+            'Podium Rate %': a.podiumRate != null ? `${a.podiumRate}%` : '—',
+            'PPM': a.PPM || 0,
+            'KPM': a.KPM || 0,
           };
         });
 
         return {
           rows: mapped,
           columns: [
-            { header: 'Rank', accessor: 'Rank', width: 60 },
-            { header: 'Team Name', accessor: 'Team' },
+            { header: 'RK', accessor: 'RK', width: 50 },
+            { header: 'Team', accessor: 'Team' },
             { header: 'Clan', accessor: 'Clan' },
-            { header: 'Average Rank', accessor: 'Average Rank' },
-            { header: 'Total Pts', accessor: 'Total Pts' },
-            { header: 'Matches', accessor: 'Matches' },
             { header: 'Wins', accessor: 'Wins' },
-            { header: 'Win %', accessor: 'Win Rate' },
-            { header: 'KPM', accessor: 'Avg Kills / Match' },
-            { header: 'Total Kills', accessor: 'Total Kills' },
-            { header: 'PPM', accessor: 'Avg Pts / Match' },
-            { header: 'Points Rank', accessor: 'Points Rank' },
+            { header: 'Matches', accessor: 'Matches' },
+            { header: 'Events', accessor: 'Events' },
+            { header: 'Place Pts', accessor: 'Place Pts' },
+            { header: 'Kills', accessor: 'Kills' },
+            { header: 'Total Pts', accessor: 'Total Pts' },
+            { header: 'Team Rating', accessor: 'Team Rating' },
+            { header: 'Avg Rank', accessor: 'Avg Rank' },
+            { header: 'Peak Rank', accessor: 'Peak Rank' },
+            { header: 'Podium %', accessor: 'Podium Rate %' },
+            { header: 'PPM', accessor: 'PPM' },
+            { header: 'KPM', accessor: 'KPM' },
           ],
         };
       }
