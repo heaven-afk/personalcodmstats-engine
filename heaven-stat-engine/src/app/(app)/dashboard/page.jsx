@@ -36,11 +36,12 @@ export default function DashboardPage() {
         ]);
 
         const tourneys = rawTourneys;
-
-        const teamResPromises = tourneys.map(t => getTeamMatchResults(t.id));
+        // Limit global form evaluation to the latest 8 active/recent tournaments on the dashboard
+        const recentAndActiveTourneys = tourneys.slice(0, 8);
+        const teamResPromises = recentAndActiveTourneys.map(t => getTeamMatchResults(t.id));
         const allTeamRes = await Promise.all(teamResPromises);
         const teamMatchResultsByTournament = {};
-        tourneys.forEach((t, i) => {
+        recentAndActiveTourneys.forEach((t, i) => {
           teamMatchResultsByTournament[t.id] = allTeamRes[i] || [];
         });
 
