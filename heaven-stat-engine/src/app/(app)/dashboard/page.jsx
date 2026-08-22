@@ -29,11 +29,17 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadDashboard() {
       try {
-        const [tourneys, players, teams] = await Promise.all([
+        const [rawTourneys, players, teams] = await Promise.all([
           getTournaments(),
           getPlayers(),
           getTeams()
         ]);
+
+        const userEmail = user?.email?.toLowerCase();
+        const tourneys = isOwner ? rawTourneys : rawTourneys.filter(t => {
+          const editors = t.editorUids || [];
+          return editors.some(e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail));
+        });
 
         const teamResPromises = tourneys.map(t => getTeamMatchResults(t.id));
         const allTeamRes = await Promise.all(teamResPromises);
@@ -94,7 +100,7 @@ export default function DashboardPage() {
     }
 
     loadDashboard();
-  }, []);
+  }, [user, isOwner]);
 
   if (loading) return <LoadingSpinner size="lg" text="Loading dashboard hub..." />;
 
@@ -343,18 +349,18 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gold)', background: 'rgba(201,168,76,0.15)', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(201,168,76,0.3)' }}>
-                  {allTournaments.filter(t => t.editorUids && t.editorUids.includes(user?.uid)).length} Project{allTournaments.filter(t => t.editorUids && t.editorUids.includes(user?.uid)).length !== 1 ? 's' : ''}
+                  {allTournaments.filter(t => isOwner || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase())))).length} Project{allTournaments.filter(t => isOwner || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase())))).length !== 1 ? 's' : ''}
                 </span>
               </div>
 
-              {allTournaments.filter(t => t.editorUids && t.editorUids.includes(user?.uid)).length === 0 ? (
+              {allTournaments.filter(t => isOwner || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase())))).length === 0 ? (
                 <div className="text-center py-6 text-text-muted text-sm border border-dashed border-border/60 rounded-xl" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
                   You haven't been added to any tournament projects yet. Create a tournament or ask an administrator for invite access.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {allTournaments
-                    .filter(t => t.editorUids && t.editorUids.includes(user?.uid))
+                    .filter(t => isOwner || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase()))))
                     .map((tourney) => {
                       const dateRange = formatEventDates(tourney.eventStartDate, tourney.eventEndDate);
                       return (
@@ -414,9 +420,11 @@ export default function DashboardPage() {
                 <Zap size={20} className="text-gold" />
                 Active & Setup Tournaments
               </h2>
-              <Link href="/tournaments/new" className="btn btn-sm btn-primary" style={{ fontSize: '0.78rem', borderRadius: '8px' }}>
-                + New Tournament
-              </Link>
+              {isOwner && (
+                <Link href="/tournaments/new" className="btn btn-sm btn-primary" style={{ fontSize: '0.78rem', borderRadius: '8px' }}>
+                  + New Tournament
+                </Link>
+              )}
             </div>
 
             {activeTourneys.length === 0 ? (

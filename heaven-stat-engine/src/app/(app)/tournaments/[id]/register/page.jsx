@@ -366,7 +366,10 @@ export default function RegisterPage() {
   if (loading) return <LoadingSpinner size="lg" text="Loading registrations..." />;
 
   const { user, isOwner, isOperator } = useAuth();
-  const canEdit = isOwner || (tournament?.editorUids && tournament.editorUids.includes(user?.uid));
+  const canEdit = isOwner || (tournament?.editorUids && (
+    tournament.editorUids.includes(user?.uid) ||
+    (user?.email && tournament.editorUids.some(e => e.toLowerCase() === user.email.toLowerCase()))
+  ));
 
   const hasGroups = groups.length > 0;
   const displayedTeamRegs = selectedGroupId

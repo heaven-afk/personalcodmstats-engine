@@ -20,7 +20,10 @@ export default function TournamentOverviewPage() {
   const router = useRouter();
   const [advancing, setAdvancing] = useState(false);
 
-  const canEdit = isOwner || (tournament?.editorUids && tournament.editorUids.includes(user?.uid));
+  const canEdit = isOwner || (tournament?.editorUids && (
+    tournament.editorUids.includes(user?.uid) ||
+    (user?.email && tournament.editorUids.some(e => e.toLowerCase() === user.email.toLowerCase()))
+  ));
 
   // Access management state (Owner + tournament editors)
   const [newEditorInput, setNewEditorInput] = useState('');

@@ -141,3 +141,41 @@ export function buildTournamentInviteEmail({ toEmail, tournamentName, tournament
     html: emailWrapper(content),
   };
 }
+
+/**
+ * Template for password reset email
+ */
+export function buildPasswordResetEmail({ toEmail, resetLink }) {
+  const content = `
+    <h2 style="margin: 0 0 12px; font-size: 20px; font-weight: 700; color: #F1F5F9;">
+      Reset Your Password
+    </h2>
+    <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #94A3B8;">
+      We received a request to reset the password for <strong style="color: #C9A84C;">${toEmail}</strong>.
+      Click the button below to choose a new password.
+    </p>
+
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 24px;">
+      <tr>
+        <td align="center">
+          <a href="${resetLink}" target="_blank" style="display: inline-block; background-color: #C9A84C; color: #000000; text-decoration: none; font-weight: 700; font-size: 14px; padding: 13px 32px; border-radius: 8px; box-shadow: 0 4px 14px rgba(201, 168, 76, 0.35);">
+            Reset Password
+          </a>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin: 0 0 8px; font-size: 12px; color: #64748B; line-height: 1.5;">
+      This link expires in <strong style="color: #94A3B8;">1 hour</strong>. If you did not request a password reset, you can safely ignore this email.
+    </p>
+    <p style="margin: 0; font-size: 11px; color: #475569; line-height: 1.5; word-break: break-all;">
+      Or paste this URL into your browser:<br/>
+      <span style="color: #64748B;">${resetLink}</span>
+    </p>
+  `;
+
+  return {
+    subject: 'Reset Your Heaven Stat Engine Password',
+    html: emailWrapper(content),
+  };
+}

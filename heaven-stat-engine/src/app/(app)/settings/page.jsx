@@ -22,7 +22,7 @@ const STEP_LABELS = {
 };
 
 export default function SettingsPage() {
-  const { user, logout, mustChangePassword, refreshProfile } = useAuth();
+  const { user, logout, mustChangePassword, refreshProfile, isOwner, role } = useAuth();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [updating, setUpdating] = useState(false);
@@ -134,58 +134,60 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ── Database Mode Status ─────────────────────────────────────────────── */}
-      <div className="card" style={{
-        border: isFirebaseConfigured
-          ? '1px solid rgba(0,200,120,0.35)'
-          : '1px solid rgba(201,168,76,0.35)',
-      }}>
-        <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
-          <Database size={18} style={{ color: isFirebaseConfigured ? 'var(--success, #22c55e)' : 'var(--gold)' }} />
-          Database Mode
-        </h2>
+      {/* ── Database Mode Status — Owner Only ────────────────────────────────── */}
+      {isOwner && (
+        <div className="card" style={{
+          border: isFirebaseConfigured
+            ? '1px solid rgba(0,200,120,0.35)'
+            : '1px solid rgba(201,168,76,0.35)',
+        }}>
+          <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
+            <Database size={18} style={{ color: isFirebaseConfigured ? 'var(--success, #22c55e)' : 'var(--gold)' }} />
+            Database Mode
+          </h2>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: isFirebaseConfigured ? 'rgba(34,197,94,0.15)' : 'rgba(201,168,76,0.15)',
-            border: `1px solid ${isFirebaseConfigured ? 'rgba(34,197,94,0.4)' : 'rgba(201,168,76,0.4)'}`,
-            flexShrink: 0,
-          }}>
-            {isFirebaseConfigured
-              ? <Wifi size={20} style={{ color: '#22c55e' }} />
-              : <WifiOff size={20} style={{ color: 'var(--gold)' }} />}
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-              {isFirebaseConfigured ? 'Live Firebase Mode' : 'Offline Demo Mode'}
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: isFirebaseConfigured ? 'rgba(34,197,94,0.15)' : 'rgba(201,168,76,0.15)',
+              border: `1px solid ${isFirebaseConfigured ? 'rgba(34,197,94,0.4)' : 'rgba(201,168,76,0.4)'}`,
+              flexShrink: 0,
+            }}>
               {isFirebaseConfigured
-                ? 'Connected to your Firebase project. All data is stored in Firestore.'
-                : 'Running with browser localStorage only. Data is stored on this device.'}
+                ? <Wifi size={20} style={{ color: '#22c55e' }} />
+                : <WifiOff size={20} style={{ color: 'var(--gold)' }} />}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                {isFirebaseConfigured ? 'Live Firebase Mode' : 'Offline Demo Mode'}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                {isFirebaseConfigured
+                  ? 'Connected to your Firebase project. All data is stored in Firestore.'
+                  : 'Running with browser localStorage only. Data is stored on this device.'}
+              </div>
             </div>
           </div>
+
+          {!isFirebaseConfigured && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: 'rgba(201,168,76,0.07)',
+              border: '1px solid rgba(201,168,76,0.2)',
+              fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6,
+            }}>
+              <strong style={{ color: 'var(--gold)' }}>To connect Firebase:</strong> Copy{' '}
+              <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>.env.local.example</code>{' '}
+              to <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>.env.local</code>{' '}
+              and fill in your Firebase project credentials, then restart the server.
+            </div>
+          )}
         </div>
+      )}
 
-        {!isFirebaseConfigured && (
-          <div style={{
-            padding: '10px 14px', borderRadius: 8,
-            background: 'rgba(201,168,76,0.07)',
-            border: '1px solid rgba(201,168,76,0.2)',
-            fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6,
-          }}>
-            <strong style={{ color: 'var(--gold)' }}>To connect Firebase:</strong> Copy{' '}
-            <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>.env.local.example</code>{' '}
-            to <code style={{ fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 4 }}>.env.local</code>{' '}
-            and fill in your Firebase project credentials, then restart the server.
-          </div>
-        )}
-      </div>
-
-      {/* ── Database Migration ───────────────────────────────────────────────── */}
-      <div className="card">
+      {/* ── Database Migration — Owner Only ──────────────────────────────────── */}
+      {isOwner && <div className="card">
         <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
           <CloudUpload size={18} style={{ color: 'var(--gold)' }} />
           Database Migration
@@ -302,7 +304,7 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ── Account Info ─────────────────────────────────────────────────────── */}
       <div className="card">
@@ -321,7 +323,23 @@ export default function SettingsPage() {
           </div>
           <div className="flex-between">
             <span className="text-text-muted">App Role</span>
-            <span className="font-semibold text-gold">Owner / Administrator</span>
+            <span
+              style={{
+                fontWeight: 700,
+                color: isOwner ? 'var(--gold)' : '#60a5fa',
+                background: isOwner ? 'rgba(201,168,76,0.15)' : 'rgba(59,130,246,0.15)',
+                border: `1px solid ${isOwner ? 'rgba(201,168,76,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                padding: '3px 10px',
+                borderRadius: 6,
+                fontSize: '0.78rem',
+                letterSpacing: '0.04em',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+            >
+              {isOwner ? '👑 Owner / Administrator' : '🛠️ Tournament Operator'}
+            </span>
           </div>
         </div>
       </div>
@@ -361,18 +379,20 @@ export default function SettingsPage() {
         </form>
       </div>
 
-      {/* ── System Info ───────────────────────────────────────────────────────── */}
-      <div className="card">
-        <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
-          <Info size={18} className="text-gold" />
-          About Heaven Stat Engine
-        </h2>
-        <div className="space-y-2.5 text-xs text-text-secondary">
-          <p><strong>Stack:</strong> Next.js (App Router), Firebase Firestore, Firebase Authentication.</p>
-          <p><strong>Version:</strong> v1.0.0 (Production Release)</p>
-          <p>This application replaces legacy Excel templates for CODM Battle Royale tournament tracking, consolidating player, team, and clan data into a central cloud database.</p>
+      {/* ── System Info — Owner Only ───────────────────────────────────────────── */}
+      {isOwner && (
+        <div className="card">
+          <h2 className="card-title mb-4 flex items-center gap-2 border-b border-border pb-2">
+            <Info size={18} className="text-gold" />
+            About Heaven Stat Engine
+          </h2>
+          <div className="space-y-2.5 text-xs text-text-secondary">
+            <p><strong>Stack:</strong> Next.js (App Router), Firebase Firestore, Firebase Authentication.</p>
+            <p><strong>Version:</strong> v1.0.0 (Production Release)</p>
+            <p>This application replaces legacy Excel templates for CODM Battle Royale tournament tracking, consolidating player, team, and clan data into a central cloud database.</p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

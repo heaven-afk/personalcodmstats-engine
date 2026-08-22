@@ -75,7 +75,10 @@ export default function EditTournamentConfigPage() {
   const { tournament, refresh, setTournament } = useTournament();
   const { user, isOwner, isOperator, loading: authLoading } = useAuth();
 
-  const canEdit = isOwner || (tournament?.editorUids && tournament.editorUids.includes(user?.uid));
+  const canEdit = isOwner || (tournament?.editorUids && (
+    tournament.editorUids.includes(user?.uid) ||
+    (user?.email && tournament.editorUids.some(e => e.toLowerCase() === user.email.toLowerCase()))
+  ));
 
   useEffect(() => {
     if (!authLoading && !isOwner && !canEdit) {

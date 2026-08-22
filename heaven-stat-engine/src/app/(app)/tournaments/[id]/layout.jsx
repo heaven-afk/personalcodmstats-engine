@@ -1,10 +1,12 @@
 'use client';
 import { useState, useEffect, createContext, useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { getTournament } from '@/lib/firestore/tournaments';
 import { formatEventDates } from '@/lib/utils/dateUtils';
 import TournamentSubNav from '@/components/layout/TournamentSubNav';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import toast from 'react-hot-toast';
 
 // Context so child pages can read the tournament
 export const TournamentContext = createContext(null);
@@ -17,6 +19,7 @@ export function useTournament() {
 export default function TournamentLayout({ children }) {
   const { id } = useParams();
   const router = useRouter();
+  const { user, isOwner, loading: authLoading } = useAuth();
   const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,15 +32,41 @@ export default function TournamentLayout({ children }) {
     refresh().finally(() => setLoading(false));
   }, [id]);
 
-  // Redirect away if tournament was deleted or doesn't exist
+  // Access validation: Redirect away if tournament was deleted, doesn't exist, or user lacks access
   useEffect(() => {
-    if (!loading && !tournament) {
-      router.replace('/tournaments');
-    }
-  }, [loading, tournament]);
+    if (!loading && !authLoading) {
+      if (!tournament) {
+        toast.error('Tournament not found');
+        router.replace('/tournaments');
+        return;
+      }
 
-  if (loading) return <LoadingSpinner size="lg" />;
+      if (!isOwner) {
+        const editors = tournament.editorUids || [];
+        const userEmail = user?.email?.toLowerCase();
+        const hasAccess = editors.some(
+          e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+        );
+
+        if (!hasAccess) {
+          toast.error('Access restricted: You have not been granted access to this tournament.');
+          router.replace('/tournaments');
+        }
+      }
+    }
+  }, [loading, authLoading, tournament, isOwner, user, router]);
+
+  if (loading || authLoading) return <LoadingSpinner size="lg" />;
   if (!tournament) return <LoadingSpinner size="lg" />; // Brief spinner while redirecting
+
+  if (!isOwner) {
+    const editors = tournament.editorUids || [];
+    const userEmail = user?.email?.toLowerCase();
+    const hasAccess = editors.some(
+      e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+    );
+    if (!hasAccess) return null;
+  }
 
   const dateRange = formatEventDates(tournament.eventStartDate, tournament.eventEndDate);
 

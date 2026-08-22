@@ -731,16 +731,18 @@ export default function ProfilePage() {
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                              <button
-                                onClick={() => handleResendCredentials(u.email)}
-                                disabled={sendingCredentialsFor === u.email}
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                title="Send default login credentials & temporary password to this user"
-                              >
-                                <Key size={12} className={sendingCredentialsFor === u.email ? 'animate-spin' : 'text-gold'} />
-                                {sendingCredentialsFor === u.email ? 'Sending...' : 'Send Credentials'}
-                              </button>
+                              {!isSelf && (
+                                <button
+                                  onClick={() => handleResendCredentials(u.email)}
+                                  disabled={sendingCredentialsFor === u.email}
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                  title="Send default login credentials & temporary password to this user"
+                                >
+                                  <Key size={12} className={sendingCredentialsFor === u.email ? 'animate-spin' : 'text-gold'} />
+                                  {sendingCredentialsFor === u.email ? 'Sending...' : 'Send Credentials'}
+                                </button>
+                              )}
                               {!isSelf && (
                                 <button
                                   onClick={() => handleRemoveUser(u.email)}
