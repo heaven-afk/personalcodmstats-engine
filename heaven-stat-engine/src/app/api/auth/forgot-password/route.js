@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
 async function getAdminApp() {
-  const { initializeApp, cert, getApps } = await import("firebase-admin/app");
+  const { initializeApp, cert, getApps } = await import('firebase-admin/app');
 
   if (getApps().length > 0) {
     return getApps()[0];
@@ -17,27 +17,27 @@ async function getAdminApp() {
       const parsed = JSON.parse(serviceAccountKey);
       return initializeApp({ credential: cert(parsed) });
     } catch (e) {
-      console.warn("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:", e.message);
+      console.warn('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', e.message);
     }
   }
 
   if (serviceAccountPath) {
     try {
-      const { readFileSync, existsSync } = await import("fs");
-      const { resolve } = await import("path");
+      const { readFileSync, existsSync } = await import('fs');
+      const { resolve } = await import('path');
       if (existsSync(resolve(serviceAccountPath))) {
-        const parsed = JSON.parse(readFileSync(resolve(serviceAccountPath), "utf8"));
+        const parsed = JSON.parse(readFileSync(resolve(serviceAccountPath), 'utf8'));
         return initializeApp({ credential: cert(parsed) });
       }
     } catch (e) {
-      console.warn("Failed to read FIREBASE_SERVICE_ACCOUNT_PATH:", e.message);
+      console.warn('Failed to read FIREBASE_SERVICE_ACCOUNT_PATH:', e.message);
     }
   }
 
   return initializeApp();
 }
 
-// Simple in-memory throttle: max 1 reset request per email per 2 minutes
+// In-memory throttle: max 1 reset request per email per 2 minutes
 const resetThrottle = new Map();
 const THROTTLE_MS = 2 * 60 * 1000;
 
@@ -46,8 +46,8 @@ export async function POST(req) {
     const body = await req.json();
     const { email } = body;
 
-    if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    if (!email || typeof email !== 'string') {
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -57,31 +57,30 @@ export async function POST(req) {
     if (lastSent && Date.now() - lastSent < THROTTLE_MS) {
       return NextResponse.json({
         success: true,
-        message: "If that email is on our system, a reset link has been sent.",
+        message: 'If that email is on our system, a reset link has been sent.',
       });
     }
 
     const app = await getAdminApp();
-    const { getAuth } = await import("firebase-admin/auth");
-    const { getFirestore } = await import("firebase-admin/firestore");
+    const { getAuth } = await import('firebase-admin/auth');
+    const { getFirestore } = await import('firebase-admin/firestore');
 
     const adminAuth = getAuth(app);
     const adminDb = getFirestore(app);
 
     // Verify email is on the allowlist
-    const allowedDoc = await adminDb.collection("allowedUsers").doc(normalizedEmail).get();
+    const allowedDoc = await adminDb.collection('allowedUsers').doc(normalizedEmail).get();
     if (!allowedDoc.exists) {
-      // Silently succeed — never reveal who is/is not on the allowlist
       return NextResponse.json({
         success: true,
-        message: "If that email is on our system, a reset link has been sent.",
+        message: 'If that email is on our system, a reset link has been sent.',
       });
     }
 
     // Generate Firebase password reset link
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const actionCodeSettings = {
-      url: `${baseUrl.replace(/\/$/, "")}/login`,
+      url: `${baseUrl.replace(/\/$/, '')}/login`,
       handleCodeInApp: false,
     };
 
@@ -89,19 +88,18 @@ export async function POST(req) {
     try {
       resetLink = await adminAuth.generatePasswordResetLink(normalizedEmail, actionCodeSettings);
     } catch (authErr) {
-      console.warn("[forgot-password] Could not generate reset link:", authErr.message);
+      console.warn('[forgot-password] Could not generate reset link:', authErr.message);
       return NextResponse.json({
         success: true,
-        message: "If that email is on our system, a reset link has been sent.",
+        message: 'If that email is on our system, a reset link has been sent.',
       });
     }
 
-    // Record throttle timestamp
     resetThrottle.set(normalizedEmail, Date.now());
 
-    // Send the reset email
-    const { buildPasswordResetEmail } = await import("@/lib/email/templates");
-    const { sendEmail } = await import("@/lib/email/send");
+    // Dispatch the reset email
+    const { buildPasswordResetEmail } = await import('@/lib/email/templates');
+    const { sendEmail } = await import('@/lib/email/send');
 
     const emailTemplate = buildPasswordResetEmail({ toEmail: normalizedEmail, resetLink });
     await sendEmail({
@@ -112,14 +110,13 @@ export async function POST(req) {
 
     return NextResponse.json({
       success: true,
-      message: "If that email is on our system, a reset link has been sent.",
+      message: 'If that email is on our system, a reset link has been sent.',
     });
   } catch (err) {
-    console.error("Fatal error in /api/auth/forgot-password:", err);
-    // Generic response — never expose internals
+    console.error('Fatal error in /api/auth/forgot-password:', err);
     return NextResponse.json({
       success: true,
-      message: "If that email is on our system, a reset link has been sent.",
+      message: 'If that email is on our system, a reset link has been sent.',
     });
   }
 }
