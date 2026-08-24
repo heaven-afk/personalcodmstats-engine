@@ -2429,55 +2429,6 @@ export default function PlayerEntryPage() {
       {/* ── SECTION A: Kills ─────────────────────────────── */}
       {section === 'kills' && smartImportRows.length === 0 && (
         <>
-          {/* Revive Type Display Bar */}
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-md)',
-            borderRadius: 10,
-            padding: '12px 16px',
-            marginTop: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            flexWrap: 'wrap'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.06em' }}>
-                REVIVE TYPE
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1 }}>
-              {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
-                const col = getLobbyColor(l);
-                const currentRevive = getReviveTypeForMatch(activeReviveConfig, day, l);
-                const revType = getReviveType(currentRevive);
-                return (
-                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{
-                      fontSize: '0.65rem', fontWeight: 700, color: col.text,
-                      background: col.bg, border: `1px solid ${col.border}`,
-                      borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap'
-                    }}>L{l}</span>
-                    <span style={{
-                      fontSize: '0.72rem', padding: '2px 8px',
-                      borderColor: revType.border,
-                      border: `1px solid ${revType.border}`,
-                      background: revType.bg,
-                      color: revType.color,
-                      borderRadius: 4,
-                      fontWeight: 700
-                    }}>
-                      {revType.label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontStyle: 'italic', flexShrink: 0 }}>
-              Configured on Team Entry page
-            </span>
-          </div>
-
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',

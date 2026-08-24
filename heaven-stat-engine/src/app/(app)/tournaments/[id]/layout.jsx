@@ -1,10 +1,12 @@
 'use client';
 import { useState, useEffect, createContext, useContext } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTournament } from '@/lib/firestore/tournaments';
 import { formatEventDates } from '@/lib/utils/dateUtils';
+import { setupTournamentPresence } from '@/lib/presence';
 import TournamentSubNav from '@/components/layout/TournamentSubNav';
+import ActiveCollaborators from '@/components/ui/ActiveCollaborators';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -19,7 +21,8 @@ export function useTournament() {
 export default function TournamentLayout({ children }) {
   const { id } = useParams();
   const router = useRouter();
-  const { user, isOwner, loading: authLoading } = useAuth();
+  const pathname = usePathname();
+  const { user, profile, isOwner, loading: authLoading } = useAuth();
   const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +34,13 @@ export default function TournamentLayout({ children }) {
   useEffect(() => {
     refresh().finally(() => setLoading(false));
   }, [id]);
+
+  // Track live real-time presence within this tournament
+  useEffect(() => {
+    if (!id || !user?.uid) return;
+    const cleanup = setupTournamentPresence(id, user, profile, pathname);
+    return cleanup;
+  }, [id, user?.uid, user?.email, profile?.username, profile?.avatarUrl, profile?.role, pathname]);
 
   // Redirect away only if tournament was deleted or doesn't exist
   useEffect(() => {
@@ -60,8 +70,8 @@ export default function TournamentLayout({ children }) {
 
   return (
     <div>
-      {/* Tournament header */}
-      <div className="page-header">
+      {/* Tournament header with active collaborators */}
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
         <div>
           <h1 className="page-title">{tournament.name}</h1>
           <p className="page-subtitle">
@@ -72,6 +82,9 @@ export default function TournamentLayout({ children }) {
             ].filter(Boolean).join(' · ')}
           </p>
         </div>
+
+        {/* Live Active Collaborators PFP Stack */}
+        <ActiveCollaborators tournamentId={id} />
       </div>
 
       <TournamentSubNav tournamentId={id} canEdit={canEdit} />

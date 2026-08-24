@@ -136,7 +136,12 @@ export function AuthProvider({ children }) {
         setAuthError(null);
 
         // Step 3: Realtime Database Presence Tracking
-        cleanupPresenceRef.current = setupPresence(u.uid);
+        cleanupPresenceRef.current = setupPresence(u.uid, {
+          email: u.email,
+          username: allowedDoc.username || u.displayName || u.email,
+          avatarUrl: allowedDoc.avatarUrl || null,
+          role: allowedDoc.role || 'operator',
+        });
 
         // Step 4: Live Firestore listener on allowedUsers/{email}
         unsubscribeProfileRef.current = subscribeAllowedUser(
