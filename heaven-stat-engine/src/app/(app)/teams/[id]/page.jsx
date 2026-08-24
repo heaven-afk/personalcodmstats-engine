@@ -23,6 +23,9 @@ export default function TeamProfilePage() {
   const { isOwner } = useAuth();
 
   const [team, setTeam] = useState(null);
+  const [logoUrlInput, setLogoUrlInput] = useState('');
+  const [bannerUrlInput, setBannerUrlInput] = useState('');
+  const [updatingImages, setUpdatingImages] = useState(false);
   const [history, setHistory] = useState([]);
   const [careerStats, setCareerStats] = useState({
     wins: 0,
@@ -151,10 +154,6 @@ export default function TeamProfilePage() {
 
     loadTeamProfile();
   }, [id, router]);
-
-  const [logoUrlInput, setLogoUrlInput] = useState('');
-  const [bannerUrlInput, setBannerUrlInput] = useState('');
-  const [updatingImages, setUpdatingImages] = useState(false);
 
   const handleSaveImages = async () => {
     if (!isOwner) {
