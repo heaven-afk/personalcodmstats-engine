@@ -2,7 +2,9 @@
 const nextConfig = {
   serverExternalPackages: ['firebase-admin', 'nodemailer'],
   allowedDevOrigins: ['10.31.178.27'],
-  optimizePackageImports: ['lucide-react', 'recharts', 'papaparse', 'xlsx'],
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'recharts', 'papaparse', 'xlsx'],
+  },
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [

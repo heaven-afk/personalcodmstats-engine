@@ -1,3 +1,4 @@
+'use client';
 import { useTournament } from './layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { StatusBadge, TierBadge } from '@/components/ui/Badge';
