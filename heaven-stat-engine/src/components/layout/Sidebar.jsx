@@ -5,12 +5,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import Wordmark from '@/components/ui/Wordmark';
 import UserAvatar from '@/components/ui/UserAvatar';
 import {
-  LayoutDashboard, Trophy, Users, Shield, BarChart3, Settings, LogOut, GitCompare,
+  LayoutDashboard, FolderGit2, Trophy, Users, Shield, BarChart3, Settings, LogOut, GitCompare,
   FlaskConical, Sparkles, Coins, X, User as UserIcon
 } from 'lucide-react';
 
 const NAV = [
   { href: '/dashboard',   label: 'Dashboard',     icon: LayoutDashboard },
+  { href: '/projects',    label: 'My Projects',   icon: FolderGit2 },
   { href: '/tournaments', label: 'Tournaments',   icon: Trophy },
   { href: '/players',     label: 'Players',       icon: Users },
   { href: '/teams',       label: 'Teams',         icon: Shield },
@@ -30,10 +31,10 @@ export default function Sidebar({ mobileOpen, onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Role-gate navigation: operators see Dashboard, Tournaments, Players, Teams, Settings
+  // Role-gate navigation: operators see Dashboard, My Projects, Tournaments, Players, Teams, Settings
   const visibleNav = NAV.filter(item => {
     if (isOperator) {
-      return ['/dashboard', '/tournaments', '/players', '/teams', '/settings'].includes(item.href);
+      return ['/dashboard', '/projects', '/tournaments', '/players', '/teams', '/settings'].includes(item.href);
     }
     return true;
   });

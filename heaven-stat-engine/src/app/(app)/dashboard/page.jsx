@@ -156,7 +156,30 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 12, zIndex: 1 }}>
+        <div style={{ display: 'flex', gap: 12, zIndex: 1, flexWrap: 'wrap' }}>
+          <Link href="/projects" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(201, 168, 76, 0.35)' }}>
+            <FolderGit2 size={16} className="text-gold" />
+            My Projects
+            {allTournaments.filter(t => {
+              const uEmail = user?.email?.toLowerCase();
+              const uUid = user?.uid;
+              if (!uUid && !uEmail) return false;
+              const isCreator = (t.createdBy && t.createdBy === uUid) || (uEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === uEmail);
+              const isAssigned = (t.editorUids || []).some(e => e === uUid || (uEmail && e.toLowerCase() === uEmail));
+              return Boolean(isCreator || isAssigned);
+            }).length > 0 && (
+              <span style={{ fontSize: '0.72rem', background: 'rgba(201,168,76,0.2)', color: 'var(--gold)', padding: '1px 7px', borderRadius: 10, fontWeight: 700, marginLeft: 2 }}>
+                {allTournaments.filter(t => {
+                  const uEmail = user?.email?.toLowerCase();
+                  const uUid = user?.uid;
+                  if (!uUid && !uEmail) return false;
+                  const isCreator = (t.createdBy && t.createdBy === uUid) || (uEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === uEmail);
+                  const isAssigned = (t.editorUids || []).some(e => e === uUid || (uEmail && e.toLowerCase() === uEmail));
+                  return Boolean(isCreator || isAssigned);
+                }).length}
+              </span>
+            )}
+          </Link>
           <Link href="/tournaments/new" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px', boxShadow: '0 4px 16px rgba(201, 168, 76, 0.3)' }}>
             <Zap size={16} /> New Tournament
           </Link>
@@ -326,84 +349,75 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Left Column: Tournaments */}
         <div className="lg:col-span-2" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-          {/* My Projects Section (Tournaments where user is an assigned editor) */}
-          {user?.uid && (
-            <div className="card" style={{
-              background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.08) 0%, rgba(15, 23, 42, 0.95) 100%)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(201, 168, 76, 0.3)',
-              borderRadius: '16px',
-              padding: '24px',
-            }}>
-              <div className="flex-between mb-4">
-                <div>
-                  <h2 className="card-title flex items-center gap-2" style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)', margin: 0 }}>
-                    <FolderGit2 size={20} />
-                    My Projects
-                  </h2>
-                  <p style={{ fontSize: '0.78rem', color: '#94A3B8', margin: '4px 0 0' }}>
-                    Tournaments you created or have editor collaboration access to.
-                  </p>
+          {/* My Projects Quick Access Hub */}
+          {user?.uid && (() => {
+            const uEmail = user?.email?.toLowerCase();
+            const uUid = user?.uid;
+            const myCount = allTournaments.filter(t => {
+              if (!uUid && !uEmail) return false;
+              const isCreator = (t.createdBy && t.createdBy === uUid) || (uEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === uEmail);
+              const isAssigned = (t.editorUids || []).some(e => e === uUid || (uEmail && e.toLowerCase() === uEmail));
+              return Boolean(isCreator || isAssigned);
+            }).length;
+
+            return (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.1) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(201, 168, 76, 0.3)',
+                borderRadius: '16px',
+                padding: '20px 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, rgba(201, 168, 76, 0.25) 0%, rgba(201, 168, 76, 0.08) 100%)',
+                    border: '1px solid rgba(201, 168, 76, 0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--gold)',
+                    boxShadow: '0 4px 14px rgba(201, 168, 76, 0.2)',
+                    flexShrink: 0,
+                  }}>
+                    <FolderGit2 size={22} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF', margin: 0 }}>
+                        My Projects Hub
+                      </h2>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--gold)', background: 'rgba(201,168,76,0.18)', padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(201,168,76,0.3)' }}>
+                        {myCount} Assigned Project{myCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.8rem', color: '#94A3B8', margin: '4px 0 0' }}>
+                      Access, edit and manage tournaments you created or collaborate on as an editor.
+                    </p>
+                  </div>
                 </div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gold)', background: 'rgba(201,168,76,0.15)', padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(201,168,76,0.3)' }}>
-                  {allTournaments.filter(t => isOwner || t.createdBy === user?.uid || (user?.email && t.creatorEmail && t.creatorEmail.toLowerCase() === user.email.toLowerCase()) || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase())))).length} Project{allTournaments.filter(t => isOwner || t.createdBy === user?.uid || (user?.email && t.creatorEmail && t.creatorEmail.toLowerCase() === user.email.toLowerCase()) || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase())))).length !== 1 ? 's' : ''}
-                </span>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Link
+                    href="/projects"
+                    className="btn btn-primary"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', fontSize: '0.82rem', borderRadius: '10px' }}
+                  >
+                    Open My Projects <ArrowRight size={14} />
+                  </Link>
+                </div>
               </div>
-
-              {allTournaments.filter(t => isOwner || t.createdBy === user?.uid || (user?.email && t.creatorEmail && t.creatorEmail.toLowerCase() === user.email.toLowerCase()) || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase())))).length === 0 ? (
-                <div className="text-center py-6 text-text-muted text-sm border border-dashed border-border/60 rounded-xl" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
-                  You haven't created or been assigned to any tournament projects yet. Click "+ New Tournament" to create one!
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {allTournaments
-                    .filter(t => isOwner || t.createdBy === user?.uid || (user?.email && t.creatorEmail && t.creatorEmail.toLowerCase() === user.email.toLowerCase()) || (t.editorUids && t.editorUids.some(e => e === user?.uid || (user?.email && e.toLowerCase() === user.email.toLowerCase()))))
-                    .map((tourney) => {
-                      const dateRange = formatEventDates(tourney.eventStartDate, tourney.eventEndDate);
-                      return (
-                        <div key={tourney.id} style={{
-                          background: 'rgba(15, 23, 42, 0.85)',
-                          border: '1px solid rgba(201, 168, 76, 0.25)',
-                          borderRadius: '12px',
-                          padding: '16px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'space-between',
-                          gap: '12px',
-                        }}>
-                          <div>
-                            <div className="flex-between mb-2">
-                              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                                Season {tourney.season || '—'}
-                              </span>
-                              <StatusBadge status={tourney.status} />
-                            </div>
-                            <h3 style={{ fontSize: '0.98rem', fontWeight: 800, color: '#FFFFFF', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {tourney.name}
-                            </h3>
-                            {dateRange && (
-                              <div style={{ fontSize: '0.72rem', color: 'var(--gold)', fontWeight: 600, marginTop: 3 }}>
-                                {dateRange}
-                              </div>
-                            )}
-                          </div>
-
-                          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                            <Link
-                              href={`/tournaments/${tourney.id}`}
-                              className="btn btn-sm btn-primary"
-                              style={{ flex: 1, fontSize: '0.75rem', padding: '6px 10px', justifyContent: 'center' }}
-                            >
-                              Manage Hub <ArrowRight size={12} />
-                            </Link>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           <div className="card" style={{
             background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
