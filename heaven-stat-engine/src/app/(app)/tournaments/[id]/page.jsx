@@ -11,7 +11,7 @@ import { useAllPresence } from '@/hooks/usePresence';
 import UserAvatar from '@/components/ui/UserAvatar';
 import { auth } from '@/lib/firebase';
 import toast from 'react-hot-toast';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 
 const STATUS_FLOW = ['setup', 'active', 'completed', 'archived'];
@@ -37,7 +37,9 @@ export default function TournamentOverviewPage() {
   const [updatingEditors, setUpdatingEditors] = useState(false);
   const [allowedUsers, setAllowedUsers] = useState([]);
   const [editorSearch, setEditorSearch] = useState('');
-  const [editorFilterTab, setEditorFilterTab] = useState('all'); // 'all', 'online', 'assigned'
+  const [editorFilterTab, setEditorFilterTab] = useState('all'); // 'all', 'online'
+  const [inviteDropdownOpen, setInviteDropdownOpen] = useState(false);
+  const inviteDropdownRef = useRef(null);
   const presenceMap = useAllPresence();
 
   useEffect(() => {
@@ -48,6 +50,32 @@ export default function TournamentOverviewPage() {
     );
     return () => unsub();
   }, [canManageEditors]);
+
+  // Close invite dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (inviteDropdownRef.current && !inviteDropdownRef.current.contains(e.target)) {
+        setInviteDropdownOpen(false);
+      }
+    }
+    if (inviteDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [inviteDropdownOpen]);
+
+  const checkUserOnline = useCallback((u) => {
+    if (!u) return false;
+    const pres = presenceMap[u.uid] || Object.values(presenceMap).find(p => p?.email?.toLowerCase() === u.email?.toLowerCase());
+    return pres?.state === 'online';
+  }, [presenceMap]);
+
+  const checkUserAssigned = useCallback((u) => {
+    if (!u) return false;
+    const resolvedUid = u.uid || u.email;
+    const email = u.email?.toLowerCase();
+    return (tournament?.editorUids || []).includes(resolvedUid) || (email && (tournament?.editorUids || []).includes(email));
+  }, [tournament?.editorUids]);
 
   const handleInviteUser = async (targetUser) => {
     if (!canManageEditors) {
@@ -91,7 +119,8 @@ export default function TournamentOverviewPage() {
         console.warn('Failed to dispatch tournament invite email:', inviteErr);
       }
 
-      toast.success(`Access granted to ${targetUser.username || targetUser.email}!`);
+      const displayLabel = targetUser.username && targetUser.username.trim() ? targetUser.username.trim() : targetUser.email;
+      toast.success(`Access granted to ${displayLabel}!`);
     } catch (err) {
       toast.error('Failed to grant access: ' + err.message);
     } finally {
@@ -356,292 +385,347 @@ export default function TournamentOverviewPage() {
       {/* ── Collaborator & Operator Access Management (Creator or Owner Only) ───── */}
       {canManageEditors && (
         <div className="card" style={{ marginBottom: 24, border: '1px solid rgba(201,168,76,0.3)', background: 'linear-gradient(180deg, rgba(201,168,76,0.03) 0%, rgba(15,23,42,0.4) 100%)' }}>
-          <div className="flex-between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-            <div>
-              <h3 className="card-title flex items-center gap-2" style={{ color: 'var(--gold)', margin: 0 }}>
-                <UserCheck size={18} />
-                {isOwner ? 'Operator & Collaborator Access' : 'Collaborator Access Management'}
-              </h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                Quickly invite online users or assign platform operators to manage data in this event.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{
-                fontSize: '0.75rem',
-                color: 'var(--gold)',
-                background: 'rgba(201,168,76,0.1)',
-                padding: '3px 10px',
-                borderRadius: 6,
-                border: '1px solid rgba(201,168,76,0.3)',
-                fontWeight: 600,
-              }}>
-                {(tournament.editorUids || []).length} Assigned Editor{(tournament.editorUids || []).length !== 1 ? 's' : ''}
-              </span>
-            </div>
-          </div>
+          {(() => {
+            const onlineOperators = allowedUsers.filter(u => checkUserOnline(u));
+            const onlineCount = onlineOperators.length;
 
-          {/* Quick Filter & Search Bar */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
-              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                className="form-input"
-                style={{ paddingLeft: 32, fontSize: '0.82rem', width: '100%' }}
-                placeholder="Filter operators by name or email..."
-                value={editorSearch}
-                onChange={e => setEditorSearch(e.target.value)}
-              />
-              {editorSearch && (
-                <button
-                  type="button"
-                  onClick={() => setEditorSearch('')}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
+            const searchLower = editorSearch.toLowerCase().trim();
+            const filteredOperators = allowedUsers.filter(u => {
+              const isOnline = checkUserOnline(u);
+              if (editorFilterTab === 'online' && !isOnline) return false;
+              if (searchLower) {
+                const name = (u.username || u.email || '').toLowerCase();
+                return name.includes(searchLower);
+              }
+              return true;
+            });
 
-            {/* Filter Tabs */}
-            <div style={{ display: 'flex', gap: 6 }}>
-              {(() => {
-                const onlineCount = allowedUsers.filter(u => {
-                  const pres = presenceMap[u.uid] || Object.values(presenceMap).find(p => p?.email?.toLowerCase() === u.email?.toLowerCase());
-                  return pres?.state === 'online';
-                }).length;
-                const assignedCount = allowedUsers.filter(u => {
-                  const resolvedUid = u.uid || u.email;
-                  const email = u.email?.toLowerCase();
-                  return (tournament.editorUids || []).includes(resolvedUid) || (email && (tournament.editorUids || []).includes(email));
-                }).length;
+            // Sort online users first, then by username
+            filteredOperators.sort((a, b) => {
+              const aOnline = checkUserOnline(a) ? 1 : 0;
+              const bOnline = checkUserOnline(b) ? 1 : 0;
+              if (bOnline !== aOnline) return bOnline - aOnline;
+              const nameA = a.username && a.username.trim() ? a.username.trim() : a.email;
+              const nameB = b.username && b.username.trim() ? b.username.trim() : b.email;
+              return nameA.localeCompare(nameB);
+            });
 
-                return (
-                  <>
+            return (
+              <>
+                <div className="flex-between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                  <div>
+                    <h3 className="card-title flex items-center gap-2" style={{ color: 'var(--gold)', margin: 0 }}>
+                      <UserCheck size={18} />
+                      {isOwner ? 'Operator & Collaborator Access' : 'Collaborator Access Management'}
+                    </h3>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                      Assign platform operators to manage data and enter match results in this event.
+                    </p>
+                  </div>
+
+                  {/* Dropdown Menu Trigger Button */}
+                  <div ref={inviteDropdownRef} style={{ position: 'relative' }}>
                     <button
                       type="button"
-                      className={`btn btn-sm ${editorFilterTab === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setEditorFilterTab('all')}
-                      style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-                    >
-                      All ({allowedUsers.length})
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${editorFilterTab === 'online' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setEditorFilterTab('online')}
+                      className="btn btn-primary btn-sm"
+                      onClick={() => setInviteDropdownOpen(prev => !prev)}
                       style={{
-                        fontSize: '0.75rem',
-                        padding: '4px 10px',
-                        borderColor: onlineCount > 0 ? '#22c55e' : undefined,
-                        color: onlineCount > 0 && editorFilterTab !== 'online' ? '#22c55e' : undefined,
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 5,
+                        gap: 8,
+                        fontWeight: 700,
+                        padding: '6px 14px',
+                        boxShadow: inviteDropdownOpen ? '0 0 12px rgba(201,168,76,0.35)' : 'none',
                       }}
                     >
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
-                      Online ({onlineCount})
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${editorFilterTab === 'assigned' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setEditorFilterTab('assigned')}
-                      style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-                    >
-                      Assigned ({assignedCount})
-                    </button>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-
-          {/* User Cards List */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10, marginBottom: 18 }}>
-            {(() => {
-              const searchLower = editorSearch.toLowerCase().trim();
-              const filtered = allowedUsers.filter(u => {
-                const pres = presenceMap[u.uid] || Object.values(presenceMap).find(p => p?.email?.toLowerCase() === u.email?.toLowerCase());
-                const isOnline = pres?.state === 'online';
-                const resolvedUid = u.uid || u.email;
-                const email = u.email?.toLowerCase();
-                const isAssigned = (tournament.editorUids || []).includes(resolvedUid) || (email && (tournament.editorUids || []).includes(email));
-
-                if (editorFilterTab === 'online' && !isOnline) return false;
-                if (editorFilterTab === 'assigned' && !isAssigned) return false;
-
-                if (searchLower) {
-                  const matchName = (u.username || '').toLowerCase().includes(searchLower);
-                  const matchEmail = (u.email || '').toLowerCase().includes(searchLower);
-                  return matchName || matchEmail;
-                }
-                return true;
-              });
-
-              // Sort online users first
-              filtered.sort((a, b) => {
-                const aPres = presenceMap[a.uid] || Object.values(presenceMap).find(p => p?.email?.toLowerCase() === a.email?.toLowerCase());
-                const bPres = presenceMap[b.uid] || Object.values(presenceMap).find(p => p?.email?.toLowerCase() === b.email?.toLowerCase());
-                const aOnline = aPres?.state === 'online' ? 1 : 0;
-                const bOnline = bPres?.state === 'online' ? 1 : 0;
-                if (bOnline !== aOnline) return bOnline - aOnline;
-                return (a.username || a.email).localeCompare(b.username || b.email);
-              });
-
-              if (filtered.length === 0) {
-                return (
-                  <div style={{ gridColumn: '1 / -1', padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    {editorFilterTab === 'online' ? 'No other operators are currently online.' : 'No matching operators found.'}
-                  </div>
-                );
-              }
-
-              return filtered.map(u => {
-                const pres = presenceMap[u.uid] || Object.values(presenceMap).find(p => p?.email?.toLowerCase() === u.email?.toLowerCase());
-                const isOnline = pres?.state === 'online';
-                const resolvedUid = u.uid || u.email;
-                const email = u.email?.toLowerCase();
-                const isAssigned = (tournament.editorUids || []).includes(resolvedUid) || (email && (tournament.editorUids || []).includes(email));
-                const isSelf = user?.email?.toLowerCase() === email;
-
-                return (
-                  <div
-                    key={u.email}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 12px',
-                      borderRadius: 9,
-                      background: isOnline ? 'rgba(34, 197, 94, 0.04)' : 'var(--bg-alt-row)',
-                      border: isOnline ? '1px solid rgba(34, 197, 94, 0.35)' : '1px solid var(--border-md)',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                      <UserAvatar
-                        src={u.avatarUrl}
-                        name={u.username || u.email}
-                        uid={u.uid}
-                        status={isOnline ? 'online' : 'offline'}
-                        size="sm"
-                        showPresence={true}
-                      />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {u.username || u.email}
-                          </span>
-                          {isOnline && (
-                            <span style={{
-                              fontSize: '0.6rem',
-                              fontWeight: 800,
-                              color: '#22c55e',
-                              background: 'rgba(34, 197, 94, 0.12)',
-                              padding: '1px 5px',
-                              borderRadius: 4,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                            }}>
-                              <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#22c55e' }} />
-                              Online
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {u.email}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ marginLeft: 8, flexShrink: 0 }}>
-                      {isSelf ? (
-                        <span style={{ fontSize: '0.68rem', color: 'var(--gold)', fontWeight: 700 }}>
-                          (You)
+                      <UserPlus size={15} />
+                      <span>Invite Collaborator</span>
+                      {onlineCount > 0 && (
+                        <span style={{
+                          background: 'rgba(34, 197, 94, 0.25)',
+                          color: '#22c55e',
+                          border: '1px solid rgba(34, 197, 94, 0.5)',
+                          borderRadius: 99,
+                          padding: '1px 7px',
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          marginLeft: 2,
+                        }}>
+                          <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#22c55e' }} />
+                          {onlineCount} Online
                         </span>
-                      ) : isAssigned ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{
-                            fontSize: '0.65rem',
-                            fontWeight: 700,
-                            color: 'var(--gold)',
-                            background: 'rgba(201, 168, 76, 0.12)',
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 3,
-                          }}>
-                            <Check size={10} /> Editor
+                      )}
+                    </button>
+
+                    {/* Floating Dropdown Menu Box */}
+                    {inviteDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 8px)',
+                          right: 0,
+                          zIndex: 1000,
+                          width: 320,
+                          background: '#0d1527',
+                          border: '1px solid var(--border-gold)',
+                          borderRadius: 12,
+                          padding: '14px',
+                          boxShadow: '0 16px 36px rgba(0,0,0,0.75), 0 0 24px rgba(201,168,76,0.18)',
+                          backdropFilter: 'blur(16px)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.03em' }}>
+                            Select Operator to Invite
                           </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            {filteredOperators.length} Available
+                          </span>
+                        </div>
+
+                        {/* Search Bar */}
+                        <div style={{ position: 'relative', marginBottom: 8 }}>
+                          <Search size={14} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                          <input
+                            className="form-input"
+                            style={{ paddingLeft: 30, fontSize: '0.78rem', height: 32, width: '100%' }}
+                            placeholder="Search username..."
+                            value={editorSearch}
+                            onChange={e => setEditorSearch(e.target.value)}
+                            autoFocus
+                          />
+                        </div>
+
+                        {/* Filter Tabs */}
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                           <button
                             type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ color: 'var(--danger)', padding: '2px 6px', fontSize: '0.72rem' }}
-                            onClick={() => handleRemoveEditor(resolvedUid)}
-                            disabled={updatingEditors}
-                            title="Revoke collaborator access"
+                            className={`btn btn-xs ${editorFilterTab === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setEditorFilterTab('all')}
+                            style={{ fontSize: '0.7rem', padding: '3px 8px' }}
                           >
-                            <UserX size={12} />
+                            All ({allowedUsers.length})
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-xs ${editorFilterTab === 'online' ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => setEditorFilterTab('online')}
+                            style={{
+                              fontSize: '0.7rem',
+                              padding: '3px 8px',
+                              borderColor: onlineCount > 0 ? '#22c55e' : undefined,
+                              color: onlineCount > 0 && editorFilterTab !== 'online' ? '#22c55e' : undefined,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e' }} />
+                            Online ({onlineCount})
                           </button>
                         </div>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          style={{
-                            fontSize: '0.75rem',
-                            padding: '3px 9px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            background: isOnline ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : undefined,
-                            borderColor: isOnline ? '#059669' : undefined,
-                          }}
-                          onClick={() => handleInviteUser(u)}
-                          disabled={updatingEditors}
-                        >
-                          <UserPlus size={12} /> Invite
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
 
-          {/* Manual Input Fallback */}
-          <div style={{
-            borderTop: '1px solid var(--border-md)',
-            paddingTop: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
-          }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-              Or invite external email / UID:
-            </span>
-            <input
-              className="form-input"
-              placeholder="operator@example.com or user UID..."
-              value={newEditorInput}
-              onChange={e => setNewEditorInput(e.target.value)}
-              style={{ flex: 1, minWidth: 200, fontSize: '0.8rem', padding: '4px 10px' }}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={handleAddEditor}
-              disabled={updatingEditors || !newEditorInput.trim()}
-              style={{ fontSize: '0.78rem' }}
-            >
-              <UserPlus size={13} style={{ marginRight: 4 }} /> Grant Access
-            </button>
-          </div>
+                        {/* User List: Display Username ONLY (fallback to email only if no username set) */}
+                        <div style={{ maxHeight: 230, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 2 }}>
+                          {filteredOperators.length === 0 ? (
+                            <div style={{ padding: '16px 8px', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                              {editorFilterTab === 'online' ? 'No other operators online' : 'No matching operators found'}
+                            </div>
+                          ) : (
+                            filteredOperators.map(u => {
+                              const isOnline = checkUserOnline(u);
+                              const isAssigned = checkUserAssigned(u);
+                              const isSelf = user?.email?.toLowerCase() === u.email?.toLowerCase();
+                              const displayName = u.username && u.username.trim() ? u.username.trim() : u.email;
+
+                              return (
+                                <div
+                                  key={u.email}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '7px 9px',
+                                    borderRadius: 7,
+                                    background: isOnline ? 'rgba(34, 197, 94, 0.06)' : 'rgba(255,255,255,0.03)',
+                                    border: isOnline ? '1px solid rgba(34, 197, 94, 0.35)' : '1px solid transparent',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                                    <UserAvatar
+                                      src={u.avatarUrl}
+                                      name={displayName}
+                                      uid={u.uid}
+                                      status={isOnline ? 'online' : 'offline'}
+                                      size="xs"
+                                      showPresence={true}
+                                    />
+                                    <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{
+                                        fontWeight: 600,
+                                        fontSize: '0.8rem',
+                                        color: 'var(--text-primary)',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {displayName}
+                                      </span>
+                                      {isOnline && (
+                                        <span style={{ fontSize: '0.58rem', color: '#22c55e', fontWeight: 800, flexShrink: 0 }}>
+                                          ● Online
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ marginLeft: 6, flexShrink: 0 }}>
+                                    {isSelf ? (
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 700 }}>
+                                        (You)
+                                      </span>
+                                    ) : isAssigned ? (
+                                      <span style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 700, background: 'rgba(201,168,76,0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                                        ✓ Added
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary btn-xs"
+                                        style={{
+                                          fontSize: '0.7rem',
+                                          padding: '2px 8px',
+                                          background: isOnline ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : undefined,
+                                          borderColor: isOnline ? '#059669' : undefined,
+                                        }}
+                                        onClick={() => handleInviteUser(u)}
+                                        disabled={updatingEditors}
+                                      >
+                                        + Invite
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {/* Manual fallback input in dropdown */}
+                        <div style={{ borderTop: '1px solid var(--border-md)', marginTop: 10, paddingTop: 8 }}>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                            Or invite external email / UID:
+                          </div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input
+                              className="form-input"
+                              placeholder="operator@example.com"
+                              value={newEditorInput}
+                              onChange={e => setNewEditorInput(e.target.value)}
+                              style={{ flex: 1, fontSize: '0.75rem', height: 28, padding: '2px 8px' }}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-xs"
+                              onClick={handleAddEditor}
+                              disabled={updatingEditors || !newEditorInput.trim()}
+                              style={{ fontSize: '0.72rem', padding: '2px 8px' }}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Currently Assigned Collaborators Section */}
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>Assigned Collaborators</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--gold)', background: 'rgba(201,168,76,0.1)', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
+                      {(tournament.editorUids || []).length} Total
+                    </span>
+                  </div>
+
+                  {(!tournament.editorUids || tournament.editorUids.length === 0) ? (
+                    <div style={{
+                      padding: '16px',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px dashed var(--border-md)',
+                      textAlign: 'center',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.82rem',
+                    }}>
+                      No collaborator editors assigned yet. Click <strong>"Invite Collaborator"</strong> above to grant access.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                      {tournament.editorUids.map(uid => {
+                        const matchedUser = allowedUsers.find(u => u.uid === uid || u.email?.toLowerCase() === uid.toLowerCase());
+                        const displayName = matchedUser?.username && matchedUser.username.trim()
+                          ? matchedUser.username.trim()
+                          : (matchedUser?.email || uid);
+                        const isOnline = matchedUser ? checkUserOnline(matchedUser) : false;
+
+                        return (
+                          <div
+                            key={uid}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 12px',
+                              background: 'var(--bg-alt-row)',
+                              borderRadius: 8,
+                              border: '1px solid var(--border-md)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                              <UserAvatar
+                                src={matchedUser?.avatarUrl}
+                                name={displayName}
+                                uid={matchedUser?.uid || uid}
+                                status={isOnline ? 'online' : 'offline'}
+                                size="xs"
+                                showPresence={true}
+                              />
+                              <span style={{
+                                fontWeight: 600,
+                                fontSize: '0.82rem',
+                                color: 'var(--text-primary)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {displayName}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-xs"
+                              style={{ color: 'var(--danger)', padding: '2px 4px', marginLeft: 6 }}
+                              onClick={() => handleRemoveEditor(uid)}
+                              disabled={updatingEditors}
+                              title="Revoke access"
+                            >
+                              <UserX size={13} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 

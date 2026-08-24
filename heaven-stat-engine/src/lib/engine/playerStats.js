@@ -5,20 +5,35 @@
  */
 
 // ─── Per-tournament player stats ──────────────────────────────────────────────
-export function computePlayerStats(playerMatchResults, playerRegistrations, tournamentConfig) {
+export function computePlayerStats(playerMatchResults, playerRegistrations = [], tournamentConfig = {}) {
   const { playerClasses = [], totalDays = 6, lobbiesPerDay = 4 } = tournamentConfig?.structure || {};
 
-  // Build registration lookup
+  // Build registration lookup by playerId, id, ign, and professionalName
   const regByPlayerId = {};
+  const regByIgn = {};
+  const regByName = {};
+
   for (const reg of playerRegistrations) {
-    regByPlayerId[reg.playerId] = reg;
+    if (!reg) continue;
+    if (reg.playerId) regByPlayerId[String(reg.playerId).trim()] = reg;
+    if (reg.id) regByPlayerId[String(reg.id).trim()] = reg;
+    if (reg.ign) regByIgn[String(reg.ign).trim().toLowerCase()] = reg;
+    if (reg.professionalName) regByName[String(reg.professionalName).trim().toLowerCase()] = reg;
+    if (reg.playerName) regByName[String(reg.playerName).trim().toLowerCase()] = reg;
   }
 
   const playerMap = {};
 
   for (const result of playerMatchResults) {
-    const key = result.playerId;
-    const reg = regByPlayerId[key];
+    if (!result) continue;
+    const key = result.playerId || result.playerName || result.ign;
+    if (!key) continue;
+
+    const reg = (result.playerId && regByPlayerId[String(result.playerId).trim()]) ||
+      (regByPlayerId[String(key).trim()]) ||
+      (result.ign && regByIgn[String(result.ign).trim().toLowerCase()]) ||
+      (result.playerName && regByName[String(result.playerName).trim().toLowerCase()]) ||
+      null;
 
     // Check active day for this player's class
     if (reg) {
@@ -30,19 +45,19 @@ export function computePlayerStats(playerMatchResults, playerRegistrations, tour
 
     if (!playerMap[key]) {
       playerMap[key] = {
-        playerId: result.playerId,
-        playerName: result.playerName || result.playerId,
-        ign: reg?.ign || result.playerName || '',
+        playerId: result.playerId || reg?.playerId || reg?.id || key,
+        playerName: reg?.professionalName || result.playerName || reg?.playerName || result.playerId || '',
+        ign: reg?.ign || result.ign || result.playerName || '',
         teamId: reg?.teamId || result.teamId || '',
-        teamName: result.teamName || '',
-        clanName: result.clanName || '',
-        class: reg?.class || '',
-        slot: reg?.slot || 0,
-        gender: result.gender || '',
-        region: result.region || '',
-        country: result.country || '',
-        device: result.device || '',
-        deviceModel: result.deviceModel || '',
+        teamName: reg?.teamName || result.teamName || '',
+        clanName: reg?.clanName || result.clanName || '',
+        class: reg?.class || result.class || '',
+        slot: reg?.slot || result.slot || 0,
+        gender: reg?.gender || result.gender || '',
+        region: reg?.region || result.region || '',
+        country: reg?.country || result.country || '',
+        device: reg?.device || result.device || '',
+        deviceModel: reg?.deviceModel || reg?.model || result.deviceModel || result.model || '',
         totalKills: 0,
         totalDamage: 0,
         totalAccuracy: 0,
@@ -55,6 +70,17 @@ export function computePlayerStats(playerMatchResults, playerRegistrations, tour
     }
 
     const p = playerMap[key];
+
+    // Fallback backfill if fields became available
+    if (!p.gender && (reg?.gender || result.gender)) p.gender = reg?.gender || result.gender;
+    if (!p.region && (reg?.region || result.region)) p.region = reg?.region || result.region;
+    if (!p.country && (reg?.country || result.country)) p.country = reg?.country || result.country;
+    if (!p.device && (reg?.device || result.device)) p.device = reg?.device || result.device;
+    if (!p.deviceModel && (reg?.deviceModel || reg?.model || result.deviceModel)) p.deviceModel = reg?.deviceModel || reg?.model || result.deviceModel;
+    if (!p.clanName && (reg?.clanName || result.clanName)) p.clanName = reg?.clanName || result.clanName;
+    if (!p.ign && (reg?.ign || result.ign)) p.ign = reg?.ign || result.ign;
+    if (!p.class && (reg?.class || result.class)) p.class = reg?.class || result.class;
+
     p.totalKills += result.kills || 0;
     p.totalDamage += result.damage || 0;
     if (result.accuracy != null && result.accuracy > 0) {

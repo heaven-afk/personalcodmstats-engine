@@ -105,6 +105,11 @@ export default function StandingsPage() {
       ]);
 
       const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
+      const playerLookup = Object.fromEntries(allPlayers.map((p) => [p.id, p]));
+      const playerByName = Object.fromEntries(allPlayers.map((p) => [(p.professionalName || p.playerName || '').toLowerCase(), p]));
+      const playerByIgn = Object.fromEntries(allPlayers.map((p) => [(p.ign || '').toLowerCase(), p]));
+      const teamRegLookup = Object.fromEntries(tRegs.map((t) => [t.teamId || t.id, t]));
+
       const enrichedTeamResults = tr.map((r) => ({
         ...r,
         teamName: teamMap[r.teamId]?.teamName || r.teamName || r.teamId,
@@ -116,12 +121,31 @@ export default function StandingsPage() {
         clanName: teamMap[b.teamId]?.clanName || '',
       }));
 
+      const enrichedPlayerRegs = pRegs.map((pr) => {
+        const globalP = playerLookup[pr.playerId] ||
+          (pr.professionalName && playerByName[pr.professionalName.toLowerCase()]) ||
+          (pr.ign && playerByIgn[pr.ign.toLowerCase()]);
+        const teamR = teamRegLookup[pr.teamId];
+
+        return {
+          ...pr,
+          professionalName: pr.professionalName || globalP?.professionalName || pr.playerName || globalP?.playerName || '',
+          ign: pr.ign || globalP?.ign || '',
+          gender: pr.gender || globalP?.gender || '',
+          region: pr.region || globalP?.region || '',
+          country: pr.country || globalP?.country || '',
+          device: pr.device || globalP?.device || '',
+          deviceModel: pr.deviceModel || pr.model || globalP?.deviceModel || globalP?.model || '',
+          clanName: pr.clanName || teamR?.clanName || teamMap[pr.teamId]?.clanName || '',
+        };
+      });
+
       return {
         teamResults: enrichedTeamResults,
         bonusPoints: enrichedBonuses,
         playerResults: pr,
         teamRegs: tRegs,
-        playerRegs: pRegs,
+        playerRegs: enrichedPlayerRegs,
         teams: allTeams,
         players: allPlayers,
         groups: gList,
