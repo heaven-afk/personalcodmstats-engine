@@ -351,7 +351,10 @@ export default function TeamEntryPage() {
   const getResult = (teamId, lobby) => dayResults.find(r => r.teamId === teamId && r.lobby === lobby);
 
   const handleCellSave = async (teamId, lobby, field, value) => {
-    if (isLocked || !canEdit) return;
+    if (isLocked || !canEdit) {
+      if (!canEdit) toast.error('You do not have permission to edit this tournament');
+      return;
+    }
     const key = `${teamId}-${lobby}-${field}`;
     setSaving(s => ({ ...s, [key]: true }));
     try {
@@ -382,6 +385,10 @@ export default function TeamEntryPage() {
   };
 
   const handlePasteImport = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit this tournament');
+      return;
+    }
     if (parsedPreview.length === 0) {
       toast.error('No valid team entry results parsed.');
       return;
@@ -458,6 +465,10 @@ export default function TeamEntryPage() {
   };
 
   const handleFileChange = async (e) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit this tournament');
+      return;
+    }
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
@@ -486,6 +497,10 @@ export default function TeamEntryPage() {
   };
 
   const handleSheetSelect = (sheetName) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit this tournament');
+      return;
+    }
     if (!sheetModal) return;
     setPasteText(sheetModal.allSheets[sheetName]);
     setIsOcrMode(false);
@@ -495,6 +510,10 @@ export default function TeamEntryPage() {
   };
 
   const handleOcrFileChange = (e) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit this tournament');
+      return;
+    }
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     if (files.length === 0) return;
@@ -543,6 +562,10 @@ export default function TeamEntryPage() {
   };
 
   const handleOcrProcessAll = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit this tournament');
+      return;
+    }
     const pendingItems = ocrQueue.filter(item => item.status === 'pending' || item.status === 'error');
     if (pendingItems.length === 0) {
       toast.error('No pending images to process.');
@@ -700,6 +723,10 @@ export default function TeamEntryPage() {
   };
 
   const handleConfirmAndSaveLobby = async (lobbyNum) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit this tournament');
+      return;
+    }
     const lobbyData = lobbyPreviews[lobbyNum];
     if (!lobbyData) return;
 

@@ -156,7 +156,14 @@ export default function Sidebar({ mobileOpen, onClose }) {
           <UserIcon size={17} style={{ color: pathname === '/profile' ? 'var(--gold)' : 'inherit' }} />
           <span>Profile {isOwner && '& Admin'}</span>
         </Link>
-        <button className="sidebar-link sidebar-logout" onClick={() => { onClose?.(); logout(); }}>
+        <button
+          type="button"
+          className="sidebar-link sidebar-logout"
+          onClick={async () => {
+            onClose?.();
+            await logout();
+          }}
+        >
           <LogOut size={17} />
           <span>Sign Out</span>
         </button>

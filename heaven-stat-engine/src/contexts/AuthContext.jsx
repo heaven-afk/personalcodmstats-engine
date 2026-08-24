@@ -245,22 +245,34 @@ export function AuthProvider({ children }) {
     cleanupSubscriptions();
 
     if (user?.uid) {
-      await setPresenceOffline(user.uid);
+      try {
+        setPresenceOffline(user.uid).catch(() => {});
+      } catch {}
     }
 
-    if (!isFirebaseConfigured) {
+    try {
       localStorage.removeItem('heaven_demo_user');
-      setUser(null);
-      setProfile(null);
-      setRole(null);
-      setMustChangePassword(false);
-      return;
+    } catch {}
+
+    setUser(null);
+    setProfile(null);
+    setRole(null);
+    setMustChangePassword(false);
+    setAuthError(null);
+
+    if (isFirebaseConfigured && auth) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error('Error signing out of Firebase:', err);
+      }
     }
 
-    setRole(null);
-    setProfile(null);
-    setMustChangePassword(false);
-    return signOut(auth);
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    } else {
+      router.replace('/login');
+    }
   };
 
   const isOwner = role === 'owner';

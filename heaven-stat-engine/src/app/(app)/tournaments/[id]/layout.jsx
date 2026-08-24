@@ -74,7 +74,7 @@ export default function TournamentLayout({ children }) {
         </div>
       </div>
 
-      <TournamentSubNav tournamentId={id} />
+      <TournamentSubNav tournamentId={id} canEdit={canEdit} />
 
       {/* Pass tournament + refresh + permissions to children via context */}
       <TournamentContext.Provider value={{ tournament, setTournament, refresh, canEdit, canManageEditors }}>

@@ -16,13 +16,17 @@ const TABS = [
   { key: 'clean-duplicates', label: 'Clean Duplicates', href: '/clean-duplicates' },
 ];
 
-export default function TournamentSubNav({ tournamentId }) {
+export default function TournamentSubNav({ tournamentId, canEdit = true }) {
   const pathname = usePathname();
   const { isOperator } = useAuth();
   const base = `/tournaments/${tournamentId}`;
 
   const visibleTabs = TABS.filter(tab => {
     if (isOperator) {
+      if (!canEdit) {
+        // Uninvited operator only sees overview and standings
+        return tab.key === 'overview' || tab.key === 'standings';
+      }
       return tab.key !== 'analytics' && tab.key !== 'deep-analysis' && tab.key !== 'clean-duplicates';
     }
     return true;

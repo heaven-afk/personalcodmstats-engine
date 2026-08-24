@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
+import { useAuth } from '@/contexts/AuthContext';
 import { getAllSheetsAsCSV, parseTeamRegistrationCSV, parsePlayerRegistrationCSV, parseTeamMatchCSV, parsePlayerMatchCSV } from '@/lib/importers/csvParser';
 import {
   importTeamRegistrations,
@@ -21,7 +22,8 @@ import {
   AlertTriangle,
   X,
   ChevronRight,
-  Info
+  Info,
+  Lock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
@@ -29,6 +31,15 @@ import Papa from 'papaparse';
 export default function ImportHubPage() {
   const { id: tournamentId } = useParams();
   const { tournament, refresh } = useTournament();
+  const { user, isOwner, isOperator } = useAuth();
+
+  const userEmail = user?.email?.toLowerCase();
+  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
+  const isAssigned = (tournament?.editorUids || []).some(
+    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  );
+  const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   const fileRef = useRef(null);
   const [loading, setLoading] = useState(false);
@@ -41,6 +52,10 @@ export default function ImportHubPage() {
   const [importStatusText, setImportStatusText] = useState('');
 
   const handleFilesAdded = async (fileList) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to import data into this tournament');
+      return;
+    }
     setLoading(true);
     const newFiles = [];
     for (const file of Array.from(fileList)) {
@@ -330,6 +345,24 @@ export default function ImportHubPage() {
 
   return (
     <div className="space-y-6">
+      {!canEdit && (
+        <div style={{
+          padding: '14px 18px',
+          borderRadius: 10,
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          color: '#93c5fd'
+        }}>
+          <Lock size={18} style={{ color: '#60a5fa', flexShrink: 0 }} />
+          <div>
+            <strong style={{ color: '#fff' }}>Read-Only Mode:</strong> You do not have editor permissions for this tournament. Bulk spreadsheet importing is disabled.
+          </div>
+        </div>
+      )}
+
       <div className="flex-between pb-4 border-b border-border mb-4">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2 text-text-primary">
@@ -360,7 +393,7 @@ export default function ImportHubPage() {
           )}
 
           {/* Drop Zone */}
-          {!loading && (
+          {!loading && canEdit && (
             <div
               style={{
                 border: '2px dashed var(--border-md)',

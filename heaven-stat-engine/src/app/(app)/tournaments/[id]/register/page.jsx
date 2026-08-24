@@ -632,6 +632,10 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const executeRegistration = async (queue) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to register teams for this tournament.');
+      return;
+    }
     setSaving(true);
     let added = 0;
     const total = queue.length;
@@ -785,6 +789,10 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
   };
 
   const handlePasteImport = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to register teams for this tournament.');
+      return;
+    }
     if (!pasteText.trim()) return;
     setParsing(true);
     try {
@@ -1258,6 +1266,10 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
   };
 
   const executeRegistration = async (queue) => {
+    if (!canEdit) {
+      toast.error('You do not have permission to register players for this tournament.');
+      return;
+    }
     setSaving(true);
     let added = 0;
     let skipped = 0;
