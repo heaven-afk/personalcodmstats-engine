@@ -10,7 +10,7 @@ import { getGroups } from '@/lib/firestore/groups';
 import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
-import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock } from 'lucide-react';
+import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock, Sliders, RefreshCw, Plus, Trash } from 'lucide-react';
 import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 import { cleanTeamName, stringSimilarity } from '@/lib/utils/similarity';
@@ -31,7 +31,84 @@ import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
 import { getActiveReviveConfig, getReviveTypeForMatch } from '@/lib/utils/reviveConfig';
 
 // ─── Smart Spreadsheet Parser ────────────────────────────────────────────────
-function parseSmartSpreadsheet(grid) {
+function parseSmartSpreadsheet(grid, customConfig = null) {
+  if (!grid || grid.length === 0) {
+    return { lobbies: [], rows: [], columnMappings: {}, config: null };
+  }
+
+  const maxCols = grid.reduce((max, row) => Math.max(max, (row || []).length), 0);
+
+  // If custom configuration is provided by the user
+  if (customConfig && typeof customConfig === 'object') {
+    const playerCol = customConfig.playerCol !== undefined ? parseInt(customConfig.playerCol) : 0;
+    const teamCol = customConfig.teamCol !== undefined ? parseInt(customConfig.teamCol) : -1;
+    const slotCol = customConfig.slotCol !== undefined ? parseInt(customConfig.slotCol) : -1;
+    const startRowIndex = Math.max(0, customConfig.startRowIndex !== undefined ? parseInt(customConfig.startRowIndex) : 1);
+    const lobbies = customConfig.lobbies || {};
+
+    const parsedRows = [];
+    for (let r = startRowIndex; r < grid.length; r++) {
+      const rowData = grid[r];
+      if (!rowData || rowData.length === 0) continue;
+
+      const playerName = playerCol !== -1 && playerCol < rowData.length ? String(rowData[playerCol] || '').trim() : '';
+      const pLower = playerName.toLowerCase();
+      if (
+        !playerName || 
+        playerName === '0' || 
+        pLower === 'player name' || 
+        pLower === 'player' || 
+        pLower === 'ign' || 
+        pLower === 'name' || 
+        pLower === 'players'
+      ) {
+        continue;
+      }
+
+      const teamName = teamCol !== -1 && teamCol < rowData.length ? cleanTeamName(String(rowData[teamCol] || '').trim()) : '';
+      const slot = slotCol !== -1 && slotCol < rowData.length ? String(rowData[slotCol] || '').trim() : '';
+
+      const stats = {};
+      Object.entries(lobbies).forEach(([lobbyNum, cols]) => {
+        const kCol = parseInt(cols.killsCol);
+        const dCol = parseInt(cols.damageCol);
+        const aCol = parseInt(cols.accuracyCol);
+
+        const killsVal = kCol !== -1 && kCol < rowData.length ? rowData[kCol] : '';
+        const damageVal = dCol !== -1 && dCol < rowData.length ? rowData[dCol] : '';
+        const accuracyVal = aCol !== -1 && aCol < rowData.length ? rowData[aCol] : '';
+
+        const kills = killsVal !== '' && !isNaN(killsVal) ? parseInt(killsVal) : null;
+        const damage = damageVal !== '' && !isNaN(damageVal) ? parseFloat(damageVal) : null;
+        const accuracy = accuracyVal !== '' && !isNaN(accuracyVal) ? parseFloat(accuracyVal) : null;
+
+        stats[lobbyNum] = { kills, damage, accuracy };
+      });
+
+      parsedRows.push({
+        parsedName: playerName,
+        parsedTeam: teamName,
+        parsedSlot: slot,
+        stats,
+      });
+    }
+
+    const lobbyList = Object.keys(lobbies).map(Number).sort((a, b) => a - b);
+    return {
+      lobbies: lobbyList,
+      rows: parsedRows,
+      columnMappings: lobbies,
+      config: {
+        playerCol,
+        teamCol,
+        slotCol,
+        startRowIndex,
+        lobbies
+      }
+    };
+  }
+
+  // Auto-detection mode
   let headerRowIndex = -1;
   let subheaderRowIndex = -1;
 
@@ -104,8 +181,6 @@ function parseSmartSpreadsheet(grid) {
 
   const headerRow = grid[headerRowIndex] || [];
   const subheaderRow = subheaderRowIndex !== -1 ? grid[subheaderRowIndex] : [];
-
-  const maxCols = grid.reduce((max, row) => Math.max(max, (row || []).length), 0);
 
   let playerCol = -1;
   let teamCol = -1;
@@ -245,8 +320,8 @@ function parseSmartSpreadsheet(grid) {
 
   if (playerCol === -1) playerCol = 0;
 
-  const parsedRows = [];
   const startRowIndex = Math.max(headerRowIndex, subheaderRowIndex) + 1;
+  const parsedRows = [];
 
   for (let r = startRowIndex; r < grid.length; r++) {
     const rowData = grid[r];
@@ -290,10 +365,22 @@ function parseSmartSpreadsheet(grid) {
     });
   }
 
+  // Ensure default lobby 1 exists if none detected
+  if (Object.keys(lobbies).length === 0) {
+    lobbies[1] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
+  }
+
   return {
     lobbies: Object.keys(lobbies).map(Number).sort((a, b) => a - b),
     rows: parsedRows,
-    columnMappings: lobbies
+    columnMappings: lobbies,
+    config: {
+      playerCol,
+      teamCol,
+      slotCol,
+      startRowIndex,
+      lobbies
+    }
   };
 }
 
@@ -587,6 +674,10 @@ export default function PlayerEntryPage() {
   const [importingFile, setImportingFile] = useState(false);
 
   // Smart Spreadsheet Import States
+  const [smartImportGrid, setSmartImportGrid] = useState(null);
+  const [smartImportConfig, setSmartImportConfig] = useState(null);
+  const [mappingDraft, setMappingDraft] = useState(null);
+  const [isEditingMapping, setIsEditingMapping] = useState(false);
   const [smartImportRows, setSmartImportRows] = useState([]);
   const [smartImportLobbies, setSmartImportLobbies] = useState([]);
   const [smartImportSelectedLobbies, setSmartImportSelectedLobbies] = useState([]);
@@ -595,15 +686,57 @@ export default function PlayerEntryPage() {
   const [importing, setImporting] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
 
+  const isSmartImportActive = Boolean((smartImportGrid && smartImportGrid.length > 0) || smartImportRows.length > 0);
+
+  const availableColumns = useMemo(() => {
+    if (!smartImportGrid || smartImportGrid.length === 0) return [];
+    const maxCols = smartImportGrid.reduce((max, row) => Math.max(max, (row || []).length), 0);
+    const cols = [];
+    for (let c = 0; c < maxCols; c++) {
+      const headerSamples = [];
+      for (let r = 0; r < Math.min(smartImportGrid.length, 3); r++) {
+        const val = String(smartImportGrid[r]?.[c] || '').trim();
+        if (val && !headerSamples.includes(val)) {
+          headerSamples.push(val);
+        }
+      }
+      const sampleText = headerSamples.join(' / ');
+      cols.push({
+        index: c,
+        label: `Col ${c}${sampleText ? `: "${sampleText.length > 25 ? sampleText.substring(0, 25) + '...' : sampleText}"` : ' (empty)'}`
+      });
+    }
+    return cols;
+  }, [smartImportGrid]);
+
   const handleProcessGrid = useCallback((grid, fileName) => {
     if (!grid || grid.length === 0) {
       toast.error("Failed to parse sheet data.");
       return;
     }
 
-    const { lobbies, rows, columnMappings } = parseSmartSpreadsheet(grid);
+    setSmartImportGrid(grid);
+    const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(grid);
+
     if (rows.length === 0) {
-      toast.error("No player stats could be parsed from the data.");
+      const fallbackConfig = config || {
+        playerCol: 0,
+        teamCol: -1,
+        slotCol: -1,
+        startRowIndex: 1,
+        lobbies: { 1: { killsCol: -1, damageCol: -1, accuracyCol: -1 } }
+      };
+      setSmartImportConfig(fallbackConfig);
+      setMappingDraft(fallbackConfig);
+      setSmartImportLobbies(Object.keys(fallbackConfig.lobbies).map(Number));
+      setSmartImportSelectedLobbies(Object.keys(fallbackConfig.lobbies).map(Number));
+      setSmartImportColumnMappings(fallbackConfig.lobbies || {});
+      setSmartImportRows([]);
+      setSmartImportFileName(fileName || 'Imported Spreadsheet');
+      setIsEditingMapping(true);
+      setShowPaste(false);
+      handleOcrClear();
+      toast("No player stats could be automatically parsed. Please map your spreadsheet columns below.", { icon: 'ℹ️' });
       return;
     }
 
@@ -620,14 +753,57 @@ export default function PlayerEntryPage() {
       };
     });
 
+    setSmartImportConfig(config);
+    setMappingDraft(config);
     setSmartImportLobbies(lobbies);
     setSmartImportSelectedLobbies(lobbies);
     setSmartImportColumnMappings(columnMappings || {});
     setSmartImportRows(previewRows);
-    setSmartImportFileName(fileName || 'Pasted Data');
+    setSmartImportFileName(fileName || 'Imported Spreadsheet');
+    setIsEditingMapping(false);
     setShowPaste(false);
     handleOcrClear();
   }, [playerRegs, players]);
+
+  const handleSaveAndReloadMapping = () => {
+    if (!smartImportGrid || smartImportGrid.length === 0) {
+      toast.error("No spreadsheet data loaded to reload.");
+      return;
+    }
+    if (!mappingDraft) return;
+
+    try {
+      const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(smartImportGrid, mappingDraft);
+      if (rows.length === 0) {
+        toast.error("No valid player records found with this mapping. Please verify the Start Row and Player Name column.");
+        return;
+      }
+
+      const previewRows = rows.map((row, idx) => {
+        const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
+        return {
+          id: idx,
+          parsedName: row.parsedName,
+          parsedTeam: row.parsedTeam,
+          parsedSlot: row.parsedSlot,
+          matchedPlayerId: match ? match.matchedPlayerId || match.playerId : null,
+          confidence: match ? match.confidence : 'none',
+          stats: row.stats
+        };
+      });
+
+      setSmartImportConfig(config);
+      setSmartImportLobbies(lobbies);
+      setSmartImportSelectedLobbies(lobbies);
+      setSmartImportColumnMappings(columnMappings || {});
+      setSmartImportRows(previewRows);
+      setIsEditingMapping(false);
+      toast.success("Spreadsheet preview reloaded with updated column mappings!");
+    } catch (err) {
+      console.error("Failed to reload mapping:", err);
+      toast.error("Failed to reload mapping: " + err.message);
+    }
+  };
 
   const handleUpdateMatch = (rowId, newPlayerId) => {
     setSmartImportRows(prev => prev.map(row => {
@@ -645,6 +821,10 @@ export default function PlayerEntryPage() {
     setSmartImportSelectedLobbies([]);
     setSmartImportColumnMappings({});
     setSmartImportFileName('');
+    setSmartImportGrid(null);
+    setSmartImportConfig(null);
+    setMappingDraft(null);
+    setIsEditingMapping(false);
     setPendingFile(null);
   };
 
@@ -757,7 +937,7 @@ export default function PlayerEntryPage() {
       .map(r => r.split(delimiter).map(cell => cell.trim()));
 
     try {
-      const { lobbies, rows, columnMappings } = parseSmartSpreadsheet(grid);
+      const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(grid);
       if (rows.length > 0) {
         const previewRows = rows.map((row, idx) => {
           const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
@@ -772,11 +952,15 @@ export default function PlayerEntryPage() {
           };
         });
 
+        setSmartImportGrid(grid);
+        setSmartImportConfig(config);
+        setMappingDraft(config);
         setSmartImportLobbies(lobbies);
         setSmartImportSelectedLobbies(lobbies);
         setSmartImportColumnMappings(columnMappings || {});
         setSmartImportRows(previewRows);
         setSmartImportFileName('Pasted Data');
+        setIsEditingMapping(false);
       } else {
         const { results, errors } = parsePlayerEntryPaste(pasteText, playerRegs);
         setParsedPreview(results);
@@ -2210,7 +2394,7 @@ export default function PlayerEntryPage() {
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            {!isOcrMode && parsedPreview.length > 0 && smartImportRows.length === 0 && (
+            {!isOcrMode && parsedPreview.length > 0 && !isSmartImportActive && (
               <button
                 className="btn btn-primary btn-sm"
                 onClick={handlePasteImport}
@@ -2230,7 +2414,7 @@ export default function PlayerEntryPage() {
       )}
 
       {/* Smart Spreadsheet Import Preview */}
-      {smartImportRows.length > 0 && (
+      {isSmartImportActive && (
         <div className="card" style={{ marginBottom: 24, border: '2px solid var(--border-gold)', background: 'var(--bg-card)', padding: 20 }}>
           <div className="flex-between" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 16 }}>
             <div>
@@ -2241,22 +2425,38 @@ export default function PlayerEntryPage() {
                 </h3>
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
-                Review matched players and stats. You can manually adjust matches that the system missed using the dropdown.
+                Review matched players and stats. You can edit column mappings to customize which columns map to each metric.
               </p>
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={handleCancelSmartImport} disabled={importing}>
-              Cancel Import
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  if (!isEditingMapping && !mappingDraft && smartImportConfig) {
+                    setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                  }
+                  setIsEditingMapping(prev => !prev);
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Sliders size={14} />
+                {isEditingMapping ? 'Hide Column Mapping' : 'Edit Column Mapping'}
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={handleCancelSmartImport} disabled={importing}>
+                Cancel Import
+              </button>
+            </div>
           </div>
 
-          {/* Lobby Selection checklist */}
+          {/* Lobby Selection checklist & Mapped Columns Summary */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', background: 'var(--bg-alt-row)', borderRadius: 8, marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Lobbies to Import:</span>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                 {smartImportLobbies.length === 0 ? (
                   <span style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    ⚠️ No Lobby columns (e.g., "Lobby 1", "Game 2", etc.) were found in your spreadsheet headers!
+                    ⚠️ No Lobby columns were mapped! Please edit column mappings below.
                   </span>
                 ) : (
                   smartImportLobbies.map(l => (
@@ -2279,139 +2479,496 @@ export default function PlayerEntryPage() {
               </div>
             </div>
             {Object.keys(smartImportColumnMappings).length > 0 && (
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-md)', paddingTop: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600 }}>Mapped Columns:</span>
-                {Object.entries(smartImportColumnMappings).map(([l, cols]) => (
-                  <span key={l}>
-                    L{l} (Kills: col {cols.killsCol === -1 ? 'None' : cols.killsCol}, Dmg: col {cols.damageCol === -1 ? 'None' : cols.damageCol}, Acc: col {cols.accuracyCol === -1 ? 'None' : cols.accuracyCol})
-                  </span>
-                ))}
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-md)', paddingTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 600 }}>Mapped Columns:</span>
+                  {Object.entries(smartImportColumnMappings).map(([l, cols]) => (
+                    <span key={l} style={{ background: 'var(--bg-card)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-md)' }}>
+                      L{l} (Kills: col {cols.killsCol === -1 || cols.killsCol === undefined ? 'None' : cols.killsCol}, Dmg: col {cols.damageCol === -1 || cols.damageCol === undefined ? 'None' : cols.damageCol}, Acc: col {cols.accuracyCol === -1 || cols.accuracyCol === undefined ? 'None' : cols.accuracyCol})
+                    </span>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => {
+                    if (!isEditingMapping && !mappingDraft && smartImportConfig) {
+                      setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                    }
+                    setIsEditingMapping(prev => !prev);
+                  }}
+                  style={{ fontSize: '0.72rem', color: 'var(--gold)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <Sliders size={12} /> {isEditingMapping ? 'Close Editor' : 'Edit Columns'}
+                </button>
               </div>
             )}
           </div>
 
-          {/* Table Container */}
-          <div style={{ overflowX: 'auto', maxHeight: 480, border: '1px solid var(--border-md)', borderRadius: 8, marginBottom: 18 }}>
-            <table className="data-table" style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-header)', borderBottom: '1px solid var(--border-md)' }}>
-                  <th style={{ width: 110, textAlign: 'center', padding: '10px 8px' }}>Match Status</th>
-                  <th style={{ textAlign: 'left', padding: '10px 8px' }}>Sheet Row (Name / Team)</th>
-                  <th style={{ textAlign: 'left', padding: '10px 8px' }}>Matched Registered Player</th>
-                  {smartImportSelectedLobbies.map(l => (
-                    <th key={l} style={{ textAlign: 'center', padding: '10px 8px', width: 140 }}>L{l} Stats</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {smartImportRows.map((row) => {
-                  const reg = playerRegs.find(p => p.playerId === row.matchedPlayerId);
-                  
-                  let rowBg = undefined;
-                  if (row.confidence === 'none') {
-                    rowBg = 'rgba(239, 68, 68, 0.04)';
-                  } else if (row.confidence === 'low') {
-                    rowBg = 'rgba(245, 158, 11, 0.04)';
-                  }
+          {/* ── Collapsible Column Mapping Editor Panel ── */}
+          {isEditingMapping && (
+            <div style={{
+              background: 'var(--bg-alt-row)',
+              border: '1px solid var(--border-gold)',
+              borderRadius: 8,
+              padding: '16px 18px',
+              marginBottom: 18,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                <div>
+                  <h4 style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--gold)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Sliders size={16} /> Column Mapping Configuration
+                  </h4>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                    Select which spreadsheet columns map to player info and tournament lobby statistics.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSaveAndReloadMapping}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}
+                  >
+                    <RefreshCw size={13} /> Save & Reload Preview
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setIsEditingMapping(false)}
+                    style={{ fontSize: '0.78rem' }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
 
-                  return (
-                    <tr key={row.id} style={{
-                      background: rowBg,
-                      borderBottom: '1px solid var(--border-md)'
-                    }}>
-                      <td style={{ textAlign: 'center', padding: '8px' }}>
-                        {row.confidence === 'high' && (
-                          <span style={{ color: '#10B981', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <Check size={14} /> High
-                          </span>
-                        )}
-                        {row.confidence === 'medium' && (
-                          <span style={{ color: 'var(--gold)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <Check size={14} /> Med
-                          </span>
-                        )}
-                        {row.confidence === 'low' && (
-                          <span style={{ color: '#F59E0B', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <AlertTriangle size={14} /> Low
-                          </span>
-                        )}
-                        {row.confidence === 'none' && (
-                          <span style={{ color: '#EF4444', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <X size={14} /> None
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px' }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{row.parsedName}</div>
-                        {row.parsedTeam && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                            {row.parsedTeam} {row.parsedSlot ? `(Slot ${row.parsedSlot})` : ''}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px' }}>
-                        <select
-                          className="form-input"
-                          style={{
-                            fontSize: '0.78rem',
-                            padding: '4px 8px',
-                            width: '100%',
-                            maxWidth: 320,
-                            borderColor: row.confidence === 'none' ? '#EF4444' : undefined,
-                            background: 'var(--bg-card)'
-                          }}
-                          value={row.matchedPlayerId || ''}
-                          onChange={(e) => handleUpdateMatch(row.id, e.target.value)}
-                        >
-                          <option value="">[ Skip Row / Do Not Import ]</option>
-                          {playerRegs.map(p => {
-                            const globalPlayer = players.find(gp => gp.id === p.playerId);
-                            const dispName = globalPlayer?.professionalName || p.professionalName || p.ign;
-                            return (
-                              <option key={p.playerId} value={p.playerId}>
-                                Slot {p.slot}: {dispName} ({p.ign}) - {p.teamName || 'No Team'}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </td>
-                      {smartImportSelectedLobbies.map(l => {
-                        const stat = row.stats[l] || {};
-                        const hasKills = stat.kills !== null;
-                        const hasDmg = stat.damage !== null;
-                        const hasAcc = stat.accuracy !== null;
-                        
+              {/* Section 1: Player & Row Identifiers */}
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  1. Player & Row Settings
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                  {/* Data Starts at Row */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      Data Starts At Row:
+                    </label>
+                    <select
+                      className="form-input"
+                      style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                      value={mappingDraft?.startRowIndex ?? 1}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setMappingDraft(prev => ({ ...prev, startRowIndex: val }));
+                      }}
+                    >
+                      {smartImportGrid && Array.from({ length: Math.min(smartImportGrid.length, 12) }, (_, i) => {
+                        const previewText = (smartImportGrid[i] || []).filter(Boolean).slice(0, 3).join(' | ');
                         return (
-                          <td key={l} style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', padding: '8px' }}>
-                            {hasKills || hasDmg || hasAcc ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-                                <span style={{ fontWeight: 600 }}>{hasKills ? `${stat.kills} K` : '—'}</span>
-                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                                  {hasDmg ? `${Math.round(stat.damage)} D` : '—'} · {hasAcc ? `${stat.accuracy}%` : '—'}
-                                </span>
-                              </div>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)' }}>—</span>
-                            )}
-                          </td>
+                          <option key={i} value={i}>
+                            Row {i + 1}{previewText ? ` (${previewText.length > 25 ? previewText.substring(0, 25) + '...' : previewText})` : ''}
+                          </option>
                         );
                       })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    </select>
+                  </div>
+
+                  {/* Player Name / IGN Column */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      Player Name / IGN <span style={{ color: 'var(--gold)' }}>*</span>:
+                    </label>
+                    <select
+                      className="form-input"
+                      style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                      value={mappingDraft?.playerCol ?? 0}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setMappingDraft(prev => ({ ...prev, playerCol: val }));
+                      }}
+                    >
+                      {availableColumns.map(col => (
+                        <option key={col.index} value={col.index}>{col.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Team Name Column */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      Team Name (Optional):
+                    </label>
+                    <select
+                      className="form-input"
+                      style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                      value={mappingDraft?.teamCol ?? -1}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setMappingDraft(prev => ({ ...prev, teamCol: val }));
+                      }}
+                    >
+                      <option value="-1">[ None / Not in Sheet ]</option>
+                      {availableColumns.map(col => (
+                        <option key={col.index} value={col.index}>{col.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Slot Column */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      Slot # / Index (Optional):
+                    </label>
+                    <select
+                      className="form-input"
+                      style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                      value={mappingDraft?.slotCol ?? -1}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setMappingDraft(prev => ({ ...prev, slotCol: val }));
+                      }}
+                    >
+                      <option value="-1">[ None / Not in Sheet ]</option>
+                      {availableColumns.map(col => (
+                        <option key={col.index} value={col.index}>{col.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Lobby Metrics */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    2. Lobby Metrics Mapping
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => {
+                      setMappingDraft(prev => {
+                        const currentLobbies = prev?.lobbies ? { ...prev.lobbies } : {};
+                        const existingNums = Object.keys(currentLobbies).map(Number);
+                        const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
+                        currentLobbies[nextNum] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
+                        return { ...prev, lobbies: currentLobbies };
+                      });
+                    }}
+                    style={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: 4, color: 'var(--gold)' }}
+                  >
+                    <Plus size={13} /> Add Lobby
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                  {mappingDraft?.lobbies && Object.entries(mappingDraft.lobbies).map(([lobbyNum, cols]) => {
+                    const lNum = parseInt(lobbyNum);
+                    const lobbyColor = getLobbyColor(lNum);
+                    const lobbyCount = Object.keys(mappingDraft.lobbies).length;
+
+                    return (
+                      <div
+                        key={lobbyNum}
+                        style={{
+                          border: `1px solid ${lobbyColor.border}`,
+                          background: 'var(--bg-card)',
+                          borderRadius: 6,
+                          padding: '10px 12px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-md)', paddingBottom: 4 }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: lobbyColor.text }}>
+                            Lobby {lobbyNum} Metrics
+                          </span>
+                          {lobbyCount > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMappingDraft(prev => {
+                                  const newLobbies = { ...prev.lobbies };
+                                  delete newLobbies[lobbyNum];
+                                  return { ...prev, lobbies: newLobbies };
+                                });
+                              }}
+                              style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 2 }}
+                              title={`Remove Lobby ${lobbyNum}`}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Kills Col */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', minWidth: 60 }}>Kills:</span>
+                          <select
+                            className="form-input"
+                            style={{ flex: 1, fontSize: '0.74rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
+                            value={cols.killsCol ?? -1}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              setMappingDraft(prev => ({
+                                ...prev,
+                                lobbies: {
+                                  ...prev.lobbies,
+                                  [lobbyNum]: { ...prev.lobbies[lobbyNum], killsCol: val }
+                                }
+                              }));
+                            }}
+                          >
+                            <option value="-1">[ None ]</option>
+                            {availableColumns.map(col => (
+                              <option key={col.index} value={col.index}>{col.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Damage Col */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', minWidth: 60 }}>Damage:</span>
+                          <select
+                            className="form-input"
+                            style={{ flex: 1, fontSize: '0.74rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
+                            value={cols.damageCol ?? -1}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              setMappingDraft(prev => ({
+                                ...prev,
+                                lobbies: {
+                                  ...prev.lobbies,
+                                  [lobbyNum]: { ...prev.lobbies[lobbyNum], damageCol: val }
+                                }
+                              }));
+                            }}
+                          >
+                            <option value="-1">[ None ]</option>
+                            {availableColumns.map(col => (
+                              <option key={col.index} value={col.index}>{col.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Accuracy Col */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', minWidth: 60 }}>Accuracy:</span>
+                          <select
+                            className="form-input"
+                            style={{ flex: 1, fontSize: '0.74rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
+                            value={cols.accuracyCol ?? -1}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              setMappingDraft(prev => ({
+                                ...prev,
+                                lobbies: {
+                                  ...prev.lobbies,
+                                  [lobbyNum]: { ...prev.lobbies[lobbyNum], accuracyCol: val }
+                                }
+                              }));
+                            }}
+                          >
+                            <option value="-1">[ None ]</option>
+                            {availableColumns.map(col => (
+                              <option key={col.index} value={col.index}>{col.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer Save & Reload button */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border-md)', paddingTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    if (smartImportConfig) setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                    setIsEditingMapping(false);
+                  }}
+                >
+                  Cancel Mapping Changes
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleSaveAndReloadMapping}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <RefreshCw size={13} /> Save & Reload Preview
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Table Container / Empty State */}
+          {smartImportRows.length === 0 ? (
+            <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--text-secondary)', background: 'var(--bg-alt-row)', borderRadius: 8, margin: '14px 0', border: '1px dashed var(--border-gold)' }}>
+              <AlertCircle size={32} style={{ color: 'var(--gold)', margin: '0 auto 10px' }} />
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>No player stats preview available yet</div>
+              <p style={{ fontSize: '0.8rem', maxWidth: 460, margin: '6px auto 14px' }}>
+                Map your spreadsheet columns above to match player names and lobby stats, then click <strong>"Save & Reload Preview"</strong>.
+              </p>
+              {!isEditingMapping && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    if (!mappingDraft && smartImportConfig) {
+                      setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                    }
+                    setIsEditingMapping(true);
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Sliders size={14} /> Open Column Mapping Editor
+                </button>
+              )}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto', maxHeight: 480, border: '1px solid var(--border-md)', borderRadius: 8, marginBottom: 18 }}>
+              <table className="data-table" style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-header)', borderBottom: '1px solid var(--border-md)' }}>
+                    <th style={{ width: 110, textAlign: 'center', padding: '10px 8px' }}>Match Status</th>
+                    <th style={{ textAlign: 'left', padding: '10px 8px' }}>Sheet Row (Name / Team)</th>
+                    <th style={{ textAlign: 'left', padding: '10px 8px' }}>Matched Registered Player</th>
+                    {smartImportSelectedLobbies.map(l => (
+                      <th key={l} style={{ textAlign: 'center', padding: '10px 8px', width: 140 }}>L{l} Stats</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {smartImportRows.map((row) => {
+                    let rowBg = undefined;
+                    if (row.confidence === 'none') {
+                      rowBg = 'rgba(239, 68, 68, 0.04)';
+                    } else if (row.confidence === 'low') {
+                      rowBg = 'rgba(245, 158, 11, 0.04)';
+                    }
+
+                    return (
+                      <tr key={row.id} style={{
+                        background: rowBg,
+                        borderBottom: '1px solid var(--border-md)'
+                      }}>
+                        <td style={{ textAlign: 'center', padding: '8px' }}>
+                          {row.confidence === 'high' && (
+                            <span style={{ color: '#10B981', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Check size={14} /> High
+                            </span>
+                          )}
+                          {row.confidence === 'medium' && (
+                            <span style={{ color: 'var(--gold)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Check size={14} /> Med
+                            </span>
+                          )}
+                          {row.confidence === 'low' && (
+                            <span style={{ color: '#F59E0B', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <AlertTriangle size={14} /> Low
+                            </span>
+                          )}
+                          {row.confidence === 'none' && (
+                            <span style={{ color: '#EF4444', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <X size={14} /> None
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '8px' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{row.parsedName}</div>
+                          {row.parsedTeam && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                              {row.parsedTeam} {row.parsedSlot ? `(Slot ${row.parsedSlot})` : ''}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: '8px' }}>
+                          <select
+                            className="form-input"
+                            style={{
+                              fontSize: '0.78rem',
+                              padding: '4px 8px',
+                              width: '100%',
+                              maxWidth: 320,
+                              borderColor: row.confidence === 'none' ? '#EF4444' : undefined,
+                              background: 'var(--bg-card)'
+                            }}
+                            value={row.matchedPlayerId || ''}
+                            onChange={(e) => handleUpdateMatch(row.id, e.target.value)}
+                          >
+                            <option value="">[ Skip Row / Do Not Import ]</option>
+                            {playerRegs.map(p => {
+                              const globalPlayer = players.find(gp => gp.id === p.playerId);
+                              const dispName = globalPlayer?.professionalName || p.professionalName || p.ign;
+                              return (
+                                <option key={p.playerId} value={p.playerId}>
+                                  Slot {p.slot}: {dispName} ({p.ign}) - {p.teamName || 'No Team'}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </td>
+                        {smartImportSelectedLobbies.map(l => {
+                          const stat = row.stats[l] || {};
+                          const hasKills = stat.kills !== null;
+                          const hasDmg = stat.damage !== null;
+                          const hasAcc = stat.accuracy !== null;
+                          
+                          return (
+                            <td key={l} style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', padding: '8px' }}>
+                              {hasKills || hasDmg || hasAcc ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+                                  <span style={{ fontWeight: 600 }}>{hasKills ? `${stat.kills} K` : '—'}</span>
+                                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                    {hasDmg ? `${Math.round(stat.damage)} D` : '—'} · {hasAcc ? `${stat.accuracy}%` : '—'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Action Row */}
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                if (!isEditingMapping && !mappingDraft && smartImportConfig) {
+                  setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                }
+                setIsEditingMapping(prev => !prev);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Sliders size={15} />
+              {isEditingMapping ? 'Hide Column Mapping' : 'Edit Column Mapping'}
+            </button>
             <button className="btn btn-secondary" onClick={handleCancelSmartImport} disabled={importing}>
               Cancel
             </button>
             <button
               className="btn btn-primary"
               onClick={handleConfirmSmartImport}
-              disabled={smartImportSelectedLobbies.length === 0 || importing}
+              disabled={smartImportRows.length === 0 || smartImportSelectedLobbies.length === 0 || importing}
               style={{ display: 'flex', alignItems: 'center', gap: 6 }}
             >
               {importing ? (
@@ -2427,7 +2984,7 @@ export default function PlayerEntryPage() {
       )}
 
       {/* ── SECTION A: Kills ─────────────────────────────── */}
-      {section === 'kills' && smartImportRows.length === 0 && (
+      {section === 'kills' && !isSmartImportActive && (
         <>
           <div style={{
             display: 'grid',
@@ -2566,7 +3123,7 @@ export default function PlayerEntryPage() {
       )}
 
       {/* ── SECTION B: Damage & Accuracy ────────────────── */}
-      {section === 'damage' && smartImportRows.length === 0 && (
+      {section === 'damage' && !isSmartImportActive && (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))',
