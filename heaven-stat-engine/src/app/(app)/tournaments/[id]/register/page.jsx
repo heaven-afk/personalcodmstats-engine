@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -342,22 +342,26 @@ export default function RegisterPage() {
   const [importProgress, setImportProgress] = useState(null);
 
   const refresh = useCallback(async () => {
-    const [tr, pr, gt, gp, gList] = await Promise.all([
-      getTeamRegistrations(id),
-      getPlayerRegistrations(id),
-      getTeams(),
-      getPlayers(),
-      getGroups(id),
-    ]);
-    setTeamRegs(tr);
-    setPlayerRegs(pr);
-    setGlobalTeams(gt);
-    setGlobalPlayers(gp);
-    setGroups(gList);
-    if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
-      setSelectedGroupId(gList[0].id);
+    try {
+      const [tr, pr, gt, gp, gList] = await Promise.all([
+        getTeamRegistrations(id),
+        getPlayerRegistrations(id),
+        getTeams(),
+        getPlayers(),
+        getGroups(id),
+      ]);
+      setTeamRegs(tr || []);
+      setPlayerRegs(pr || []);
+      setGlobalTeams(gt || []);
+      setGlobalPlayers(gp || []);
+      setGroups(gList || []);
+      if (gList && gList.length > 0) {
+        setSelectedGroupId(prev => (!prev || !gList.some(g => g.id === prev)) ? gList[0].id : prev);
+      }
+    } catch (err) {
+      console.error("Failed to load registrations:", err);
     }
-  }, [id, selectedGroupId]);
+  }, [id]);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
@@ -1482,6 +1486,68 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
     }
   };
 
+  const handlePlayerImport = async (csvText, sheetLabel) => {
+    const { rows, errors } = parsePlayerRegistrationCSV(csvText);
+    if (errors?.length) console.warn('CSV parse warnings:', errors);
+
+    const validRows = rows.filter(r => (r.professionalName?.trim() || r.ign?.trim()));
+    if (validRows.length === 0) {
+      toast.error(`No valid player rows found in "${sheetLabel}". Check column headers (professionalName / ign).`);
+      return;
+    }
+
+    prepareImport(validRows);
+  };
+
+  const { trigger, modal, input, importing } = useSheetUpload(handlePlayerImport);
+
+  const handlePasteImport = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to register players for this tournament.');
+      return;
+    }
+    if (!pasteText.trim()) return;
+    setParsing(true);
+    try {
+      const parsed = parsePastedPlayers(pasteText);
+      if (parsed.length === 0) {
+        toast.error('No players parsed. Please check the copy format.');
+        return;
+      }
+      prepareImport(parsed);
+      setPasteText('');
+      setShowPaste(false);
+    } catch (err) {
+      toast.error('Import failed: ' + err.message);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const playerCols = [
+    { w: 120, label: 'PRO NAME' },
+    { w: 110, label: 'IGN' },
+    { w: 130, label: 'TEAM' },
+    { w: 110, label: 'CLASS' },
+    { w: 70, label: 'GENDER' },
+    { w: 80, label: 'REGION' },
+    { w: 80, label: 'COUNTRY' },
+    { w: 80, label: 'DEVICE' },
+    { w: 80, label: 'MODEL' },
+    { w: 50, label: '' },
+  ];
+
+  const sortedRegistrations = useMemo(() => {
+    return [...registrations].sort((a, b) => {
+      const teamA = (a.teamName || '').toLowerCase();
+      const teamB = (b.teamName || '').toLowerCase();
+      if (teamA !== teamB) return teamA.localeCompare(teamB);
+      const nameA = (a.professionalName || a.ign || '').toLowerCase();
+      const nameB = (b.professionalName || b.ign || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [registrations]);
+
   return (
     <div className="data-table-container">
       {modal}
@@ -1564,12 +1630,12 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         <table className="data-table">
           <thead>
             <tr>
-              {FIELDS.map(f => <th key={f}>{f}</th>)}
+              {playerCols.map(c => <th key={c.label} style={{ width: c.w }}>{c.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {registrations.length === 0 && !addingRow && (
-              <tr><td colSpan={FIELDS.length} className="empty-row">No players registered yet — add manually, upload, or paste a list</td></tr>
+              <tr><td colSpan={playerCols.length} className="empty-row">No players registered yet — add manually, upload, or paste a list</td></tr>
             )}
             {sortedRegistrations.map((reg, i) => {
               return (
