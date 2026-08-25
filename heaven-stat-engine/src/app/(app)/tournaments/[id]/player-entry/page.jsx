@@ -108,30 +108,39 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
     };
   }
 
-  // Auto-detection mode
+  // Auto-detection mode: find row containing player/team/ign or lobby headers
   let headerRowIndex = -1;
   let subheaderRowIndex = -1;
 
   for (let r = 0; r < Math.min(grid.length, 15); r++) {
     const row = grid[r] || [];
-    const hasHeaderCell = row.some(cell => {
+    const hasPlayerOrTeam = row.some(cell => {
       const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      return (
-        clean === 'playername' || 
-        clean === 'player' || 
-        clean === 'teamname' || 
-        clean === 'slot' ||
-        clean === 'ign' ||
-        clean === 'team' ||
-        clean === 'clan' ||
-        clean.startsWith('lobby') || 
-        clean.startsWith('game') ||
-        (clean.startsWith('l') && /^\d+$/.test(clean.substring(1)))
-      );
+      return clean === 'playername' || clean === 'player' || clean === 'teamname' || clean === 'ign' || clean === 'team' || clean === 'players';
     });
-    if (hasHeaderCell) {
+    if (hasPlayerOrTeam) {
       headerRowIndex = r;
       break;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    for (let r = 0; r < Math.min(grid.length, 15); r++) {
+      const row = grid[r] || [];
+      const hasHeaderCell = row.some(cell => {
+        const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return (
+          clean === 'slot' ||
+          clean === 'clan' ||
+          clean.startsWith('lobby') || 
+          clean.startsWith('game') ||
+          (clean.startsWith('l') && /^\d+$/.test(clean.substring(1)))
+        );
+      });
+      if (hasHeaderCell) {
+        headerRowIndex = r;
+        break;
+      }
     }
   }
 
@@ -736,7 +745,7 @@ export default function PlayerEntryPage() {
       setIsEditingMapping(true);
       setShowPaste(false);
       handleOcrClear();
-      toast("No player stats could be automatically parsed. Please map your spreadsheet columns below.", { icon: 'ℹ️' });
+      toast("Could not automatically match columns. Please map your spreadsheet columns below.", { icon: 'ℹ️' });
       return;
     }
 
@@ -764,6 +773,21 @@ export default function PlayerEntryPage() {
     setShowPaste(false);
     handleOcrClear();
   }, [playerRegs, players]);
+
+  const handleProcessPasteText = useCallback((textToProcess) => {
+    const raw = (textToProcess !== undefined ? textToProcess : pasteText).trim();
+    if (!raw) {
+      toast.error("Please paste some spreadsheet data first.");
+      return;
+    }
+
+    const delimiter = raw.includes('\t') ? '\t' : (raw.includes(',') ? ',' : (raw.includes(';') ? ';' : ' '));
+    const grid = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+      .filter(l => l.trim().length > 0)
+      .map(r => r.split(delimiter).map(cell => cell.trim()));
+
+    handleProcessGrid(grid, 'Pasted Data');
+  }, [pasteText, handleProcessGrid]);
 
   const handleSaveAndReloadMapping = () => {
     if (!smartImportGrid || smartImportGrid.length === 0) {
@@ -2393,14 +2417,23 @@ export default function PlayerEntryPage() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => handleProcessPasteText()}
+              disabled={!pasteText.trim()}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Sliders size={14} /> Preview & Map Spreadsheet Columns
+            </button>
             {!isOcrMode && parsedPreview.length > 0 && !isSmartImportActive && (
               <button
-                className="btn btn-primary btn-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={handlePasteImport}
                 disabled={parsing}
               >
-                {parsing ? 'Saving stats...' : `Save stats to Day ${day}`}
+                {parsing ? 'Saving stats...' : `Quick Save Day ${day}`}
               </button>
             )}
             <button
