@@ -9,7 +9,7 @@ import {
   clearAllTeamRegistrations, clearAllPlayerRegistrations,
 } from '@/lib/firestore/tournaments';
 import { getGroups } from '@/lib/firestore/groups';
-import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer, deletePlayer, deleteTeam } from '@/lib/firestore/registry';
+import { findTeamByName, createTeam, getTeams, findPlayerByName, createPlayer, getPlayers, updatePlayer, deletePlayer, deleteTeam, updateTeam, ensureClan } from '@/lib/firestore/registry';
 import { deriveRegion, deriveDevice, REGIONS, DEVICE_TYPES } from '@/lib/regionDeviceLogic';
 import Modal from '@/components/ui/Modal';
 import { getSimilarTeams, getSimilarPlayers, findExactPlayerMatch, getAllPlayerIGNs, cleanTeamName } from '@/lib/utils/similarity';
@@ -20,7 +20,7 @@ import {
 } from '@/lib/importers/csvParser';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
-import { Plus, Trash2, Upload, Users, Shield, Search, Check, FileSpreadsheet, X, ChevronRight, ClipboardPaste, Lock } from 'lucide-react';
+import { Plus, Trash2, Upload, Users, Shield, Search, Check, FileSpreadsheet, X, ChevronRight, ClipboardPaste, Lock, Globe, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ─── Sheet Picker Modal ───────────────────────────────────────────────────────
@@ -759,16 +759,86 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
     finally { setSaving(false); }
   };
 
+  const [globalConfirm, setGlobalConfirm] = useState(null);
+
   const handleUpdateTeam = async (regId, fields) => {
     if (!canEdit) {
       toast.error('You do not have permission to modify team details.');
       return;
     }
+    const currentReg = registrations.find(r => r.id === regId);
+    if (!currentReg) return;
+
+    const isNameChange = fields.teamName !== undefined && fields.teamName.trim() !== (currentReg.teamName || '').trim();
+    const isClanChange = fields.clanName !== undefined && fields.clanName.trim() !== (currentReg.clanName || '').trim();
+
+    if ((isNameChange || isClanChange) && currentReg.teamId) {
+      setGlobalConfirm({
+        type: 'team',
+        regId,
+        teamId: currentReg.teamId,
+        fields,
+        oldName: currentReg.teamName || '—',
+        newName: fields.teamName !== undefined ? fields.teamName.trim() : (currentReg.teamName || ''),
+        oldClan: currentReg.clanName || '',
+        newClan: fields.clanName !== undefined ? fields.clanName.trim() : (currentReg.clanName || ''),
+      });
+      return;
+    }
+
     try {
       await updateTeamRegistration(tournamentId, regId, fields);
       await onRefresh();
     } catch (e) {
       toast.error('Failed to update team: ' + e.message);
+    }
+  };
+
+  const applyTeamTournamentOnly = async () => {
+    if (!globalConfirm) return;
+    setSaving(true);
+    try {
+      await updateTeamRegistration(tournamentId, globalConfirm.regId, globalConfirm.fields);
+      toast.success('Updated in this tournament');
+      setGlobalConfirm(null);
+      await onRefresh();
+    } catch (e) {
+      toast.error('Update failed: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const applyTeamGlobalAndTournament = async () => {
+    if (!globalConfirm) return;
+    setSaving(true);
+    try {
+      // 1. Update tournament registration
+      await updateTeamRegistration(tournamentId, globalConfirm.regId, globalConfirm.fields);
+
+      // 2. Update Global Registry
+      const globalUpdates = {};
+      if (globalConfirm.fields.teamName !== undefined) {
+        const cleaned = cleanTeamName(globalConfirm.fields.teamName);
+        globalUpdates.teamName = cleaned;
+        globalUpdates.teamNameLower = cleaned.toLowerCase();
+      }
+      if (globalConfirm.fields.clanName !== undefined) {
+        const clan = globalConfirm.fields.clanName.trim();
+        globalUpdates.clanName = clan;
+        if (clan) {
+          await ensureClan(clan);
+        }
+      }
+      await updateTeam(globalConfirm.teamId, globalUpdates);
+
+      toast.success(`Updated globally: "${globalConfirm.oldName}" is now "${globalConfirm.newName}" everywhere!`);
+      setGlobalConfirm(null);
+      await onRefresh();
+    } catch (e) {
+      toast.error('Global update failed: ' + e.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1146,6 +1216,94 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
           </div>
         </Modal>
       )}
+
+      {/* Global Sync Confirmation Modal for Teams */}
+      {globalConfirm && (
+        <Modal
+          title="Update Global Team Registry?"
+          onClose={() => setGlobalConfirm(null)}
+          size="md"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12,
+              padding: '14px 16px',
+              borderRadius: 10,
+              background: 'rgba(201, 168, 76, 0.08)',
+              border: '1px solid rgba(201, 168, 76, 0.3)',
+            }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 8,
+                background: 'rgba(201, 168, 76, 0.15)',
+                border: '1px solid var(--border-gold)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                color: 'var(--gold)',
+              }}>
+                <Globe size={20} />
+              </div>
+              <div style={{ flex: 1, fontSize: '0.86rem', lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Team Details Modified:{' '}
+                  {globalConfirm.oldName !== globalConfirm.newName ? (
+                    <>
+                      <span style={{ color: 'var(--text-muted)', textDecoration: 'line-through' }}>{globalConfirm.oldName}</span>
+                      {' → '}
+                      <span style={{ color: 'var(--gold)', fontWeight: 800 }}>{globalConfirm.newName}</span>
+                    </>
+                  ) : (
+                    <span style={{ color: 'var(--gold)', fontWeight: 800 }}>{globalConfirm.newName}</span>
+                  )}
+                  {globalConfirm.newClan !== globalConfirm.oldClan && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                      Clan: {globalConfirm.oldClan || '—'} → {globalConfirm.newClan || '—'}
+                    </div>
+                  )}
+                </div>
+                <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.82rem' }}>
+                  Do you want this change to reflect <strong>globally across the entire platform</strong> (updating the Global Team Registry, team profile, career stats, and future tournament entries)?
+                </p>
+                <p style={{ color: 'var(--cyan)', marginTop: 6, marginBottom: 0, fontSize: '0.78rem' }}>
+                  💡 If updated globally, the previous name (<em>{globalConfirm.oldName}</em>) will be freed up for other teams to use.
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 10,
+              paddingTop: 10,
+              borderTop: '1px solid var(--border)',
+            }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={applyTeamTournamentOnly}
+                disabled={saving}
+              >
+                Tournament Only
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={applyTeamGlobalAndTournament}
+                disabled={saving}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Globe size={14} />
+                {saving ? 'Updating...' : 'Update Globally & Tournament'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1460,6 +1618,8 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
     finally { setSaving(false); }
   };
 
+  const [globalConfirm, setGlobalConfirm] = useState(null);
+
   const handleUpdatePlayer = async (regId, fields) => {
     if (!canEdit) {
       toast.error('You do not have permission to modify player details.');
@@ -1468,13 +1628,109 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
     const currentReg = registrations.find(r => r.id === regId);
     if (!currentReg) return;
 
-    const targetProName = (fields.professionalName !== undefined ? fields.professionalName : currentReg.professionalName || '').trim();
-    const targetTeamName = fields.teamName !== undefined ? fields.teamName : currentReg.teamName || '';
+    const fieldKey = Object.keys(fields)[0];
+    const newVal = fields[fieldKey];
+    const oldVal = currentReg[fieldKey];
+
+    const isCoreProfileField = ['professionalName', 'ign', 'gender', 'region', 'country', 'device', 'deviceModel'].includes(fieldKey);
+    const hasChanged = String(newVal ?? '').trim() !== String(oldVal ?? '').trim();
+
+    if (isCoreProfileField && hasChanged && currentReg.playerId) {
+      const fieldLabels = {
+        professionalName: 'Professional Name',
+        ign: 'In-Game Name (IGN)',
+        gender: 'Gender',
+        region: 'Region',
+        country: 'Country',
+        device: 'Device',
+        deviceModel: 'Device Model',
+      };
+
+      setGlobalConfirm({
+        type: 'player',
+        regId,
+        playerId: currentReg.playerId,
+        fields,
+        fieldKey,
+        fieldLabel: fieldLabels[fieldKey] || fieldKey,
+        oldVal: oldVal || '—',
+        newVal: newVal || '—',
+        playerName: currentReg.professionalName || currentReg.ign || 'Player',
+      });
+      return;
+    }
+
     try {
       await updatePlayerRegistration(tournamentId, regId, fields);
       await onRefresh();
     } catch (e) {
       toast.error('Failed to update player: ' + e.message);
+    }
+  };
+
+  const applyPlayerTournamentOnly = async () => {
+    if (!globalConfirm) return;
+    setSaving(true);
+    try {
+      await updatePlayerRegistration(tournamentId, globalConfirm.regId, globalConfirm.fields);
+      toast.success('Updated in this tournament');
+      setGlobalConfirm(null);
+      await onRefresh();
+    } catch (e) {
+      toast.error('Update failed: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const applyPlayerGlobalAndTournament = async () => {
+    if (!globalConfirm) return;
+    setSaving(true);
+    try {
+      // 1. Update tournament registration
+      await updatePlayerRegistration(tournamentId, globalConfirm.regId, globalConfirm.fields);
+
+      // 2. Update Global Player Registry
+      const globalUpdates = {};
+      const f = globalConfirm.fields;
+      if (f.professionalName !== undefined && f.professionalName.trim()) {
+        const pName = f.professionalName.trim();
+        globalUpdates.professionalName = pName;
+        globalUpdates.professionalNameLower = pName.toLowerCase();
+      }
+      if (f.ign !== undefined && f.ign.trim()) {
+        const ign = f.ign.trim();
+        globalUpdates.ign = ign;
+        globalUpdates.currentIGN = ign;
+        globalUpdates.currentIGNLower = ign.toLowerCase();
+        globalUpdates.ignLower = ign.toLowerCase();
+        const existingPlayer = globalPlayers.find(p => p.id === globalConfirm.playerId);
+        const existingHistory = existingPlayer?.ignHistory || (existingPlayer?.ign ? [existingPlayer.ign] : []);
+        if (!existingHistory.some(h => h.toLowerCase() === ign.toLowerCase())) {
+          globalUpdates.ignHistory = [...existingHistory, ign];
+        }
+      }
+      if (f.gender !== undefined) globalUpdates.gender = f.gender;
+      if (f.region !== undefined) globalUpdates.region = f.region;
+      if (f.country !== undefined) globalUpdates.country = f.country;
+      if (f.device !== undefined) {
+        globalUpdates.device = f.device;
+        globalUpdates.currentDevice = f.device;
+      }
+      if (f.deviceModel !== undefined) {
+        globalUpdates.deviceModel = f.deviceModel;
+        globalUpdates.currentDeviceModel = f.deviceModel;
+      }
+
+      await updatePlayer(globalConfirm.playerId, globalUpdates);
+
+      toast.success(`Updated globally: player profile updated across the platform!`);
+      setGlobalConfirm(null);
+      await onRefresh();
+    } catch (e) {
+      toast.error('Global update failed: ' + e.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -2070,6 +2326,83 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
               </button>
               <button className="btn btn-primary btn-sm" onClick={() => executeRegistration(importQueue)} disabled={saving}>
                 {saving ? 'Registering...' : `Confirm & Register ${importQueue.filter(x => !x.isDuplicate).length} Players`}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Global Sync Confirmation Modal for Players */}
+      {globalConfirm && (
+        <Modal
+          title="Update Global Player Registry?"
+          onClose={() => setGlobalConfirm(null)}
+          size="md"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12,
+              padding: '14px 16px',
+              borderRadius: 10,
+              background: 'rgba(201, 168, 76, 0.08)',
+              border: '1px solid rgba(201, 168, 76, 0.3)',
+            }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 8,
+                background: 'rgba(201, 168, 76, 0.15)',
+                border: '1px solid var(--border-gold)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                color: 'var(--gold)',
+              }}>
+                <Globe size={20} />
+              </div>
+              <div style={{ flex: 1, fontSize: '0.86rem', lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Player {globalConfirm.fieldLabel} Modified:{' '}
+                  <span style={{ color: 'var(--text-muted)', textDecoration: 'line-through' }}>{globalConfirm.oldVal}</span>
+                  {' → '}
+                  <span style={{ color: 'var(--gold)', fontWeight: 800 }}>{globalConfirm.newVal}</span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.82rem' }}>
+                  Do you want this change to reflect <strong>globally in {globalConfirm.playerName}&apos;s Global Profile</strong> (updating the Global Player Registry, career stats, and future tournament entries)?
+                </p>
+                <p style={{ color: 'var(--cyan)', marginTop: 6, marginBottom: 0, fontSize: '0.78rem' }}>
+                  💡 If updated globally, all existing career data remains attached to this player under the new details, and the previous name is freed up.
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 10,
+              paddingTop: 10,
+              borderTop: '1px solid var(--border)',
+            }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={applyPlayerTournamentOnly}
+                disabled={saving}
+              >
+                Tournament Only
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={applyPlayerGlobalAndTournament}
+                disabled={saving}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Globe size={14} />
+                {saving ? 'Updating...' : 'Update Globally & Tournament'}
               </button>
             </div>
           </div>
