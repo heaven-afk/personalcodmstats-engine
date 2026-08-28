@@ -1791,8 +1791,9 @@ export default function TeamEntryPage() {
                                   onClick={e => e.stopPropagation()}
                                   onChange={e => {
                                     const val = parseInt(e.target.value) || 1;
-                                    setOcrQueue(prev => prev.map((q, i) => i === idx ? { ...q, lobby: val } : q));
+                                    setOcrQueue(old => old.map(qi => qi.id === item.id ? { ...qi, lobby: val } : qi));
                                   }}
+                                  disabled={item.status === 'scanning'}
                                 />
                               </div>
                             </div>
@@ -1800,26 +1801,60 @@ export default function TeamEntryPage() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setOcrQueue(prev => prev.filter((_, i) => i !== idx));
+                                setOcrQueue(old => old.filter(qi => qi.id !== item.id));
+                                if (ocrQueueActiveIndex === idx) {
+                                  setOcrQueueActiveIndex(0);
+                                }
                               }}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', alignSelf: 'flex-start', padding: 0 }}
                             >
                               <X size={14} />
                             </button>
+                          </div>
+                          
+                          <div style={{ marginTop: 6 }} onClick={e => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              className="editable-input"
+                              placeholder="Notes (e.g. partial scan)"
+                              style={{ width: '100%', padding: '2px 4px', fontSize: '0.68rem' }}
+                              value={item.notes}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setOcrQueue(old => old.map(qi => qi.id === item.id ? { ...qi, notes: val } : qi));
+                              }}
+                              disabled={item.status === 'scanning'}
+                            />
+                          </div>
+
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem' }}>
+                            <span>
+                              {item.status === 'pending' && <span style={{ color: 'var(--text-muted)' }}>Pending</span>}
+                              {item.status === 'scanning' && <span style={{ color: 'var(--gold)' }}>Scanning ({item.progress}%)</span>}
+                              {item.status === 'ready' && <span style={{ color: 'var(--success)' }}>Ready</span>}
+                              {item.status === 'error' && (
+                                <span style={{ color: 'var(--danger)' }} title={item.errorMessage}>
+                                  Failed: {item.errorMessage}
+                                </span>
+                              )}
+                            </span>
+                            {item.status === 'scanning' && (
+                              <LoadingSpinner size="sm" style={{ width: 12, height: 12 }} />
+                            )}
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
                         onClick={handleOcrProcessAll}
-                        disabled={parsing}
+                        disabled={parsing || ocrQueue.filter(item => item.status === 'pending' || item.status === 'error').length === 0}
                         style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                       >
-                        <Camera size={14} /> Extract Stats with Vision
+                        <Camera size={14} /> Extract Stats with Vision ({ocrQueue.filter(item => item.status === 'pending' || item.status === 'error').length})
                       </button>
                       <button
                         type="button"
@@ -1828,52 +1863,246 @@ export default function TeamEntryPage() {
                       >
                         Clear Queue
                       </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Parallel Workers:</span>
+                        <select
+                          className="form-select"
+                          style={{ fontSize: '0.72rem', padding: '3px 6px', width: 60 }}
+                          value={ocrConcurrency}
+                          onChange={e => setOcrConcurrency(Number(e.target.value))}
+                          title="Number of images processed simultaneously"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* OCR Previews */}
-                {isOcrMode && Object.keys(lobbyPreviews).length > 0 && (
-                  <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {Object.values(lobbyPreviews).map(lobbyData => {
-                      const lobbyNum = lobbyData.lobby;
-                      const hasResults = lobbyData.results && lobbyData.results.length > 0;
-                      if (!hasResults) return null;
+                {/* Lobby Preview Panels */}
+                {isOcrMode && Object.values(lobbyPreviews).length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--gold)' }}>Lobby Results Preview:</span>
+                    {Object.values(lobbyPreviews).map((lobbyData) => {
+                      const hasNull = lobbyData.results.some(r => r.kills === null);
+                      const isEditing = lobbyData.isEditing;
+                      const isConfirmed = lobbyData.isConfirmed;
 
                       return (
-                        <div key={lobbyNum} className="card" style={{ padding: '14px 16px', margin: 0, border: '1px solid var(--border-gold)' }}>
-                          <div className="flex-between" style={{ marginBottom: 8 }}>
-                            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: lc(lobbyNum).text }}>
-                              Lobby {lobbyNum} Extracted Results ({lobbyData.results.length} teams)
-                            </span>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-xs"
-                                onClick={() => handleConfirmAndSaveLobby(lobbyNum)}
-                                disabled={parsing}
-                              >
-                                {parsing ? 'Saving...' : `Save Lobby ${lobbyNum}`}
-                              </button>
+                        <div key={lobbyData.lobby} className="card" style={{
+                          border: isConfirmed ? '1px solid var(--success)' : '1px solid var(--border-md)',
+                          background: isConfirmed ? 'rgba(16,185,129,0.02)' : 'var(--bg-card)',
+                          opacity: isConfirmed ? 0.8 : 1,
+                          margin: 0,
+                          padding: 14
+                        }}>
+                          <div className="flex-between" style={{ marginBottom: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: lc(lobbyData.lobby).text }}>
+                                Lobby #{lobbyData.lobby} Scoreboard ({lobbyData.results.length} teams)
+                              </span>
+                              {isConfirmed && (
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  color: 'white',
+                                  background: 'var(--success)',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}>
+                                  <Check size={10} /> Saved
+                                </span>
+                              )}
+                              {hasNull && !isConfirmed && (
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  fontWeight: 700,
+                                  color: 'white',
+                                  background: 'var(--warning)',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}>
+                                  <AlertTriangle size={10} /> Flagged for review (missing kills)
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              {!isConfirmed && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => {
+                                      setLobbyPreviews(prev => ({
+                                        ...prev,
+                                        [lobbyData.lobby]: {
+                                          ...prev[lobbyData.lobby],
+                                          isEditing: !isEditing
+                                        }
+                                      }));
+                                    }}
+                                  >
+                                    {isEditing ? 'Cancel Edit' : 'Edit'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => handleConfirmAndSaveLobby(lobbyData.lobby)}
+                                    disabled={parsing}
+                                  >
+                                    {parsing ? 'Saving...' : 'Confirm & Save'}
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
-                          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+
+                          {/* Warnings list */}
+                          {lobbyData.warnings && lobbyData.warnings.length > 0 && !isConfirmed && (
+                            <div style={{ marginBottom: 10, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, padding: 8 }}>
+                              <ul style={{ listStyleType: 'disc', paddingLeft: 16, fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                {lobbyData.warnings.map((w, idx) => (
+                                  <li key={idx}>
+                                    {w === 'low_confidence' && 'Warning: Vision extraction had low confidence (too many missing kills). Check details.'}
+                                    {w === 'rank_anomaly' && 'Warning: Rank anomaly detected (ranks are not sequential or have duplicates).'}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          <div style={{ overflowX: 'auto' }}>
                             <table className="data-table" style={{ fontSize: '0.75rem', width: '100%' }}>
                               <thead>
                                 <tr style={{ background: 'var(--bg-header)' }}>
-                                  <th>Rank</th>
-                                  <th>Matched Team</th>
-                                  <th>Kills</th>
+                                  <th style={{ width: 80 }}>Rank</th>
+                                  <th style={{ width: 100 }}>Slot</th>
+                                  <th>Matched Team Name</th>
+                                  <th style={{ width: 100 }}>Kills</th>
+                                  <th style={{ width: 50 }}></th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {lobbyData.results.map((r, i) => (
-                                  <tr key={i}>
-                                    <td>#{r.placement}</td>
-                                    <td style={{ fontWeight: 600 }}>{r.teamName || r.ocrTeamName}</td>
-                                    <td>{r.kills ?? '—'}</td>
-                                  </tr>
-                                ))}
+                                {lobbyData.results.map((row, idx) => {
+                                  const isNullKills = row.kills === null;
+                                  const isUnmatched = !row.teamId;
+
+                                  return (
+                                    <tr key={idx} style={{
+                                      background: isNullKills ? 'rgba(245, 158, 11, 0.08)' : isUnmatched ? 'rgba(239, 68, 68, 0.08)' : undefined
+                                    }}>
+                                      <td>
+                                        {isEditing ? (
+                                          <input
+                                            type="number"
+                                            className="editable-input"
+                                            style={{ width: 60, fontSize: '0.75rem', padding: '2px 4px' }}
+                                            value={row.placement}
+                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'placement', e.target.value)}
+                                          />
+                                        ) : (row.placement === 1 ? '🏆 1st' : `#${row.placement}`)}
+                                      </td>
+                                      <td>
+                                        {isEditing ? (
+                                          <input
+                                            type="text"
+                                            className="editable-input"
+                                            style={{ width: 80, fontSize: '0.75rem', padding: '2px 4px' }}
+                                            value={row.slot || ''}
+                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'slot', e.target.value)}
+                                          />
+                                        ) : (row.slot || '—')}
+                                      </td>
+                                      <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                          <select
+                                            className="editable-input"
+                                            style={{
+                                              flex: 1,
+                                              minWidth: 160,
+                                              fontSize: '0.75rem',
+                                              padding: '2px 6px',
+                                              fontWeight: 600,
+                                              color: isUnmatched ? 'var(--danger)' : 'var(--text-primary)',
+                                              borderColor: isUnmatched ? 'var(--danger)' : 'var(--border-md)',
+                                              background: isUnmatched ? 'rgba(239,68,68,0.06)' : undefined
+                                            }}
+                                            value={row.teamId || ''}
+                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'teamId', e.target.value)}
+                                          >
+                                            <option value="">-- Select Registered Team --</option>
+                                            {activeTeamRegs.map(t => (
+                                              <option key={t.teamId} value={t.teamId}>
+                                                {t.slot ? `[Slot ${t.slot}] ` : ''}{t.teamName} {t.clanName ? `(${t.clanName})` : ''}
+                                              </option>
+                                            ))}
+                                          </select>
+
+                                          {/* Match Status Badge */}
+                                          {row.matchMethod === 'slot' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: 'var(--gold)', border: '1px solid rgba(201,168,76,0.3)', fontWeight: 600 }} title="Matched by Slot Number">
+                                              Slot Match
+                                            </span>
+                                          )}
+                                          {row.matchMethod === 'exact' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 600 }} title="Matched by Exact Name">
+                                              Exact Name
+                                            </span>
+                                          )}
+                                          {row.matchMethod === 'fuzzy' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(139,92,246,0.15)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)', fontWeight: 600 }} title={`Fuzzy matched (${Math.round((row.confidence || 0) * 100)}% match)`}>
+                                              Fuzzy ({Math.round((row.confidence || 0) * 100)}%)
+                                            </span>
+                                          )}
+                                          {row.matchMethod === 'manual' && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)', fontWeight: 600 }} title="Manually Selected">
+                                              Manual
+                                            </span>
+                                          )}
+                                          {isUnmatched && (
+                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                              <AlertCircle size={11} /> Unmatched
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td>
+                                        {isEditing ? (
+                                          <input
+                                            type="number"
+                                            className="editable-input"
+                                            style={{ width: 80, fontSize: '0.75rem', padding: '2px 4px' }}
+                                            value={row.kills === null ? '' : row.kills}
+                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'kills', e.target.value)}
+                                          />
+                                        ) : (
+                                          isNullKills ? <span style={{ color: 'var(--warning)', fontWeight: 600 }}>null</span> : row.kills
+                                        )}
+                                      </td>
+                                      <td>
+                                        {isEditing && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleLobbyRemoveRow(lobbyData.lobby, idx)}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                                            onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                                            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
