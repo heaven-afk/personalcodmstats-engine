@@ -29,7 +29,9 @@ import { detectTeamInsights, detectPlayerInsights, computePercentile, formatPerc
 import { getTournaments, getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTeams, getPlayers } from '@/lib/firestore/registry';
-import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
+import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel, computePlayerXGSummary } from '@/lib/engine/globalForm';
+import { computePlayerInfluence } from '@/lib/engine/playerInfluence';
+import PlayerInfluenceCard from '@/components/analytics/PlayerInfluenceCard';
 
 // ─── Local Narrative Cache Helper ─────────────────────────────────────────────
 function getCachedNarrative(cacheKey) {
@@ -456,6 +458,7 @@ export default function DeepAnalysisView({
             ) : (
               <TournamentPlayerView
                 player={currentPlayer}
+                tournament={tournament}
                 tournamentField={playerAnalyticsData}
                 playerMatchResults={playerMatchResults}
                 teamMatchResults={teamMatchResults}
@@ -1267,13 +1270,69 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
 }
 
 // ─── 2. TOURNAMENT SCOPED - PLAYER VIEW ───────────────────────────────────────
-function TournamentPlayerView({ player, tournamentField, playerMatchResults, teamMatchResults, activeMapConfig, playerReg, globalForm }) {
+function TournamentPlayerView({ player, tournament, tournamentField, playerMatchResults, teamMatchResults, activeMapConfig, playerReg, globalForm }) {
   if (!player) {
     return <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Select a player to view deep analysis.</div>;
   }
 
   // Detect player facts
   const facts = useMemo(() => detectPlayerInsights(player, tournamentField, []), [player, tournamentField]);
+
+  // Tournament-scoped Player Influence calculation
+  const tournamentInfluence = useMemo(() => {
+    if (!player?.playerId || !teamMatchResults?.length) return null;
+    const teamId = player.teamId;
+    const myTeamMatches = (teamMatchResults || []).filter(tm => tm.teamId === teamId);
+    if (!myTeamMatches.length) return null;
+
+    const teamMatchHistory = [];
+    myTeamMatches.forEach(tm => {
+      const matchKey = `${tm.day}-${tm.lobby}${tm.groupId ? '-' + tm.groupId : ''}`;
+      const allPlayerResultsThisMatch = (playerMatchResults || []).filter(pr =>
+        pr.teamId === teamId &&
+        pr.day === tm.day &&
+        pr.lobby === tm.lobby &&
+        (tm.groupId ? pr.groupId === tm.groupId : true)
+      );
+      const teamSize = new Set(allPlayerResultsThisMatch.map(pr => pr.playerId)).size || 1;
+      const myResult = allPlayerResultsThisMatch.find(pr => pr.playerId === player.playerId);
+      const present = Boolean(myResult);
+      const teamTotalDamage = allPlayerResultsThisMatch.reduce((s, pr) => s + (pr.damage || 0), 0);
+
+      teamMatchHistory.push({
+        matchId: `${tournament?.id || 't'}-${matchKey}`,
+        teamId,
+        present,
+        placement: tm.placement || 0,
+        teamTotalKills: tm.kills || 0,
+        playerKills: myResult?.kills || 0,
+        playerDamage: myResult?.damage || 0,
+        teamTotalDamage,
+        teamSize,
+      });
+    });
+
+    return computePlayerInfluence(player.playerId, teamMatchHistory);
+  }, [player?.playerId, player?.teamId, teamMatchResults, playerMatchResults, tournament?.id]);
+
+  // Tournament-scoped xG calculation
+  const tournamentXG = useMemo(() => {
+    if (!player?.playerId || !playerMatchResults?.length) return null;
+    const eventDate = tournament?.eventStartDate
+      ? new Date(tournament.eventStartDate)
+      : (tournament?.createdAt?.seconds ? new Date(tournament.createdAt.seconds * 1000) : new Date(0));
+
+    const playerMatchesForXG = (playerMatchResults || [])
+      .filter(pr => pr.playerId === player.playerId)
+      .map(pr => ({
+        kills: pr.kills || 0,
+        accuracy: pr.accuracy || null,
+        damage: pr.damage || null,
+        date: eventDate,
+      }));
+
+    return computePlayerXGSummary(playerMatchesForXG);
+  }, [player?.playerId, playerMatchResults, tournament]);
 
   // Lookup placement for each match
   const placementMap = useMemo(() => {
@@ -1684,6 +1743,19 @@ function TournamentPlayerView({ player, tournamentField, playerMatchResults, tea
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* 3g. Tournament-Scoped Player Influence & xG Breakdown */}
+      <div style={{ marginTop: 24 }}>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Sparkles size={18} style={{ color: 'var(--gold)' }} />
+          Tournament-Scoped Influence & Expected Kills
+        </h3>
+        <PlayerInfluenceCard
+          influence={tournamentInfluence}
+          xgSummary={tournamentXG}
+          scopeLabel="Tournament-scoped influence metrics for this event."
+        />
       </div>
     </div>
   );

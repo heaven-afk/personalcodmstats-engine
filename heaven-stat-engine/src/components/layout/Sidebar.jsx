@@ -18,7 +18,7 @@ const NAV = [
   { href: '/fantasy',     label: 'BR Fantasy',    icon: Coins },
   { href: '/comparison',  label: 'Comparison',    icon: GitCompare },
   { href: '/rankings',    label: 'Rankings',      icon: BarChart3 },
-  { href: '/analysis',    label: 'Deep Analysis', icon: Sparkles },
+  { href: '/analysis',    label: 'Analysis Board', icon: Sparkles },
   { href: '/simulate',    label: 'Simulate',      icon: FlaskConical },
   { href: '/settings',    label: 'Settings',      icon: Settings },
 ];
@@ -31,10 +31,10 @@ export default function Sidebar({ mobileOpen, onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Role-gate navigation: operators see Dashboard, My Projects, Tournaments, Players, Teams, Settings
+  // Role-gate navigation: operators see Dashboard, My Projects, Tournaments, Players, Teams, Settings, Analysis Board
   const visibleNav = NAV.filter(item => {
     if (isOperator) {
-      return ['/dashboard', '/projects', '/tournaments', '/players', '/teams', '/settings'].includes(item.href);
+      return ['/dashboard', '/projects', '/tournaments', '/players', '/teams', '/settings', '/analysis'].includes(item.href);
     }
     return true;
   });
