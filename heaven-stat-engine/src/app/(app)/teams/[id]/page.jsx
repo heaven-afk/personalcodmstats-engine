@@ -8,6 +8,7 @@ import { getTeamMatchResults, getBonusPoints } from '@/lib/firestore/matchData';
 import { getGroups } from '@/lib/firestore/groups';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig, getMapForMatch } from '@/lib/utils/mapConfig';
+import { cleanImageUrl } from '@/lib/utils/image';
 import { computeTeamRanking } from '@/lib/engine/standings';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
@@ -101,35 +102,42 @@ export default function TeamProfilePage() {
             }
           });
 
-          // Check if team registered in this tournament
-          const reg = regs.find(r => r.teamId === id);
-          if (reg) {
+          // Check if team registered in this tournament or played matches
+          const reg = regs?.find(r => r.teamId === id);
+          const hasMatches = teamMatches.length > 0;
+          if (reg || hasMatches) {
             // Compute standings for this tournament to extract team's specific row
             const ranking = computeTeamRanking(res, bonuses, tourney.scoring || {});
             const teamRankRow = ranking.find(tr => tr.teamId === id);
 
-            if (teamRankRow) {
-              totalWins += teamRankRow.wins || 0;
-              totalMatches += teamRankRow.matches || 0;
-              totalPlacePts += teamRankRow.placementPts || 0;
-              totalKillPts += teamRankRow.killPts || 0;
-              totalBonusPts += teamRankRow.bonusPts || 0;
-              totalPts += teamRankRow.totalPts || 0;
+            const wins = teamRankRow?.wins || 0;
+            const matches = teamRankRow?.matches || teamMatches.length || 0;
+            const placementPts = teamRankRow?.placementPts || 0;
+            const killPts = teamRankRow?.killPts || 0;
+            const bonusPts = teamRankRow?.bonusPts || 0;
+            const totalTourneyPts = teamRankRow?.totalPts || 0;
+            const rank = teamRankRow?.rank || '—';
 
-              participationHistory.push({
-                id: tourney.id,
-                name: tourney.name,
-                season: tourney.season,
-                status: tourney.status,
-                rank: teamRankRow.rank || '—',
-                wins: teamRankRow.wins || 0,
-                matches: teamRankRow.matches || 0,
-                placementPts: teamRankRow.placementPts || 0,
-                killPts: teamRankRow.killPts || 0,
-                bonusPts: teamRankRow.bonusPts || 0,
-                totalPts: teamRankRow.totalPts || 0,
-              });
-            }
+            totalWins += wins;
+            totalMatches += matches;
+            totalPlacePts += placementPts;
+            totalKillPts += killPts;
+            totalBonusPts += bonusPts;
+            totalPts += totalTourneyPts;
+
+            participationHistory.push({
+              id: tourney.id,
+              name: tourney.name,
+              season: tourney.season,
+              status: tourney.status,
+              rank: rank,
+              wins: wins,
+              matches: matches,
+              placementPts: placementPts,
+              killPts: killPts,
+              bonusPts: bonusPts,
+              totalPts: totalTourneyPts,
+            });
           }
         });
 
@@ -209,10 +217,37 @@ export default function TeamProfilePage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <button className="btn btn-secondary btn-sm p-2" onClick={() => router.push('/teams')}>
             <ChevronLeft size={16} />
           </button>
+
+          {/* Team Logo Badge Frame */}
+          <div style={{
+            width: 52,
+            height: 52,
+            borderRadius: 10,
+            flexShrink: 0,
+            background: 'var(--bg-header)',
+            border: '2px solid var(--border-gold)',
+            boxShadow: '0 0 16px rgba(201, 168, 76, 0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}>
+            {team.logoUrl || team.logo ? (
+              <img
+                src={cleanImageUrl(team.logoUrl || team.logo)}
+                alt={team.teamName}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <Shield size={24} style={{ color: 'var(--gold)' }} />
+            )}
+          </div>
+
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h1 className="page-title">{team.teamName}</h1>
