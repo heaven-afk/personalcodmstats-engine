@@ -1725,612 +1725,32 @@ export default function TeamEntryPage() {
                   </div>
                 </div>
 
-                {!isOcrMode && pasteText.trim() && (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                {!isOcrMode && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
                       onClick={() => handleProcessPasteText(pasteText)}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                      disabled={!pasteText.trim()}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
                     >
-                      <ClipboardPaste size={14} /> Process Pasted Data
+                      <Sliders size={14} /> Preview & Map Spreadsheet Columns
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => setPasteText('')}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-
-                {/* ── Smart Team Spreadsheet Import Preview & Column Mapping Interface ── */}
-                {!isOcrMode && isSmartImportActive && (
-                  <div className="card" style={{
-                    marginTop: 16,
-                    border: '2px solid var(--border-gold)',
-                    background: 'var(--bg-card)',
-                    padding: '18px 20px',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                    borderRadius: 12
-                  }}>
-                    {/* Header & Controls */}
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      gap: 12,
-                      borderBottom: '1px solid var(--border)',
-                      paddingBottom: 14,
-                      marginBottom: 16
-                    }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                          <span style={{
-                            fontWeight: 800,
-                            fontSize: '1rem',
-                            color: 'var(--gold)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8
-                          }}>
-                            <FileSpreadsheet size={18} />
-                            Spreadsheet Import Preview: {smartImportFileName}
-                          </span>
-                          <span className="badge badge-gold" style={{ fontSize: '0.72rem' }}>
-                            {smartImportRows.length} Teams Detected
-                          </span>
-                          <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
-                            {smartImportLobbies.length} Lobbies Detected
-                          </span>
-                        </div>
-                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
-                          Review matched teams and lobby stats. You can edit column mappings to customize which columns map to placement and kills.
-                        </p>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            if (!isEditingMapping && !mappingDraft && smartImportConfig) {
-                              setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
-                            }
-                            setIsEditingMapping(prev => !prev);
-                          }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                        >
-                          <Sliders size={14} />
-                          {isEditingMapping ? 'Hide Column Mapping' : 'Edit Column Mapping'}
-                        </button>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={handleCancelSmartImport}
-                          disabled={parsing}
-                        >
-                          Cancel Import
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Lobby Selection checklist & Mapped Columns Summary */}
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 10,
-                      padding: '12px 14px',
-                      background: 'var(--bg-alt-row)',
-                      borderRadius: 8,
-                      marginBottom: 16
-                    }}>
-                      <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                          Lobbies to Import:
-                        </span>
-                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                          {smartImportLobbies.length === 0 ? (
-                            <span style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              ⚠️ No Lobby columns were mapped! Please edit column mappings below.
-                            </span>
-                          ) : (
-                            smartImportLobbies.map(l => (
-                              <label key={l} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                fontSize: '0.8rem',
-                                cursor: 'pointer',
-                                color: 'var(--text-primary)',
-                                fontWeight: 600
-                              }}>
-                                <input
-                                  type="checkbox"
-                                  checked={smartImportSelectedLobbies.includes(l)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b) => a - b));
-                                    } else {
-                                      setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
-                                    }
-                                  }}
-                                />
-                                <span style={{ color: lc(l).text }}>Lobby {l}</span>
-                              </label>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      {Object.keys(smartImportColumnMappings).length > 0 && (
-                        <div style={{
-                          fontSize: '0.72rem',
-                          color: 'var(--text-secondary)',
-                          borderTop: '1px solid var(--border-md)',
-                          paddingTop: 6,
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          flexWrap: 'wrap',
-                          gap: 8
-                        }}>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <span style={{ fontWeight: 600 }}>Mapped Columns:</span>
-                            {Object.entries(smartImportColumnMappings).map(([l, cols]) => (
-                              <span key={l} style={{ background: 'var(--bg-card)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-md)' }}>
-                                L{l} (Pos: col {cols.placementCol === -1 || cols.placementCol === undefined ? 'None' : cols.placementCol}, Kills: col {cols.killsCol === -1 || cols.killsCol === undefined ? 'None' : cols.killsCol})
-                              </span>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
-                            onClick={() => {
-                              if (!isEditingMapping && !mappingDraft && smartImportConfig) {
-                                setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
-                              }
-                              setIsEditingMapping(prev => !prev);
-                            }}
-                            style={{ fontSize: '0.72rem', color: 'var(--gold)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                          >
-                            <Sliders size={12} /> {isEditingMapping ? 'Close Editor' : 'Edit Columns'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ── Collapsible Column Mapping Editor Panel ── */}
-                    {isEditingMapping && (
-                      <div style={{
-                        background: 'var(--bg-alt-row)',
-                        border: '1px solid var(--border-gold)',
-                        borderRadius: 8,
-                        padding: '16px 18px',
-                        marginBottom: 18,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 16
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
-                          <div>
-                            <h4 style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--gold)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <Sliders size={16} /> Column Mapping Configuration
-                            </h4>
-                            <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
-                              Select which spreadsheet columns map to team info and tournament lobby statistics.
-                            </p>
-                          </div>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={handleSaveAndReloadMapping}
-                              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}
-                            >
-                              <RefreshCw size={13} /> Save & Reload Preview
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setIsEditingMapping(false)}
-                              style={{ fontSize: '0.78rem' }}
-                            >
-                              Close
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Section 1: Team & Row Settings */}
-                        <div>
-                          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            1. Team & Row Settings
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                            {/* Data Starts at Row */}
-                            <div>
-                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                                Data Starts At Row:
-                              </label>
-                              <select
-                                className="form-input"
-                                style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
-                                value={mappingDraft?.startRowIndex ?? 1}
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  setMappingDraft(prev => ({ ...prev, startRowIndex: val }));
-                                }}
-                              >
-                                {smartImportGrid && Array.from({ length: Math.min(smartImportGrid.length, 12) }, (_, i) => {
-                                  const previewText = (smartImportGrid[i] || []).filter(Boolean).slice(0, 3).join(' | ');
-                                  return (
-                                    <option key={i} value={i}>
-                                      Row {i + 1}{previewText ? ` (${previewText.length > 25 ? previewText.substring(0, 25) + '...' : previewText})` : ''}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </div>
-
-                            {/* Team Name Column */}
-                            <div>
-                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                                Team Name / Clan Column <span style={{ color: 'var(--gold)' }}>*</span>:
-                              </label>
-                              <select
-                                className="form-input"
-                                style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
-                                value={mappingDraft?.teamCol ?? 0}
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  setMappingDraft(prev => ({ ...prev, teamCol: val }));
-                                }}
-                              >
-                                {availableColumns.map(col => (
-                                  <option key={col.index} value={col.index}>{col.label}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Slot Column */}
-                            <div>
-                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                                Slot Column (Optional):
-                              </label>
-                              <select
-                                className="form-input"
-                                style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
-                                value={mappingDraft?.slotCol ?? -1}
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  setMappingDraft(prev => ({ ...prev, slotCol: val }));
-                                }}
-                              >
-                                <option value="-1">[ None / Not in Sheet ]</option>
-                                {availableColumns.map(col => (
-                                  <option key={col.index} value={col.index}>{col.label}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Section 2: Lobby Placement & Kill Column Settings */}
-                        <div style={{ borderTop: '1px solid var(--border-md)', paddingTop: 14 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                              2. Lobby Placement & Kills Columns
-                            </span>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-xs"
-                              onClick={() => {
-                                setMappingDraft(prev => {
-                                  const currentLobbies = { ...(prev?.lobbies || {}) };
-                                  const nextLobbyNum = (Math.max(0, ...Object.keys(currentLobbies).map(Number)) || 0) + 1;
-                                  currentLobbies[nextLobbyNum] = { placementCol: -1, killsCol: -1 };
-                                  return { ...prev, lobbies: currentLobbies };
-                                });
-                              }}
-                              style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            >
-                              <Plus size={12} /> Add Lobby
-                            </button>
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-                            {mappingDraft?.lobbies && Object.entries(mappingDraft.lobbies).map(([lobbyNum, cols]) => (
-                              <div
-                                key={lobbyNum}
-                                style={{
-                                  background: 'var(--bg-card)',
-                                  border: '1px solid var(--border-md)',
-                                  borderRadius: 8,
-                                  padding: '10px 12px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                  <span style={{ fontWeight: 700, fontSize: '0.8rem', color: lc(Number(lobbyNum)).text }}>
-                                    Lobby {lobbyNum}
-                                  </span>
-                                  {Object.keys(mappingDraft.lobbies).length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setMappingDraft(prev => {
-                                          const updated = { ...prev.lobbies };
-                                          delete updated[lobbyNum];
-                                          return { ...prev, lobbies: updated };
-                                        });
-                                      }}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 0 }}
-                                      title={`Remove Lobby ${lobbyNum}`}
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  )}
-                                </div>
-
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                  <div>
-                                    <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>
-                                      Placement / Rank Column:
-                                    </label>
-                                    <select
-                                      className="form-input"
-                                      style={{ width: '100%', fontSize: '0.72rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
-                                      value={cols.placementCol ?? -1}
-                                      onChange={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        setMappingDraft(prev => ({
-                                          ...prev,
-                                          lobbies: {
-                                            ...prev.lobbies,
-                                            [lobbyNum]: { ...prev.lobbies[lobbyNum], placementCol: val }
-                                          }
-                                        }));
-                                      }}
-                                    >
-                                      <option value="-1">[ None / Not Played ]</option>
-                                      {availableColumns.map(col => (
-                                        <option key={col.index} value={col.index}>{col.label}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-
-                                  <div>
-                                    <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>
-                                      Kills Column:
-                                    </label>
-                                    <select
-                                      className="form-input"
-                                      style={{ width: '100%', fontSize: '0.72rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
-                                      value={cols.killsCol ?? -1}
-                                      onChange={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        setMappingDraft(prev => ({
-                                          ...prev,
-                                          lobbies: {
-                                            ...prev.lobbies,
-                                            [lobbyNum]: { ...prev.lobbies[lobbyNum], killsCol: val }
-                                          }
-                                        }));
-                                      }}
-                                    >
-                                      <option value="-1">[ None / Not Played ]</option>
-                                      {availableColumns.map(col => (
-                                        <option key={col.index} value={col.index}>{col.label}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => setIsEditingMapping(false)}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={handleSaveAndReloadMapping}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                          >
-                            <RefreshCw size={13} /> Save & Reload Preview
-                          </button>
-                        </div>
-                      </div>
+                    {pasteText.trim() && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setPasteText('')}
+                      >
+                        Clear
+                      </button>
                     )}
-
-                    {/* Target Day & Import Actions Bar */}
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      gap: 12,
-                      padding: '12px 14px',
-                      background: 'var(--bg-alt-row)',
-                      borderRadius: 8,
-                      marginBottom: 14
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                          Import Destination:
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Target Day:</span>
-                          <select
-                            className="form-select"
-                            style={{ margin: 0, padding: '3px 8px', fontSize: '0.8rem', width: 90 }}
-                            value={smartImportTargetDay}
-                            onChange={e => setSmartImportTargetDay(Number(e.target.value))}
-                          >
-                            {Array.from({ length: totalDays }, (_, i) => i + 1).map(d => (
-                              <option key={d} value={d}>Day {d}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {hasGroups && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Target Group:</span>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)' }}>
-                              {selectedGroup?.groupName || 'Default Group'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={handleConfirmSmartImport}
-                          disabled={parsing || smartImportRows.filter(r => r.matchedTeamId).length === 0}
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-                        >
-                          {parsing ? (
-                            <>
-                              <LoadingSpinner size="sm" /> Importing...
-                            </>
-                          ) : (
-                            <>
-                              <Check size={14} /> Confirm & Import to Day {smartImportTargetDay}
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Live Interactive Preview Table */}
-                    <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid var(--border-md)', borderRadius: 8 }}>
-                      <table className="data-table" style={{ fontSize: '0.75rem', width: '100%' }}>
-                        <thead>
-                          <tr style={{ background: 'var(--bg-header)' }}>
-                            <th style={{ width: 40 }}>#</th>
-                            <th style={{ width: 100 }}>Status</th>
-                            <th>Parsed Team Name</th>
-                            <th>Matched Registered Team</th>
-                            <th style={{ width: 70 }}>Slot</th>
-                            {smartImportSelectedLobbies.map(l => (
-                              <th key={l} style={{ color: lc(l).text }}>
-                                L{l} Pos & Kills
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {smartImportRows.length === 0 ? (
-                            <tr>
-                              <td colSpan={5 + smartImportSelectedLobbies.length} className="empty-row">
-                                No team rows found with this column mapping.
-                              </td>
-                            </tr>
-                          ) : (
-                            smartImportRows.map((row, idx) => {
-                              const isUnmatched = !row.matchedTeamId;
-                              return (
-                                <tr
-                                  key={row.id ?? idx}
-                                  style={{
-                                    background: isUnmatched ? 'rgba(239, 68, 68, 0.06)' : undefined
-                                  }}
-                                >
-                                  <td style={{ color: 'var(--text-muted)' }}>{idx + 1}</td>
-                                  <td>
-                                    {row.confidence === 'high' && (
-                                      <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 700 }}>
-                                        Matched
-                                      </span>
-                                    )}
-                                    {row.confidence === 'medium' && (
-                                      <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: 'var(--gold)', border: '1px solid rgba(201,168,76,0.3)', fontWeight: 700 }}>
-                                        Fuzzy Match
-                                      </span>
-                                    )}
-                                    {isUnmatched && (
-                                      <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                        <AlertCircle size={10} /> Unmatched
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    {row.parsedTeam || '—'}
-                                  </td>
-                                  <td>
-                                    <select
-                                      className="editable-input"
-                                      style={{
-                                        width: '100%',
-                                        fontSize: '0.75rem',
-                                        padding: '3px 6px',
-                                        background: 'var(--bg-card)',
-                                        borderColor: isUnmatched ? 'rgba(239, 68, 68, 0.5)' : undefined
-                                      }}
-                                      value={row.matchedTeamId || ''}
-                                      onChange={(e) => {
-                                        const selectedId = e.target.value;
-                                        const matched = activeTeamRegs.find(t => t.teamId === selectedId);
-                                        setSmartImportRows(prev => prev.map(r =>
-                                          r.id === row.id
-                                            ? {
-                                                ...r,
-                                                matchedTeamId: selectedId || null,
-                                                matchedTeamName: matched ? matched.teamName : 'Unmatched',
-                                                confidence: selectedId ? 'high' : 'none'
-                                              }
-                                            : r
-                                        ));
-                                      }}
-                                    >
-                                      <option value="">[ Unmatched / Skip Team ]</option>
-                                      {activeTeamRegs.map(t => (
-                                        <option key={t.teamId} value={t.teamId}>
-                                          {t.teamName} {t.clanName ? `[${t.clanName}]` : ''} {t.slot ? `(Slot ${t.slot})` : ''}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </td>
-                                  <td style={{ fontFamily: 'var(--font-mono)' }}>
-                                    {row.parsedSlot || '—'}
-                                  </td>
-                                  {smartImportSelectedLobbies.map(l => {
-                                    const stat = row.stats?.[l];
-                                    const hasPos = stat?.placement !== null && stat?.placement !== undefined;
-                                    const hasKills = stat?.kills !== null && stat?.kills !== undefined;
-                                    return (
-                                      <td key={l} style={{ fontFamily: 'var(--font-mono)' }}>
-                                        {hasPos || hasKills ? (
-                                          <span>
-                                            <strong style={{ color: 'var(--text-primary)' }}>
-                                              {hasPos ? (stat.placement === 1 ? '🏆 1st' : `#${stat.placement}`) : '—'}
-                                            </strong>{' '}
-                                            <span style={{ color: lc(l).text, fontWeight: 700 }}>
-                                              ({hasKills ? `${stat.kills}k` : '—'})
-                                            </span>
-                                          </span>
-                                        ) : (
-                                          <span style={{ color: 'var(--text-muted)' }}>—</span>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => { setShowPaste(false); setPasteText(''); handleOcrClear(); }}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 )}
 
@@ -2371,309 +1791,89 @@ export default function TeamEntryPage() {
                                   onClick={e => e.stopPropagation()}
                                   onChange={e => {
                                     const val = parseInt(e.target.value) || 1;
-                                    setOcrQueue(old => old.map(qi => qi.id === item.id ? { ...qi, lobby: val } : qi));
+                                    setOcrQueue(prev => prev.map((q, i) => i === idx ? { ...q, lobby: val } : q));
                                   }}
-                                  disabled={item.status === 'scanning'}
                                 />
                               </div>
                             </div>
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setOcrQueue(old => old.filter(qi => qi.id !== item.id));
-                                if (ocrQueueActiveIndex === idx) {
-                                  setOcrQueueActiveIndex(0);
-                                }
+                                setOcrQueue(prev => prev.filter((_, i) => i !== idx));
                               }}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', alignSelf: 'flex-start', padding: 0 }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}
                             >
                               <X size={14} />
                             </button>
-                          </div>
-                          
-                          <div style={{ marginTop: 6 }} onClick={e => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              className="editable-input"
-                              placeholder="Notes (e.g. partial scan)"
-                              style={{ width: '100%', padding: '2px 4px', fontSize: '0.68rem' }}
-                              value={item.notes}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setOcrQueue(old => old.map(qi => qi.id === item.id ? { ...qi, notes: val } : qi));
-                              }}
-                              disabled={item.status === 'scanning'}
-                            />
-                          </div>
-
-                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem' }}>
-                            <span>
-                              {item.status === 'pending' && <span style={{ color: 'var(--text-muted)' }}>Pending</span>}
-                              {item.status === 'scanning' && <span style={{ color: 'var(--gold)' }}>Scanning ({item.progress}%)</span>}
-                              {item.status === 'ready' && <span style={{ color: 'var(--success)' }}>Ready</span>}
-                              {item.status === 'error' && (
-                                <span style={{ color: 'var(--danger)' }} title={item.errorMessage}>
-                                  Failed: {item.errorMessage}
-                                </span>
-                              )}
-                            </span>
-                            {item.status === 'scanning' && (
-                              <LoadingSpinner size="sm" style={{ width: 12, height: 12 }} />
-                            )}
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                       <button
+                        type="button"
                         className="btn btn-primary btn-sm"
                         onClick={handleOcrProcessAll}
-                        disabled={ocrQueue.filter(item => item.status === 'pending' || item.status === 'error').length === 0}
+                        disabled={parsing}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                       >
-                        Process All ({ocrQueue.filter(item => item.status === 'pending' || item.status === 'error').length})
+                        <Camera size={14} /> Extract Stats with Vision
                       </button>
                       <button
+                        type="button"
                         className="btn btn-secondary btn-sm"
                         onClick={handleOcrClear}
                       >
                         Clear Queue
                       </button>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>Parallel Workers:</span>
-                        <select
-                          className="form-select"
-                          style={{ fontSize: '0.72rem', padding: '3px 6px', width: 60 }}
-                          value={ocrConcurrency}
-                          onChange={e => setOcrConcurrency(Number(e.target.value))}
-                          title="Number of images processed simultaneously"
-                        >
-                          {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
-                            <option key={n} value={n}>{n}</option>
-                          ))}
-                        </select>
-                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Lobby Preview Panels */}
-                {isOcrMode && Object.values(lobbyPreviews).length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                    <span style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--gold)' }}>Lobby Results Preview:</span>
-                    {Object.values(lobbyPreviews).map((lobbyData) => {
-                      const hasNull = lobbyData.results.some(r => r.kills === null);
-                      const isEditing = lobbyData.isEditing;
-                      const isConfirmed = lobbyData.isConfirmed;
+                {/* OCR Previews */}
+                {isOcrMode && Object.keys(lobbyPreviews).length > 0 && (
+                  <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {Object.values(lobbyPreviews).map(lobbyData => {
+                      const lobbyNum = lobbyData.lobby;
+                      const hasResults = lobbyData.results && lobbyData.results.length > 0;
+                      if (!hasResults) return null;
 
                       return (
-                        <div key={lobbyData.lobby} className="card" style={{
-                          border: isConfirmed ? '1px solid var(--success)' : '1px solid var(--border-md)',
-                          background: isConfirmed ? 'rgba(16,185,129,0.02)' : 'var(--bg-card)',
-                          opacity: isConfirmed ? 0.8 : 1,
-                          margin: 0,
-                          padding: 14
-                        }}>
-                          <div className="flex-between" style={{ marginBottom: 10 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Lobby #{lobbyData.lobby} Scoreboard</span>
-                              {isConfirmed && (
-                                <span style={{
-                                  fontSize: '0.65rem',
-                                  fontWeight: 700,
-                                  color: 'white',
-                                  background: 'var(--success)',
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4
-                                }}>
-                                  <Check size={10} /> Saved
-                                </span>
-                              )}
-                              {hasNull && !isConfirmed && (
-                                <span style={{
-                                  fontSize: '0.65rem',
-                                  fontWeight: 700,
-                                  color: 'white',
-                                  background: 'var(--warning)',
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4
-                                }}>
-                                  <AlertTriangle size={10} /> Flagged for review (missing kills)
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              {!isConfirmed && (
-                                <>
-                                  <button
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => {
-                                      setLobbyPreviews(prev => ({
-                                        ...prev,
-                                        [lobbyData.lobby]: {
-                                          ...prev[lobbyData.lobby],
-                                          isEditing: !isEditing
-                                        }
-                                      }));
-                                    }}
-                                  >
-                                    {isEditing ? 'Cancel Edit' : 'Edit'}
-                                  </button>
-                                  <button
-                                    className="btn btn-primary btn-sm"
-                                    onClick={() => handleConfirmAndSaveLobby(lobbyData.lobby)}
-                                    disabled={parsing}
-                                  >
-                                    {parsing ? 'Saving...' : 'Confirm & Save'}
-                                  </button>
-                                </>
-                              )}
+                        <div key={lobbyNum} className="card" style={{ padding: '14px 16px', margin: 0, border: '1px solid var(--border-gold)' }}>
+                          <div className="flex-between" style={{ marginBottom: 8 }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: lc(lobbyNum).text }}>
+                              Lobby {lobbyNum} Extracted Results ({lobbyData.results.length} teams)
+                            </span>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-xs"
+                                onClick={() => handleConfirmAndSaveLobby(lobbyNum)}
+                                disabled={parsing}
+                              >
+                                {parsing ? 'Saving...' : `Save Lobby ${lobbyNum}`}
+                              </button>
                             </div>
                           </div>
-
-                          {/* Warnings list */}
-                          {lobbyData.warnings && lobbyData.warnings.length > 0 && !isConfirmed && (
-                            <div style={{ marginBottom: 10, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, padding: 8 }}>
-                              <ul style={{ listStyleType: 'disc', paddingLeft: 16, fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                                {lobbyData.warnings.map((w, idx) => (
-                                  <li key={idx}>
-                                    {w === 'low_confidence' && 'Warning: Vision extraction had low confidence (too many missing kills). Check details.'}
-                                    {w === 'rank_anomaly' && 'Warning: Rank anomaly detected (ranks are not sequential or have duplicates).'}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                          <div style={{ overflowX: 'auto' }}>
+                          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                             <table className="data-table" style={{ fontSize: '0.75rem', width: '100%' }}>
                               <thead>
                                 <tr style={{ background: 'var(--bg-header)' }}>
-                                  <th style={{ width: 80 }}>Rank</th>
-                                  <th style={{ width: 100 }}>Slot</th>
-                                  <th>Matched Team Name</th>
-                                  <th style={{ width: 100 }}>Kills</th>
-                                  <th style={{ width: 50 }}></th>
+                                  <th>Rank</th>
+                                  <th>Matched Team</th>
+                                  <th>Kills</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {lobbyData.results.map((row, idx) => {
-                                  const isNullKills = row.kills === null;
-                                  const isUnmatched = !row.teamId;
-
-                                  return (
-                                    <tr key={idx} style={{
-                                      background: isNullKills ? 'rgba(245, 158, 11, 0.08)' : isUnmatched ? 'rgba(239, 68, 68, 0.08)' : undefined
-                                    }}>
-                                      <td>
-                                        {isEditing ? (
-                                          <input
-                                            type="number"
-                                            className="editable-input"
-                                            style={{ width: 60, fontSize: '0.75rem', padding: '2px 4px' }}
-                                            value={row.placement}
-                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'placement', e.target.value)}
-                                          />
-                                        ) : row.placement}
-                                      </td>
-                                      <td>
-                                        {isEditing ? (
-                                          <input
-                                            type="text"
-                                            className="editable-input"
-                                            style={{ width: 80, fontSize: '0.75rem', padding: '2px 4px' }}
-                                            value={row.slot || ''}
-                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'slot', e.target.value)}
-                                          />
-                                        ) : (row.slot || '—')}
-                                      </td>
-                                      <td>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                          <select
-                                            className="editable-input"
-                                            style={{
-                                              flex: 1,
-                                              minWidth: 160,
-                                              fontSize: '0.75rem',
-                                              padding: '2px 6px',
-                                              fontWeight: 600,
-                                              color: isUnmatched ? 'var(--danger)' : 'var(--text-primary)',
-                                              borderColor: isUnmatched ? 'var(--danger)' : 'var(--border-md)',
-                                              background: isUnmatched ? 'rgba(239,68,68,0.06)' : undefined
-                                            }}
-                                            value={row.teamId || ''}
-                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'teamId', e.target.value)}
-                                          >
-                                            <option value="">-- Select Registered Team --</option>
-                                            {activeTeamRegs.map(t => (
-                                              <option key={t.teamId} value={t.teamId}>
-                                                {t.slot ? `[Slot ${t.slot}] ` : ''}{t.teamName} {t.clanName ? `(${t.clanName})` : ''}
-                                              </option>
-                                            ))}
-                                          </select>
-
-                                          {/* Match Status Badge */}
-                                          {row.matchMethod === 'slot' && (
-                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: 'var(--gold)', border: '1px solid rgba(201,168,76,0.3)', fontWeight: 600 }} title="Matched by Slot Number">
-                                              Slot Match
-                                            </span>
-                                          )}
-                                          {row.matchMethod === 'exact' && (
-                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 600 }} title="Matched by Exact Name">
-                                              Exact Name
-                                            </span>
-                                          )}
-                                          {row.matchMethod === 'fuzzy' && (
-                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(139,92,246,0.15)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)', fontWeight: 600 }} title={`Fuzzy matched (${Math.round((row.confidence || 0) * 100)}% match)`}>
-                                              Fuzzy ({Math.round((row.confidence || 0) * 100)}%)
-                                            </span>
-                                          )}
-                                          {row.matchMethod === 'manual' && (
-                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)', fontWeight: 600 }} title="Manually Selected">
-                                              Manual
-                                            </span>
-                                          )}
-                                          {isUnmatched && (
-                                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                              <AlertCircle size={11} /> Unmatched
-                                            </span>
-                                          )}
-                                        </div>
-                                      </td>
-                                      <td>
-                                        {isEditing ? (
-                                          <input
-                                            type="number"
-                                            className="editable-input"
-                                            style={{ width: 80, fontSize: '0.75rem', padding: '2px 4px' }}
-                                            value={row.kills === null ? '' : row.kills}
-                                            onChange={e => handleLobbyCellChange(lobbyData.lobby, idx, 'kills', e.target.value)}
-                                          />
-                                        ) : (
-                                          isNullKills ? <span style={{ color: 'var(--warning)', fontWeight: 600 }}>null</span> : row.kills
-                                        )}
-                                      </td>
-                                      <td>
-                                        {isEditing && (
-                                          <button
-                                            onClick={() => handleLobbyRemoveRow(lobbyData.lobby, idx)}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                                            onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
-                                            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                                          >
-                                            <Trash2 size={14} />
-                                          </button>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
+                                {lobbyData.results.map((r, i) => (
+                                  <tr key={i}>
+                                    <td>#{r.placement}</td>
+                                    <td style={{ fontWeight: 600 }}>{r.teamName || r.ocrTeamName}</td>
+                                    <td>{r.kills ?? '—'}</td>
+                                  </tr>
+                                ))}
                               </tbody>
                             </table>
                           </div>
@@ -2706,14 +1906,594 @@ export default function TeamEntryPage() {
                     )}
                   </div>
                 )}
+              </div>
+            )}
 
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => { setShowPaste(false); setPasteText(''); handleOcrClear(); }}
-                  >
-                    Cancel
-                  </button>
+            {/* ── Smart Team Spreadsheet Import Preview & Column Mapping Interface (Top-Level) ── */}
+            {isSmartImportActive && (
+              <div className="card" style={{
+                margin: '12px 16px',
+                border: '2px solid var(--border-gold)',
+                background: 'var(--bg-card)',
+                padding: '18px 20px',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                borderRadius: 12
+              }}>
+                {/* Header & Controls */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 12,
+                  borderBottom: '1px solid var(--border)',
+                  paddingBottom: 14,
+                  marginBottom: 16
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontWeight: 800,
+                        fontSize: '1rem',
+                        color: 'var(--gold)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                      }}>
+                        <FileSpreadsheet size={18} />
+                        Spreadsheet Import Preview: {smartImportFileName}
+                      </span>
+                      <span className="badge badge-gold" style={{ fontSize: '0.72rem' }}>
+                        {smartImportRows.length} Teams Detected
+                      </span>
+                      <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
+                        {smartImportLobbies.length} Lobbies Detected
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
+                      Review matched teams and lobby stats. You can edit column mappings to customize which columns map to placement and kills.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        if (!isEditingMapping && !mappingDraft && smartImportConfig) {
+                          setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                        }
+                        setIsEditingMapping(prev => !prev);
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <Sliders size={14} />
+                      {isEditingMapping ? 'Hide Column Mapping' : 'Edit Column Mapping'}
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleCancelSmartImport}
+                      disabled={parsing}
+                    >
+                      Cancel Import
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lobby Selection checklist & Mapped Columns Summary */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  padding: '12px 14px',
+                  background: 'var(--bg-alt-row)',
+                  borderRadius: 8,
+                  marginBottom: 16
+                }}>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Lobbies to Import:
+                    </span>
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                      {smartImportLobbies.length === 0 ? (
+                        <span style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          ⚠️ No Lobby columns were mapped! Please edit column mappings below.
+                        </span>
+                      ) : (
+                        smartImportLobbies.map(l => (
+                          <label key={l} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: '0.8rem',
+                            cursor: 'pointer',
+                            color: 'var(--text-primary)',
+                            fontWeight: 600
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={smartImportSelectedLobbies.includes(l)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b) => a - b));
+                                } else {
+                                  setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
+                                }
+                              }}
+                            />
+                            <span style={{ color: lc(l).text }}>Lobby {l}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {Object.keys(smartImportColumnMappings).length > 0 && (
+                    <div style={{
+                      fontSize: '0.72rem',
+                      color: 'var(--text-secondary)',
+                      borderTop: '1px solid var(--border-md)',
+                      paddingTop: 6,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 8
+                    }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600 }}>Mapped Columns:</span>
+                        {Object.entries(smartImportColumnMappings).map(([l, cols]) => (
+                          <span key={l} style={{ background: 'var(--bg-card)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-md)' }}>
+                            L{l} (Pos: col {cols.placementCol === -1 || cols.placementCol === undefined ? 'None' : cols.placementCol}, Kills: col {cols.killsCol === -1 || cols.killsCol === undefined ? 'None' : cols.killsCol})
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => {
+                          if (!isEditingMapping && !mappingDraft && smartImportConfig) {
+                            setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                          }
+                          setIsEditingMapping(prev => !prev);
+                        }}
+                        style={{ fontSize: '0.72rem', color: 'var(--gold)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Sliders size={12} /> {isEditingMapping ? 'Close Editor' : 'Edit Columns'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Collapsible Column Mapping Editor Panel ── */}
+                {isEditingMapping && (
+                  <div style={{
+                    background: 'var(--bg-alt-row)',
+                    border: '1px solid var(--border-gold)',
+                    borderRadius: 8,
+                    padding: '16px 18px',
+                    marginBottom: 18,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 16
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                      <div>
+                        <h4 style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--gold)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Sliders size={16} /> Column Mapping Configuration
+                        </h4>
+                        <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                          Select which spreadsheet columns map to team info and tournament lobby statistics.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={handleSaveAndReloadMapping}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}
+                        >
+                          <RefreshCw size={13} /> Save & Reload Preview
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setIsEditingMapping(false)}
+                          style={{ fontSize: '0.78rem' }}
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Section 1: Team & Row Settings */}
+                    <div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        1. Team & Row Settings
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                        {/* Data Starts at Row */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                            Data Starts At Row:
+                          </label>
+                          <select
+                            className="form-input"
+                            style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                            value={mappingDraft?.startRowIndex ?? 1}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              setMappingDraft(prev => ({ ...prev, startRowIndex: val }));
+                            }}
+                          >
+                            {smartImportGrid && Array.from({ length: Math.min(smartImportGrid.length, 12) }, (_, i) => {
+                              const previewText = (smartImportGrid[i] || []).filter(Boolean).slice(0, 3).join(' | ');
+                              return (
+                                <option key={i} value={i}>
+                                  Row {i + 1}{previewText ? ` (${previewText.length > 25 ? previewText.substring(0, 25) + '...' : previewText})` : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        {/* Team Name Column */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                            Team Name / Clan Column <span style={{ color: 'var(--gold)' }}>*</span>:
+                          </label>
+                          <select
+                            className="form-input"
+                            style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                            value={mappingDraft?.teamCol ?? 0}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              setMappingDraft(prev => ({ ...prev, teamCol: val }));
+                            }}
+                          >
+                            {availableColumns.map(col => (
+                              <option key={col.index} value={col.index}>{col.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Slot Column */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                            Slot Column (Optional):
+                          </label>
+                          <select
+                            className="form-input"
+                            style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                            value={mappingDraft?.slotCol ?? -1}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              setMappingDraft(prev => ({ ...prev, slotCol: val }));
+                            }}
+                          >
+                            <option value="-1">[ None / Not in Sheet ]</option>
+                            {availableColumns.map(col => (
+                              <option key={col.index} value={col.index}>{col.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Lobby Placement & Kill Column Settings */}
+                    <div style={{ borderTop: '1px solid var(--border-md)', paddingTop: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          2. Lobby Placement & Kills Columns
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-xs"
+                          onClick={() => {
+                            setMappingDraft(prev => {
+                              const currentLobbies = { ...(prev?.lobbies || {}) };
+                              const nextLobbyNum = (Math.max(0, ...Object.keys(currentLobbies).map(Number)) || 0) + 1;
+                              currentLobbies[nextLobbyNum] = { placementCol: -1, killsCol: -1 };
+                              return { ...prev, lobbies: currentLobbies };
+                            });
+                          }}
+                          style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        >
+                          <Plus size={12} /> Add Lobby
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                        {mappingDraft?.lobbies && Object.entries(mappingDraft.lobbies).map(([lobbyNum, cols]) => (
+                          <div
+                            key={lobbyNum}
+                            style={{
+                              background: 'var(--bg-card)',
+                              border: '1px solid var(--border-md)',
+                              borderRadius: 8,
+                              padding: '10px 12px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.8rem', color: lc(Number(lobbyNum)).text }}>
+                                Lobby {lobbyNum}
+                              </span>
+                              {Object.keys(mappingDraft.lobbies).length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMappingDraft(prev => {
+                                      const updated = { ...prev.lobbies };
+                                      delete updated[lobbyNum];
+                                      return { ...prev, lobbies: updated };
+                                    });
+                                  }}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 0 }}
+                                  title={`Remove Lobby ${lobbyNum}`}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>
+                                  Placement / Rank Column:
+                                </label>
+                                <select
+                                  className="form-input"
+                                  style={{ width: '100%', fontSize: '0.72rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
+                                  value={cols.placementCol ?? -1}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setMappingDraft(prev => ({
+                                      ...prev,
+                                      lobbies: {
+                                        ...prev.lobbies,
+                                        [lobbyNum]: { ...prev.lobbies[lobbyNum], placementCol: val }
+                                      }
+                                    }));
+                                  }}
+                                >
+                                  <option value="-1">[ None / Not Played ]</option>
+                                  {availableColumns.map(col => (
+                                    <option key={col.index} value={col.index}>{col.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>
+                                  Kills Column:
+                                </label>
+                                <select
+                                  className="form-input"
+                                  style={{ width: '100%', fontSize: '0.72rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
+                                  value={cols.killsCol ?? -1}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setMappingDraft(prev => ({
+                                      ...prev,
+                                      lobbies: {
+                                        ...prev.lobbies,
+                                        [lobbyNum]: { ...prev.lobbies[lobbyNum], killsCol: val }
+                                      }
+                                    }));
+                                  }}
+                                >
+                                  <option value="-1">[ None / Not Played ]</option>
+                                  {availableColumns.map(col => (
+                                    <option key={col.index} value={col.index}>{col.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setIsEditingMapping(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={handleSaveAndReloadMapping}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <RefreshCw size={13} /> Save & Reload Preview
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Target Day & Import Actions Bar */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 12,
+                  padding: '12px 14px',
+                  background: 'var(--bg-alt-row)',
+                  borderRadius: 8,
+                  marginBottom: 14
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Import Destination:
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Target Day:</span>
+                      <select
+                        className="form-select"
+                        style={{ margin: 0, padding: '3px 8px', fontSize: '0.8rem', width: 90 }}
+                        value={smartImportTargetDay}
+                        onChange={e => setSmartImportTargetDay(Number(e.target.value))}
+                      >
+                        {Array.from({ length: totalDays }, (_, i) => i + 1).map(d => (
+                          <option key={d} value={d}>Day {d}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {hasGroups && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Target Group:</span>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)' }}>
+                          {selectedGroup?.groupName || 'Default Group'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={handleConfirmSmartImport}
+                      disabled={parsing || smartImportRows.filter(r => r.matchedTeamId).length === 0}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                    >
+                      {parsing ? (
+                        <>
+                          <LoadingSpinner size="sm" /> Importing...
+                        </>
+                      ) : (
+                        <>
+                          <Check size={14} /> Confirm & Import to Day {smartImportTargetDay}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Live Interactive Preview Table */}
+                <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid var(--border-md)', borderRadius: 8 }}>
+                  <table className="data-table" style={{ fontSize: '0.75rem', width: '100%' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-header)' }}>
+                        <th style={{ width: 40 }}>#</th>
+                        <th style={{ width: 100 }}>Status</th>
+                        <th>Parsed Team Name</th>
+                        <th>Matched Registered Team</th>
+                        <th style={{ width: 70 }}>Slot</th>
+                        {smartImportSelectedLobbies.map(l => (
+                          <th key={l} style={{ color: lc(l).text }}>
+                            L{l} Pos & Kills
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {smartImportRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={5 + smartImportSelectedLobbies.length} className="empty-row">
+                            No team rows found with this column mapping.
+                          </td>
+                        </tr>
+                      ) : (
+                        smartImportRows.map((row, idx) => {
+                          const isUnmatched = !row.matchedTeamId;
+                          return (
+                            <tr
+                              key={row.id ?? idx}
+                              style={{
+                                background: isUnmatched ? 'rgba(239, 68, 68, 0.06)' : undefined
+                              }}
+                            >
+                              <td style={{ color: 'var(--text-muted)' }}>{idx + 1}</td>
+                              <td>
+                                {row.confidence === 'high' && (
+                                  <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 700 }}>
+                                    Matched
+                                  </span>
+                                )}
+                                {row.confidence === 'medium' && (
+                                  <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: 'var(--gold)', border: '1px solid rgba(201,168,76,0.3)', fontWeight: 700 }}>
+                                    Fuzzy Match
+                                  </span>
+                                )}
+                                {isUnmatched && (
+                                  <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                    <AlertCircle size={10} /> Unmatched
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                {row.parsedTeam || '—'}
+                              </td>
+                              <td>
+                                <select
+                                  className="editable-input"
+                                  style={{
+                                    width: '100%',
+                                    fontSize: '0.75rem',
+                                    padding: '3px 6px',
+                                    background: 'var(--bg-card)',
+                                    borderColor: isUnmatched ? 'rgba(239, 68, 68, 0.5)' : undefined
+                                  }}
+                                  value={row.matchedTeamId || ''}
+                                  onChange={(e) => {
+                                    const selectedId = e.target.value;
+                                    const matched = activeTeamRegs.find(t => t.teamId === selectedId);
+                                    setSmartImportRows(prev => prev.map(r =>
+                                      r.id === row.id
+                                        ? {
+                                            ...r,
+                                            matchedTeamId: selectedId || null,
+                                            matchedTeamName: matched ? matched.teamName : 'Unmatched',
+                                            confidence: selectedId ? 'high' : 'none'
+                                          }
+                                        : r
+                                    ));
+                                  }}
+                                >
+                                  <option value="">[ Unmatched / Skip Team ]</option>
+                                  {activeTeamRegs.map(t => (
+                                    <option key={t.teamId} value={t.teamId}>
+                                      {t.teamName} {t.clanName ? `[${t.clanName}]` : ''} {t.slot ? `(Slot ${t.slot})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td style={{ fontFamily: 'var(--font-mono)' }}>
+                                {row.parsedSlot || '—'}
+                              </td>
+                              {smartImportSelectedLobbies.map(l => {
+                                const stat = row.stats?.[l];
+                                const hasPos = stat?.placement !== null && stat?.placement !== undefined;
+                                const hasKills = stat?.kills !== null && stat?.kills !== undefined;
+                                return (
+                                  <td key={l} style={{ fontFamily: 'var(--font-mono)' }}>
+                                    {hasPos || hasKills ? (
+                                      <span>
+                                        <strong style={{ color: 'var(--text-primary)' }}>
+                                          {hasPos ? (stat.placement === 1 ? '🏆 1st' : `#${stat.placement}`) : '—'}
+                                        </strong>{' '}
+                                        <span style={{ color: lc(l).text, fontWeight: 700 }}>
+                                          ({hasKills ? `${stat.kills}k` : '—'})
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
