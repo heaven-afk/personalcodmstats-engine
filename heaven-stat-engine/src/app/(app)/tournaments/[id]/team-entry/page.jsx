@@ -10,11 +10,15 @@ import { computeDailyStandings } from '@/lib/engine/standings';
 import { getPlacementPoints } from '@/lib/engine/scoring';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
-import { Save, Plus, Trash2, ChevronDown, ChevronUp, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Lock, Unlock } from 'lucide-react';
-import { getAllSheetsAsCSV } from '@/lib/importers/csvParser';
+import {
+  Save, Plus, Trash2, ChevronDown, ChevronUp, Upload, X, Check,
+  FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle,
+  AlertTriangle, Lock, Unlock, Sliders, RefreshCw
+} from 'lucide-react';
+import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 import { matchOcrRowToTeam } from '@/lib/importers/ocrTeamMatcher';
-import { cleanTeamName } from '@/lib/utils/similarity';
+import { cleanTeamName, stringSimilarity } from '@/lib/utils/similarity';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig } from '@/lib/utils/mapConfig';
 import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
@@ -31,33 +35,457 @@ const LOBBY_COLORS = [
 ];
 const lc = (n) => LOBBY_COLORS[(n - 1) % LOBBY_COLORS.length];
 
-// ─── Team Paste Parser ────────────────────────────────────────────────────────
-function parseTeamEntryPaste(text, teamRegs, lobbiesCount) {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  if (lines.length === 0) return { results: [], errors: [] };
-
-  // Determine delimiter
-  const delimiter = lines[0].includes('\t') ? '\t' : (lines[0].includes(',') ? ',' : (lines[0].includes(';') ? ';' : ' '));
-  const grid = lines.map(line => line.split(delimiter).map(c => c.trim()));
-
-  const firstRow = grid[0];
-  const hasHeader = firstRow.some(cell => {
-    const c = cell.toLowerCase();
-    return c.includes('team') || c.includes('pos') || c.includes('kill') || c.includes('lobby') || c.includes('match') || c.includes('place');
-  });
-
-  let dataRows = grid;
-  let headers = null;
-
-  if (hasHeader) {
-    headers = firstRow;
-    dataRows = grid.slice(1);
+// ─── Smart Team Spreadsheet Parser ───────────────────────────────────────────
+function parseSmartTeamSpreadsheet(grid, customConfig = null) {
+  if (!grid || grid.length === 0) {
+    return { lobbies: [], rows: [], columnMappings: {}, config: null };
   }
 
-  const results = [];
-  const errors = [];
+  const maxCols = grid.reduce((max, row) => Math.max(max, (row || []).length), 0);
 
-  for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+  // If custom configuration is provided by the user
+  if (customConfig && typeof customConfig === 'object') {
+    const teamCol = customConfig.teamCol !== undefined ? parseInt(customConfig.teamCol) : 0;
+    const slotCol = customConfig.slotCol !== undefined ? parseInt(customConfig.slotCol) : -1;
+    const startRowIndex = Math.max(0, customConfig.startRowIndex !== undefined ? parseInt(customConfig.startRowIndex) : 1);
+    const lobbies = customConfig.lobbies || {};
+
+    const parsedRows = [];
+    for (let r = startRowIndex; r < grid.length; r++) {
+      const rowData = grid[r];
+      if (!rowData || rowData.length === 0) continue;
+
+      const rawTeam = teamCol !== -1 && teamCol < rowData.length ? String(rowData[teamCol] || '').trim() : '';
+      const tLower = rawTeam.toLowerCase();
+      if (
+        !rawTeam ||
+        rawTeam === '0' ||
+        tLower === 'team' ||
+        tLower === 'team name' ||
+        tLower === 'teams' ||
+        tLower === 'clan' ||
+        tLower === 'total' ||
+        tLower === 'rank' ||
+        tLower === 'standing'
+      ) {
+        continue;
+      }
+
+      const teamName = cleanTeamName(rawTeam);
+      const slot = slotCol !== -1 && slotCol < rowData.length ? String(rowData[slotCol] || '').trim() : '';
+
+      const stats = {};
+      Object.entries(lobbies).forEach(([lobbyNum, cols]) => {
+        const pCol = parseInt(cols.placementCol);
+        const kCol = parseInt(cols.killsCol);
+
+        const placeVal = pCol !== -1 && pCol < rowData.length ? rowData[pCol] : '';
+        const killsVal = kCol !== -1 && kCol < rowData.length ? rowData[kCol] : '';
+
+        const placement = placeVal !== '' && !isNaN(placeVal) ? parseInt(placeVal) : null;
+        const kills = killsVal !== '' && !isNaN(killsVal) ? parseInt(killsVal) : null;
+
+        stats[lobbyNum] = { placement, kills };
+      });
+
+      parsedRows.push({
+        parsedTeam: teamName,
+        parsedSlot: slot,
+        stats,
+      });
+    }
+
+    const lobbyList = Object.keys(lobbies).map(Number).sort((a, b) => a - b);
+    return {
+      lobbies: lobbyList,
+      rows: parsedRows,
+      columnMappings: lobbies,
+      config: {
+        teamCol,
+        slotCol,
+        startRowIndex,
+        lobbies
+      }
+    };
+  }
+
+  // Auto-detection mode: find row containing team or lobby headers
+  let headerRowIndex = -1;
+  let subheaderRowIndex = -1;
+
+  for (let r = 0; r < Math.min(grid.length, 15); r++) {
+    const row = grid[r] || [];
+    const hasTeam = row.some(cell => {
+      const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return clean === 'teamname' || clean === 'team' || clean === 'clan' || clean === 'teams' || clean === 'org' || clean === 'squad';
+    });
+    if (hasTeam) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    for (let r = 0; r < Math.min(grid.length, 15); r++) {
+      const row = grid[r] || [];
+      const hasHeaderCell = row.some(cell => {
+        const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return (
+          clean === 'slot' ||
+          clean === 'clan' ||
+          clean.startsWith('lobby') ||
+          clean.startsWith('game') ||
+          clean.startsWith('match') ||
+          (clean.startsWith('l') && /^\d+$/.test(clean.substring(1)))
+        );
+      });
+      if (hasHeaderCell) {
+        headerRowIndex = r;
+        break;
+      }
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    headerRowIndex = 0;
+  }
+
+  const nextRow = grid[headerRowIndex + 1] || [];
+  const hasSubheaders = nextRow.some(cell => {
+    const cleanSub = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return (
+      cleanSub.includes('pos') ||
+      cleanSub.includes('place') ||
+      cleanSub.includes('placement') ||
+      cleanSub.includes('rank') ||
+      cleanSub.includes('position') ||
+      cleanSub.includes('kills') ||
+      cleanSub.includes('kill') ||
+      cleanSub.includes('pts') ||
+      cleanSub.includes('points') ||
+      cleanSub.startsWith('lobby') ||
+      cleanSub.startsWith('game') ||
+      cleanSub.startsWith('match') ||
+      (cleanSub.startsWith('l') && /^\d+$/.test(cleanSub.substring(1)))
+    );
+  });
+  if (hasSubheaders) {
+    subheaderRowIndex = headerRowIndex + 1;
+  }
+
+  let superHeaderRowIndex = -1;
+  if (headerRowIndex > 0) {
+    const prevRow = grid[headerRowIndex - 1] || [];
+    const hasCategoryLabels = prevRow.some(cell => {
+      const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (
+        clean.includes('placement') ||
+        clean.includes('place') ||
+        clean.includes('pos') ||
+        clean.includes('rank') ||
+        clean.includes('kills') ||
+        clean.includes('kill') ||
+        clean.startsWith('lobby') ||
+        clean.startsWith('game') ||
+        clean.startsWith('match')
+      );
+    });
+    if (hasCategoryLabels) {
+      superHeaderRowIndex = headerRowIndex - 1;
+    }
+  }
+
+  const headerRow = grid[headerRowIndex] || [];
+  const subheaderRow = subheaderRowIndex !== -1 ? grid[subheaderRowIndex] : [];
+
+  let teamCol = -1;
+  let slotCol = -1;
+  const lobbies = {};
+
+  const checkTeam = (v) => v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || v === 'club' || v === 'teams' || v === 'squad';
+  const checkSlot = (v) => v === 'slot' || v === 'id' || v === 'no' || v === 'index' || v === 'slotno' || v === '#';
+
+  const getCategory = (clean) => {
+    if (
+      clean.includes('pos') ||
+      clean.includes('place') ||
+      clean.includes('placement') ||
+      clean.includes('rank') ||
+      clean.includes('position') ||
+      clean.includes('finish') ||
+      clean.includes('standing') ||
+      clean === 'p'
+    ) return 'placement';
+    if (
+      clean.includes('kills') ||
+      clean.includes('kill') ||
+      clean.includes('frag') ||
+      clean.includes('frags') ||
+      clean.includes('pts') ||
+      clean.includes('points') ||
+      clean === 'k'
+    ) return 'kills';
+    return null;
+  };
+
+  let lastTopLobbyNum = null;
+  let currentCategory = null;
+  let lastHeaderCategory = null;
+
+  for (let c = 0; c < maxCols; c++) {
+    const cellVal = String(headerRow[c] || '').trim();
+    const cleanVal = cellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const subCellVal = subheaderRowIndex !== -1 ? String(subheaderRow[c] || '').trim() : '';
+    const cleanSubVal = subCellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const superCellVal = superHeaderRowIndex !== -1 ? String(grid[superHeaderRowIndex][c] || '').trim() : '';
+    const cleanSuperVal = superCellVal.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    if (superHeaderRowIndex !== -1) {
+      const categoryFromSuper = getCategory(cleanSuperVal);
+      if (categoryFromSuper !== null) {
+        currentCategory = categoryFromSuper;
+      } else if (superCellVal !== '') {
+        currentCategory = null;
+      }
+    }
+
+    const headerCategoryMatch = getCategory(cleanVal);
+    if (headerCategoryMatch !== null) {
+      lastHeaderCategory = headerCategoryMatch;
+    } else if (cellVal !== '') {
+      const isLobby = cellVal.toLowerCase().includes('lobby') || cellVal.toLowerCase().includes('game') || cellVal.toLowerCase().includes('match') || /^l\s*\d+/i.test(cellVal);
+      const isTeamOrSlot = checkTeam(cleanVal) || checkSlot(cleanVal);
+      if (!isLobby && isTeamOrSlot) {
+        lastHeaderCategory = null;
+      }
+    }
+
+    if (checkTeam(cleanVal) || (subheaderRowIndex !== -1 && checkTeam(cleanSubVal))) {
+      if (teamCol === -1) {
+        teamCol = c;
+      }
+    } else if (checkSlot(cleanVal) || (subheaderRowIndex !== -1 && checkSlot(cleanSubVal))) {
+      if (slotCol === -1) {
+        slotCol = c;
+      }
+    }
+
+    const matchVal = (val) => {
+      const match = val.match(/lobby\s*(\d+)/i) || 
+                    val.match(/game\s*(\d+)/i) || 
+                    val.match(/match\s*(\d+)/i) || 
+                    val.match(/\bl\s*(\d+)/i);
+      return match ? parseInt(match[1]) : null;
+    };
+
+    const topLobbyMatch = matchVal(cellVal);
+    if (topLobbyMatch !== null) {
+      lastTopLobbyNum = topLobbyMatch;
+    } else if (cellVal !== '') {
+      const isStatCategory = getCategory(cleanVal) !== null;
+      const isTeamOrSlot = checkTeam(cleanVal) || checkSlot(cleanVal);
+      if (!isStatCategory && isTeamOrSlot) {
+        lastTopLobbyNum = null;
+      }
+    }
+
+    let lobbyNum = topLobbyMatch;
+    if (lobbyNum === null && subheaderRowIndex !== -1) {
+      lobbyNum = matchVal(subCellVal);
+    }
+    if (lobbyNum === null && lastTopLobbyNum !== null) {
+      const topIsStat = getCategory(cleanVal) !== null;
+      const subIsStat = getCategory(cleanSubVal) !== null;
+      if (cellVal === '' || topIsStat || subIsStat) {
+        lobbyNum = lastTopLobbyNum;
+      }
+    }
+
+    if (lobbyNum !== null) {
+      if (!lobbies[lobbyNum]) {
+        lobbies[lobbyNum] = { placementCol: -1, killsCol: -1 };
+      }
+
+      let category = null;
+      if (subheaderRowIndex !== -1 && getCategory(cleanSubVal) !== null) {
+        category = getCategory(cleanSubVal);
+      } else if (lastHeaderCategory !== null) {
+        category = lastHeaderCategory;
+      } else if (superHeaderRowIndex !== -1 && currentCategory !== null) {
+        category = currentCategory;
+      } else {
+        const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
+        category = getCategory(checkVal) || 'placement';
+      }
+
+      const isCarryForwardFromBlank = topLobbyMatch === null && cleanVal === '' && cleanSubVal === '';
+
+      if (category === 'kills') {
+        if (!isCarryForwardFromBlank || lobbies[lobbyNum].killsCol === -1) {
+          lobbies[lobbyNum].killsCol = c;
+        }
+      } else {
+        if (!isCarryForwardFromBlank || lobbies[lobbyNum].placementCol === -1) {
+          lobbies[lobbyNum].placementCol = c;
+        }
+      }
+    }
+  }
+
+  // Fallback for adjacent pairs [Pos, Kills, Pos, Kills] starting after teamCol
+  if (Object.keys(lobbies).length === 0) {
+    if (teamCol === -1) teamCol = 0;
+    let lCount = 1;
+    for (let c = teamCol + 1; c < maxCols; c += 2) {
+      lobbies[lCount] = {
+        placementCol: c,
+        killsCol: c + 1 < maxCols ? c + 1 : -1,
+      };
+      lCount++;
+    }
+  }
+
+  if (teamCol === -1) teamCol = 0;
+
+  const startRowIndex = Math.max(headerRowIndex, subheaderRowIndex) + 1;
+  const parsedRows = [];
+
+  for (let r = startRowIndex; r < grid.length; r++) {
+    const rowData = grid[r];
+    if (!rowData || rowData.length === 0) continue;
+
+    const rawTeam = String(rowData[teamCol] || '').trim();
+    const tLower = rawTeam.toLowerCase();
+    if (
+      !rawTeam ||
+      rawTeam === '0' ||
+      tLower === 'team' ||
+      tLower === 'team name' ||
+      tLower === 'teams' ||
+      tLower === 'clan' ||
+      tLower === 'total' ||
+      tLower === 'rank' ||
+      tLower === 'standing'
+    ) {
+      continue;
+    }
+
+    const teamName = cleanTeamName(rawTeam);
+    const slot = slotCol !== -1 && slotCol < rowData.length ? String(rowData[slotCol] || '').trim() : '';
+
+    const stats = {};
+    Object.entries(lobbies).forEach(([lobbyNum, cols]) => {
+      const placeVal = cols.placementCol !== -1 && cols.placementCol < rowData.length ? rowData[cols.placementCol] : '';
+      const killsVal = cols.killsCol !== -1 && cols.killsCol < rowData.length ? rowData[cols.killsCol] : '';
+
+      const placement = placeVal !== '' && !isNaN(placeVal) ? parseInt(placeVal) : null;
+      const kills = killsVal !== '' && !isNaN(killsVal) ? parseInt(killsVal) : null;
+
+      stats[lobbyNum] = { placement, kills };
+    });
+
+    parsedRows.push({
+      parsedTeam: teamName,
+      parsedSlot: slot,
+      stats,
+    });
+  }
+
+  // Ensure default lobby 1 exists if none detected
+  if (Object.keys(lobbies).length === 0) {
+    lobbies[1] = { placementCol: -1, killsCol: -1 };
+  }
+
+  return {
+    lobbies: Object.keys(lobbies).map(Number).sort((a, b) => a - b),
+    rows: parsedRows,
+    columnMappings: lobbies,
+    config: {
+      teamCol,
+      slotCol,
+      startRowIndex,
+      lobbies
+    }
+  };
+}
+
+// ─── Smart Team Matcher Utility ───────────────────────────────────────────
+function findBestTeamMatch(parsedTeam, parsedSlot, regs = []) {
+  if (!parsedTeam && !parsedSlot) {
+    return { matchedTeamId: null, matchedTeamName: 'Unmatched', confidence: 'none' };
+  }
+
+  const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const pTeamClean = cleanStr(parsedTeam);
+  const pSlotNum = parsedSlot ? parseInt(parsedSlot) : null;
+
+  // 1. Slot Number Match
+  if (pSlotNum && !isNaN(pSlotNum)) {
+    const slotMatch = regs.find(r => Number(r.slot) === pSlotNum);
+    if (slotMatch) {
+      return {
+        matchedTeamId: slotMatch.teamId,
+        matchedTeamName: slotMatch.teamName,
+        confidence: 'high',
+      };
+    }
+  }
+
+  // 2. Exact or Normalized Name Match
+  for (const reg of regs) {
+    const regTeamClean = cleanStr(reg.teamName);
+    const regClanClean = cleanStr(reg.clanName);
+    if (pTeamClean && (pTeamClean === regTeamClean || pTeamClean === regClanClean)) {
+      return {
+        matchedTeamId: reg.teamId,
+        matchedTeamName: reg.teamName,
+        confidence: 'high',
+      };
+    }
+  }
+
+  // 3. Substring Inclusion Match
+  for (const reg of regs) {
+    const regTeamClean = cleanStr(reg.teamName);
+    if (pTeamClean && regTeamClean && pTeamClean.length >= 3 && regTeamClean.length >= 3) {
+      if (pTeamClean.includes(regTeamClean) || regTeamClean.includes(pTeamClean)) {
+        return {
+          matchedTeamId: reg.teamId,
+          matchedTeamName: reg.teamName,
+          confidence: 'medium',
+        };
+      }
+    }
+  }
+
+  // 4. Fuzzy Similarity Match
+  let bestMatch = null;
+  let maxSim = 0;
+  for (const reg of regs) {
+    const regTeamClean = cleanStr(reg.teamName);
+    const sim = stringSimilarity(pTeamClean, regTeamClean);
+    if (sim > maxSim) {
+      maxSim = sim;
+      bestMatch = reg;
+    }
+  }
+
+  if (bestMatch && maxSim >= 0.70) {
+    return {
+      matchedTeamId: bestMatch.teamId,
+      matchedTeamName: bestMatch.teamName,
+      confidence: maxSim >= 0.85 ? 'high' : 'medium',
+    };
+  }
+
+  return {
+    matchedTeamId: null,
+    matchedTeamName: parsedTeam || 'Unmatched',
+    confidence: 'none',
+  };
+}
+
     const cols = dataRows[rowIndex];
     if (cols.length === 0 || !cols[0]) continue;
 
@@ -226,6 +654,46 @@ export default function TeamEntryPage() {
   const [sheetModal, setSheetModal] = useState(null);
   const [importingFile, setImportingFile] = useState(false);
 
+  // Smart Spreadsheet Import States
+  const [smartImportGrid, setSmartImportGrid] = useState(null);
+  const [smartImportConfig, setSmartImportConfig] = useState(null);
+  const [mappingDraft, setMappingDraft] = useState(null);
+  const [isEditingMapping, setIsEditingMapping] = useState(false);
+  const [smartImportRows, setSmartImportRows] = useState([]);
+  const [smartImportLobbies, setSmartImportLobbies] = useState([]);
+  const [smartImportSelectedLobbies, setSmartImportSelectedLobbies] = useState([]);
+  const [smartImportColumnMappings, setSmartImportColumnMappings] = useState({});
+  const [smartImportFileName, setSmartImportFileName] = useState('');
+  const [smartImportTargetDay, setSmartImportTargetDay] = useState(day);
+
+  // Sync smartImportTargetDay when day changes
+  useEffect(() => {
+    setSmartImportTargetDay(day);
+  }, [day]);
+
+  const isSmartImportActive = Boolean((smartImportGrid && smartImportGrid.length > 0) || smartImportRows.length > 0);
+
+  const availableColumns = useMemo(() => {
+    if (!smartImportGrid || smartImportGrid.length === 0) return [];
+    const maxCols = smartImportGrid.reduce((max, row) => Math.max(max, (row || []).length), 0);
+    const cols = [];
+    for (let c = 0; c < maxCols; c++) {
+      const headerSamples = [];
+      for (let r = 0; r < Math.min(smartImportGrid.length, 3); r++) {
+        const val = String(smartImportGrid[r]?.[c] || '').trim();
+        if (val && !headerSamples.includes(val)) {
+          headerSamples.push(val);
+        }
+      }
+      const sampleText = headerSamples.join(' / ');
+      cols.push({
+        index: c,
+        label: `Col ${c}${sampleText ? `: "${sampleText.length > 25 ? sampleText.substring(0, 25) + '...' : sampleText}"` : ' (empty)'}`
+      });
+    }
+    return cols;
+  }, [smartImportGrid]);
+
   // OCR States
   const [ocrQueue, setOcrQueue] = useState([]);
   const [ocrQueueActiveIndex, setOcrQueueActiveIndex] = useState(null);
@@ -265,14 +733,222 @@ export default function TeamEntryPage() {
   const { scoring = {} } = tournament;
   const { killPointValue = 2, placementPoints = [], bonusTypes = [] } = scoring;
 
+  const activeTeamRegs = useMemo(() => {
+    if (!selectedGroupId) return teamRegs;
+    return teamRegs.filter(r => r.groupId === selectedGroupId);
+  }, [teamRegs, selectedGroupId]);
+
+  const activeResults = useMemo(() => {
+    if (!selectedGroupId) return allResults;
+    return allResults.filter(r => r.groupId === selectedGroupId);
+  }, [allResults, selectedGroupId]);
+
+  const activeBonus = useMemo(() => {
+    if (!selectedGroupId) return allBonus;
+    return allBonus.filter(b => b.groupId === selectedGroupId);
+  }, [allBonus, selectedGroupId]);
+
+  // Smart Spreadsheet Processor
+  const handleProcessGrid = useCallback((grid, fileName) => {
+    if (!grid || grid.length === 0) {
+      toast.error('Failed to parse sheet data.');
+      return;
+    }
+
+    setSmartImportGrid(grid);
+    const { lobbies, rows, columnMappings, config } = parseSmartTeamSpreadsheet(grid);
+
+    if (rows.length === 0) {
+      const fallbackConfig = config || {
+        teamCol: 0,
+        slotCol: -1,
+        startRowIndex: 1,
+        lobbies: { 1: { placementCol: -1, killsCol: -1 } }
+      };
+      setSmartImportConfig(fallbackConfig);
+      setMappingDraft(fallbackConfig);
+      setSmartImportLobbies(Object.keys(fallbackConfig.lobbies).map(Number));
+      setSmartImportSelectedLobbies(Object.keys(fallbackConfig.lobbies).map(Number));
+      setSmartImportColumnMappings(fallbackConfig.lobbies || {});
+      setSmartImportRows([]);
+      setSmartImportFileName(fileName || 'Imported Spreadsheet');
+      setIsEditingMapping(true);
+      setShowPaste(false);
+      handleOcrClear();
+      toast('Could not automatically match all columns. Please map your spreadsheet columns below.', { icon: 'ℹ️' });
+      return;
+    }
+
+    const previewRows = rows.map((row, idx) => {
+      const match = findBestTeamMatch(row.parsedTeam, row.parsedSlot, activeTeamRegs);
+      return {
+        id: idx,
+        parsedTeam: row.parsedTeam,
+        parsedSlot: row.parsedSlot,
+        matchedTeamId: match ? match.matchedTeamId : null,
+        matchedTeamName: match ? match.matchedTeamName : 'Unmatched',
+        confidence: match ? match.confidence : 'none',
+        stats: row.stats
+      };
+    });
+
+    setSmartImportConfig(config);
+    setMappingDraft(config);
+    setSmartImportLobbies(lobbies);
+    setSmartImportSelectedLobbies(lobbies);
+    setSmartImportColumnMappings(columnMappings || {});
+    setSmartImportRows(previewRows);
+    setSmartImportFileName(fileName || 'Imported Spreadsheet');
+    setIsEditingMapping(false);
+    setShowPaste(false);
+    handleOcrClear();
+  }, [activeTeamRegs]);
+
+  const handleProcessPasteText = useCallback((textToProcess) => {
+    const raw = (textToProcess !== undefined ? textToProcess : pasteText).trim();
+    if (!raw) {
+      toast.error('Please paste some spreadsheet data first.');
+      return;
+    }
+
+    const delimiter = raw.includes('\t') ? '\t' : (raw.includes(',') ? ',' : (raw.includes(';') ? ';' : ' '));
+    const grid = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+      .filter(l => l.trim().length > 0)
+      .map(r => r.split(delimiter).map(cell => cell.trim()));
+
+    handleProcessGrid(grid, 'Pasted Data');
+  }, [pasteText, handleProcessGrid]);
+
+  const handleSaveAndReloadMapping = () => {
+    if (!smartImportGrid || smartImportGrid.length === 0) {
+      toast.error('No spreadsheet data loaded to reload.');
+      return;
+    }
+    if (!mappingDraft) return;
+
+    try {
+      const { lobbies, rows, columnMappings, config } = parseSmartTeamSpreadsheet(smartImportGrid, mappingDraft);
+      if (rows.length === 0) {
+        toast.error('No valid team records found with this mapping. Please verify the Start Row and Team Name column.');
+        return;
+      }
+
+      const previewRows = rows.map((row, idx) => {
+        const match = findBestTeamMatch(row.parsedTeam, row.parsedSlot, activeTeamRegs);
+        return {
+          id: idx,
+          parsedTeam: row.parsedTeam,
+          parsedSlot: row.parsedSlot,
+          matchedTeamId: match ? match.matchedTeamId : null,
+          matchedTeamName: match ? match.matchedTeamName : 'Unmatched',
+          confidence: match ? match.confidence : 'none',
+          stats: row.stats
+        };
+      });
+
+      setSmartImportConfig(config);
+      setSmartImportLobbies(lobbies);
+      setSmartImportSelectedLobbies(lobbies);
+      setSmartImportColumnMappings(columnMappings || {});
+      setSmartImportRows(previewRows);
+      setIsEditingMapping(false);
+      toast.success('Spreadsheet preview reloaded with updated column mappings!');
+    } catch (err) {
+      console.error('Failed to reload mapping:', err);
+      toast.error('Failed to reload mapping: ' + err.message);
+    }
+  };
+
+  const handleCancelSmartImport = () => {
+    setSmartImportGrid(null);
+    setSmartImportRows([]);
+    setSmartImportConfig(null);
+    setMappingDraft(null);
+    setIsEditingMapping(false);
+    setSmartImportFileName('');
+  };
+
+  const handleConfirmSmartImport = async () => {
+    if (!canEdit) {
+      toast.error('You do not have permission to edit this tournament');
+      return;
+    }
+    if (smartImportRows.length === 0) {
+      toast.error('No team rows to import.');
+      return;
+    }
+    if (smartImportSelectedLobbies.length === 0) {
+      toast.error('Please select at least one lobby to import.');
+      return;
+    }
+
+    setParsing(true);
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    try {
+      for (const row of smartImportRows) {
+        if (!row.matchedTeamId) continue;
+
+        for (const lobbyNum of smartImportSelectedLobbies) {
+          const lobbyStat = row.stats?.[lobbyNum];
+          if (!lobbyStat) continue;
+
+          const placement = lobbyStat.placement;
+          const kills = lobbyStat.kills;
+
+          if (placement === null && kills === null) continue;
+
+          const existing = allResults.find(r =>
+            r.teamId === row.matchedTeamId &&
+            Number(r.day) === Number(smartImportTargetDay) &&
+            Number(r.lobby) === Number(lobbyNum) &&
+            (selectedGroupId ? r.groupId === selectedGroupId : true)
+          );
+
+          if (existing) {
+            await updateTeamMatchResult(id, existing.id, {
+              placement: placement !== null ? placement : existing.placement,
+              kills: kills !== null ? kills : existing.kills,
+            });
+            updatedCount++;
+          } else {
+            await saveTeamMatchResult(id, {
+              teamId: row.matchedTeamId,
+              teamName: row.matchedTeamName || row.parsedTeam,
+              day: smartImportTargetDay,
+              lobby: lobbyNum,
+              placement: placement !== null ? placement : 0,
+              kills: kills !== null ? kills : 0,
+              reviveType: getReviveTypeForMatch(activeReviveConfig, smartImportTargetDay, lobbyNum),
+              ...(selectedGroupId ? { groupId: selectedGroupId } : {})
+            });
+            addedCount++;
+          }
+        }
+      }
+
+      toast.success(`Successfully imported Day ${smartImportTargetDay} results! Added ${addedCount}, updated ${updatedCount} records.`);
+      handleCancelSmartImport();
+      await refresh();
+    } catch (err) {
+      console.error('Failed to save imported smart results:', err);
+      toast.error('Failed to save imported results: ' + err.message);
+    } finally {
+      setParsing(false);
+    }
+  };
+
   const handleFlexibleMapChange = async (lobbyNum, newMap) => {
     if (!canEdit) return;
     const currentConfig = activeMapConfig || { mode: 'flexible', map: AVAILABLE_MAPS[0], schedule: {} };
+    const currentSchedule = currentConfig.schedule || {};
+    const key = `day${day}_lobby${lobbyNum}`;
     const updatedSchedule = {
-      ...(currentConfig.schedule || {}),
-      [`day${day}_lobby${lobbyNum}`]: newMap,
+      ...currentSchedule,
+      [key]: newMap,
     };
-    const updatedMapConfig = {
+    const updatedConfig = {
       ...currentConfig,
       mode: currentConfig.mode || 'flexible',
       schedule: updatedSchedule,
@@ -280,9 +956,9 @@ export default function TeamEntryPage() {
 
     try {
       if (isQualifier && selectedGroupId) {
-        await updateGroup(id, selectedGroupId, { mapConfig: updatedMapConfig });
+        await updateGroup(id, selectedGroupId, { mapConfig: updatedConfig });
       } else {
-        await updateTournament(id, { mapConfig: updatedMapConfig });
+        await updateTournament(id, { mapConfig: updatedConfig });
       }
       toast.success(`Day ${day} Lobby ${lobbyNum} Map set to ${newMap}`);
       await refresh();
@@ -293,10 +969,12 @@ export default function TeamEntryPage() {
 
   const handleFlexibleReviveChange = async (lobbyNum, newRevive) => {
     if (!canEdit) return;
-    const currentConfig = activeReviveConfig || { mode: 'flexible', reviveType: 'auto', schedule: {} };
+    const currentConfig = activeReviveConfig || { mode: 'flexible', defaultType: REVIVE_TYPES.GULAG_REDEPLOY, schedule: {} };
+    const currentSchedule = currentConfig.schedule || {};
+    const key = `day${day}_lobby${lobbyNum}`;
     const updatedSchedule = {
-      ...(currentConfig.schedule || {}),
-      [`day${day}_lobby${lobbyNum}`]: newRevive,
+      ...currentSchedule,
+      [key]: newRevive,
     };
     const updatedReviveConfig = {
       ...currentConfig,
@@ -478,35 +1156,44 @@ export default function TeamEntryPage() {
 
     setImportingFile(true);
     try {
-      const allSheets = await getAllSheetsAsCSV(file);
-      const names = Object.keys(allSheets);
-
-      if (names.length === 1) {
-        setPasteText(allSheets[names[0]]);
-        setIsOcrMode(false);
-        setOcrQueue([]);
-        toast.success(`Loaded "${names[0]}" sheet from spreadsheet`);
+      if (/\.csv$/i.test(file.name)) {
+        const text = await file.text();
+        const grid = parseCSVToGrid(text);
+        handleProcessGrid(grid, file.name);
       } else {
-        setSheetModal({ sheets: names, allSheets });
+        const names = await getSheetNames(file);
+        if (names.length === 1) {
+          const grid = await readExcelAsGrid(file, names[0]);
+          handleProcessGrid(grid, `${file.name} (${names[0]})`);
+        } else {
+          setSheetModal({ file, sheets: names, fileName: file.name });
+        }
       }
     } catch (err) {
+      console.error('Failed to read file:', err);
       toast.error('Failed to read file: ' + err.message);
     } finally {
       setImportingFile(false);
     }
   };
 
-  const handleSheetSelect = (sheetName) => {
+  const handleSheetSelect = async (sheetName) => {
     if (!canEdit) {
       toast.error('You do not have permission to edit this tournament');
       return;
     }
-    if (!sheetModal) return;
-    setPasteText(sheetModal.allSheets[sheetName]);
-    setIsOcrMode(false);
-    setOcrQueue([]);
-    toast.success(`Loaded "${sheetName}" sheet from spreadsheet`);
-    setSheetModal(null);
+    if (!sheetModal?.file) return;
+    try {
+      setImportingFile(true);
+      const grid = await readExcelAsGrid(sheetModal.file, sheetName);
+      handleProcessGrid(grid, `${sheetModal.fileName} (${sheetName})`);
+      setSheetModal(null);
+    } catch (err) {
+      console.error('Failed to read selected sheet:', err);
+      toast.error('Failed to read sheet: ' + err.message);
+    } finally {
+      setImportingFile(false);
+    }
   };
 
   const handleOcrFileChange = (e) => {
@@ -1249,36 +1936,609 @@ export default function TeamEntryPage() {
                   </div>
                 </div>
 
-                {/* Live Parser Preview */}
-                {!isOcrMode && parsedPreview.length > 0 && (
-                  <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
-                      Previewing Parsed Results ({parsedPreview.length} teams mapped):
+                {!isOcrMode && pasteText.trim() && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleProcessPasteText(pasteText)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                    >
+                      <ClipboardPaste size={14} /> Process Pasted Data
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setPasteText('')}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                {/* ── Smart Team Spreadsheet Import Preview & Column Mapping Interface ── */}
+                {!isOcrMode && isSmartImportActive && (
+                  <div className="card" style={{
+                    marginTop: 16,
+                    border: '2px solid var(--border-gold)',
+                    background: 'var(--bg-card)',
+                    padding: '18px 20px',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                    borderRadius: 12
+                  }}>
+                    {/* Header & Controls */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                      borderBottom: '1px solid var(--border)',
+                      paddingBottom: 14,
+                      marginBottom: 16
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontWeight: 800,
+                            fontSize: '1rem',
+                            color: 'var(--gold)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                          }}>
+                            <FileSpreadsheet size={18} />
+                            Spreadsheet Import Preview: {smartImportFileName}
+                          </span>
+                          <span className="badge badge-gold" style={{ fontSize: '0.72rem' }}>
+                            {smartImportRows.length} Teams Detected
+                          </span>
+                          <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
+                            {smartImportLobbies.length} Lobbies Detected
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
+                          Review matched teams and lobby stats. You can edit column mappings to customize which columns map to placement and kills.
+                        </p>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            if (!isEditingMapping && !mappingDraft && smartImportConfig) {
+                              setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                            }
+                            setIsEditingMapping(prev => !prev);
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                        >
+                          <Sliders size={14} />
+                          {isEditingMapping ? 'Hide Column Mapping' : 'Edit Column Mapping'}
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={handleCancelSmartImport}
+                          disabled={parsing}
+                        >
+                          Cancel Import
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--border-md)', borderRadius: 'var(--r-sm)' }}>
+
+                    {/* Lobby Selection checklist & Mapped Columns Summary */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
+                      padding: '12px 14px',
+                      background: 'var(--bg-alt-row)',
+                      borderRadius: 8,
+                      marginBottom: 16
+                    }}>
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                          Lobbies to Import:
+                        </span>
+                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                          {smartImportLobbies.length === 0 ? (
+                            <span style={{ fontSize: '0.8rem', color: '#EF4444', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              ⚠️ No Lobby columns were mapped! Please edit column mappings below.
+                            </span>
+                          ) : (
+                            smartImportLobbies.map(l => (
+                              <label key={l} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                color: 'var(--text-primary)',
+                                fontWeight: 600
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={smartImportSelectedLobbies.includes(l)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSmartImportSelectedLobbies(prev => [...prev, l].sort((a,b) => a - b));
+                                    } else {
+                                      setSmartImportSelectedLobbies(prev => prev.filter(x => x !== l));
+                                    }
+                                  }}
+                                />
+                                <span style={{ color: lc(l).text }}>Lobby {l}</span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      {Object.keys(smartImportColumnMappings).length > 0 && (
+                        <div style={{
+                          fontSize: '0.72rem',
+                          color: 'var(--text-secondary)',
+                          borderTop: '1px solid var(--border-md)',
+                          paddingTop: 6,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: 8
+                        }}>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600 }}>Mapped Columns:</span>
+                            {Object.entries(smartImportColumnMappings).map(([l, cols]) => (
+                              <span key={l} style={{ background: 'var(--bg-card)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-md)' }}>
+                                L{l} (Pos: col {cols.placementCol === -1 || cols.placementCol === undefined ? 'None' : cols.placementCol}, Kills: col {cols.killsCol === -1 || cols.killsCol === undefined ? 'None' : cols.killsCol})
+                              </span>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => {
+                              if (!isEditingMapping && !mappingDraft && smartImportConfig) {
+                                setMappingDraft(JSON.parse(JSON.stringify(smartImportConfig)));
+                              }
+                              setIsEditingMapping(prev => !prev);
+                            }}
+                            style={{ fontSize: '0.72rem', color: 'var(--gold)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          >
+                            <Sliders size={12} /> {isEditingMapping ? 'Close Editor' : 'Edit Columns'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Collapsible Column Mapping Editor Panel ── */}
+                    {isEditingMapping && (
+                      <div style={{
+                        background: 'var(--bg-alt-row)',
+                        border: '1px solid var(--border-gold)',
+                        borderRadius: 8,
+                        padding: '16px 18px',
+                        marginBottom: 18,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
+                          <div>
+                            <h4 style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--gold)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <Sliders size={16} /> Column Mapping Configuration
+                            </h4>
+                            <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                              Select which spreadsheet columns map to team info and tournament lobby statistics.
+                            </p>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={handleSaveAndReloadMapping}
+                              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem' }}
+                            >
+                              <RefreshCw size={13} /> Save & Reload Preview
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => setIsEditingMapping(false)}
+                              style={{ fontSize: '0.78rem' }}
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Section 1: Team & Row Settings */}
+                        <div>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            1. Team & Row Settings
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                            {/* Data Starts at Row */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                                Data Starts At Row:
+                              </label>
+                              <select
+                                className="form-input"
+                                style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                                value={mappingDraft?.startRowIndex ?? 1}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  setMappingDraft(prev => ({ ...prev, startRowIndex: val }));
+                                }}
+                              >
+                                {smartImportGrid && Array.from({ length: Math.min(smartImportGrid.length, 12) }, (_, i) => {
+                                  const previewText = (smartImportGrid[i] || []).filter(Boolean).slice(0, 3).join(' | ');
+                                  return (
+                                    <option key={i} value={i}>
+                                      Row {i + 1}{previewText ? ` (${previewText.length > 25 ? previewText.substring(0, 25) + '...' : previewText})` : ''}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            {/* Team Name Column */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                                Team Name / Clan Column <span style={{ color: 'var(--gold)' }}>*</span>:
+                              </label>
+                              <select
+                                className="form-input"
+                                style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                                value={mappingDraft?.teamCol ?? 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  setMappingDraft(prev => ({ ...prev, teamCol: val }));
+                                }}
+                              >
+                                {availableColumns.map(col => (
+                                  <option key={col.index} value={col.index}>{col.label}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Slot Column */}
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                                Slot Column (Optional):
+                              </label>
+                              <select
+                                className="form-input"
+                                style={{ width: '100%', fontSize: '0.78rem', padding: '5px 8px', background: 'var(--bg-card)' }}
+                                value={mappingDraft?.slotCol ?? -1}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  setMappingDraft(prev => ({ ...prev, slotCol: val }));
+                                }}
+                              >
+                                <option value="-1">[ None / Not in Sheet ]</option>
+                                {availableColumns.map(col => (
+                                  <option key={col.index} value={col.index}>{col.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Section 2: Lobby Placement & Kill Column Settings */}
+                        <div style={{ borderTop: '1px solid var(--border-md)', paddingTop: 14 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              2. Lobby Placement & Kills Columns
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-xs"
+                              onClick={() => {
+                                setMappingDraft(prev => {
+                                  const currentLobbies = { ...(prev?.lobbies || {}) };
+                                  const nextLobbyNum = (Math.max(0, ...Object.keys(currentLobbies).map(Number)) || 0) + 1;
+                                  currentLobbies[nextLobbyNum] = { placementCol: -1, killsCol: -1 };
+                                  return { ...prev, lobbies: currentLobbies };
+                                });
+                              }}
+                              style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Plus size={12} /> Add Lobby
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                            {mappingDraft?.lobbies && Object.entries(mappingDraft.lobbies).map(([lobbyNum, cols]) => (
+                              <div
+                                key={lobbyNum}
+                                style={{
+                                  background: 'var(--bg-card)',
+                                  border: '1px solid var(--border-md)',
+                                  borderRadius: 8,
+                                  padding: '10px 12px'
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <span style={{ fontWeight: 700, fontSize: '0.8rem', color: lc(Number(lobbyNum)).text }}>
+                                    Lobby {lobbyNum}
+                                  </span>
+                                  {Object.keys(mappingDraft.lobbies).length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setMappingDraft(prev => {
+                                          const updated = { ...prev.lobbies };
+                                          delete updated[lobbyNum];
+                                          return { ...prev, lobbies: updated };
+                                        });
+                                      }}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 0 }}
+                                      title={`Remove Lobby ${lobbyNum}`}
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                  <div>
+                                    <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>
+                                      Placement / Rank Column:
+                                    </label>
+                                    <select
+                                      className="form-input"
+                                      style={{ width: '100%', fontSize: '0.72rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
+                                      value={cols.placementCol ?? -1}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        setMappingDraft(prev => ({
+                                          ...prev,
+                                          lobbies: {
+                                            ...prev.lobbies,
+                                            [lobbyNum]: { ...prev.lobbies[lobbyNum], placementCol: val }
+                                          }
+                                        }));
+                                      }}
+                                    >
+                                      <option value="-1">[ None / Not Played ]</option>
+                                      {availableColumns.map(col => (
+                                        <option key={col.index} value={col.index}>{col.label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>
+                                      Kills Column:
+                                    </label>
+                                    <select
+                                      className="form-input"
+                                      style={{ width: '100%', fontSize: '0.72rem', padding: '3px 6px', background: 'var(--bg-alt-row)' }}
+                                      value={cols.killsCol ?? -1}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        setMappingDraft(prev => ({
+                                          ...prev,
+                                          lobbies: {
+                                            ...prev.lobbies,
+                                            [lobbyNum]: { ...prev.lobbies[lobbyNum], killsCol: val }
+                                          }
+                                        }));
+                                      }}
+                                    >
+                                      <option value="-1">[ None / Not Played ]</option>
+                                      {availableColumns.map(col => (
+                                        <option key={col.index} value={col.index}>{col.label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => setIsEditingMapping(false)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={handleSaveAndReloadMapping}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                          >
+                            <RefreshCw size={13} /> Save & Reload Preview
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Target Day & Import Actions Bar */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                      padding: '12px 14px',
+                      background: 'var(--bg-alt-row)',
+                      borderRadius: 8,
+                      marginBottom: 14
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                          Import Destination:
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Target Day:</span>
+                          <select
+                            className="form-select"
+                            style={{ margin: 0, padding: '3px 8px', fontSize: '0.8rem', width: 90 }}
+                            value={smartImportTargetDay}
+                            onChange={e => setSmartImportTargetDay(Number(e.target.value))}
+                          >
+                            {Array.from({ length: totalDays }, (_, i) => i + 1).map(d => (
+                              <option key={d} value={d}>Day {d}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {hasGroups && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Target Group:</span>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gold)' }}>
+                              {selectedGroup?.groupName || 'Default Group'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={handleConfirmSmartImport}
+                          disabled={parsing || smartImportRows.filter(r => r.matchedTeamId).length === 0}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                        >
+                          {parsing ? (
+                            <>
+                              <LoadingSpinner size="sm" /> Importing...
+                            </>
+                          ) : (
+                            <>
+                              <Check size={14} /> Confirm & Import to Day {smartImportTargetDay}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Live Interactive Preview Table */}
+                    <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid var(--border-md)', borderRadius: 8 }}>
                       <table className="data-table" style={{ fontSize: '0.75rem', width: '100%' }}>
                         <thead>
                           <tr style={{ background: 'var(--bg-header)' }}>
-                            <th>Team</th>
-                            {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => (
-                              <th key={l}>L{l} Pos & Kills</th>
+                            <th style={{ width: 40 }}>#</th>
+                            <th style={{ width: 100 }}>Status</th>
+                            <th>Parsed Team Name</th>
+                            <th>Matched Registered Team</th>
+                            <th style={{ width: 70 }}>Slot</th>
+                            {smartImportSelectedLobbies.map(l => (
+                              <th key={l} style={{ color: lc(l).text }}>
+                                L{l} Pos & Kills
+                              </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {parsedPreview.map((item, idx) => (
-                            <tr key={idx}>
-                              <td style={{ fontWeight: 600 }}>{item.teamName}</td>
-                              {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => {
-                                const lv = item.lobbyValues.find(v => v.lobby === l);
-                                return (
-                                  <td key={l} style={{ fontFamily: 'var(--font-mono)' }}>
-                                    {lv ? `${lv.placement} place (${lv.kills} kills)` : '—'}
-                                  </td>
-                                );
-                              })}
+                          {smartImportRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={5 + smartImportSelectedLobbies.length} className="empty-row">
+                                No team rows found with this column mapping.
+                              </td>
                             </tr>
-                          ))}
+                          ) : (
+                            smartImportRows.map((row, idx) => {
+                              const isUnmatched = !row.matchedTeamId;
+                              return (
+                                <tr
+                                  key={row.id ?? idx}
+                                  style={{
+                                    background: isUnmatched ? 'rgba(239, 68, 68, 0.06)' : undefined
+                                  }}
+                                >
+                                  <td style={{ color: 'var(--text-muted)' }}>{idx + 1}</td>
+                                  <td>
+                                    {row.confidence === 'high' && (
+                                      <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 700 }}>
+                                        Matched
+                                      </span>
+                                    )}
+                                    {row.confidence === 'medium' && (
+                                      <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(201,168,76,0.15)', color: 'var(--gold)', border: '1px solid rgba(201,168,76,0.3)', fontWeight: 700 }}>
+                                        Fuzzy Match
+                                      </span>
+                                    )}
+                                    {isUnmatched && (
+                                      <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                        <AlertCircle size={10} /> Unmatched
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    {row.parsedTeam || '—'}
+                                  </td>
+                                  <td>
+                                    <select
+                                      className="editable-input"
+                                      style={{
+                                        width: '100%',
+                                        fontSize: '0.75rem',
+                                        padding: '3px 6px',
+                                        background: 'var(--bg-card)',
+                                        borderColor: isUnmatched ? 'rgba(239, 68, 68, 0.5)' : undefined
+                                      }}
+                                      value={row.matchedTeamId || ''}
+                                      onChange={(e) => {
+                                        const selectedId = e.target.value;
+                                        const matched = activeTeamRegs.find(t => t.teamId === selectedId);
+                                        setSmartImportRows(prev => prev.map(r =>
+                                          r.id === row.id
+                                            ? {
+                                                ...r,
+                                                matchedTeamId: selectedId || null,
+                                                matchedTeamName: matched ? matched.teamName : 'Unmatched',
+                                                confidence: selectedId ? 'high' : 'none'
+                                              }
+                                            : r
+                                        ));
+                                      }}
+                                    >
+                                      <option value="">[ Unmatched / Skip Team ]</option>
+                                      {activeTeamRegs.map(t => (
+                                        <option key={t.teamId} value={t.teamId}>
+                                          {t.teamName} {t.clanName ? `[${t.clanName}]` : ''} {t.slot ? `(Slot ${t.slot})` : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td style={{ fontFamily: 'var(--font-mono)' }}>
+                                    {row.parsedSlot || '—'}
+                                  </td>
+                                  {smartImportSelectedLobbies.map(l => {
+                                    const stat = row.stats?.[l];
+                                    const hasPos = stat?.placement !== null && stat?.placement !== undefined;
+                                    const hasKills = stat?.kills !== null && stat?.kills !== undefined;
+                                    return (
+                                      <td key={l} style={{ fontFamily: 'var(--font-mono)' }}>
+                                        {hasPos || hasKills ? (
+                                          <span>
+                                            <strong style={{ color: 'var(--text-primary)' }}>
+                                              {hasPos ? (stat.placement === 1 ? '🏆 1st' : `#${stat.placement}`) : '—'}
+                                            </strong>{' '}
+                                            <span style={{ color: lc(l).text, fontWeight: 700 }}>
+                                              ({hasKills ? `${stat.kills}k` : '—'})
+                                            </span>
+                                          </span>
+                                        ) : (
+                                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })
+                          )}
                         </tbody>
                       </table>
                     </div>
