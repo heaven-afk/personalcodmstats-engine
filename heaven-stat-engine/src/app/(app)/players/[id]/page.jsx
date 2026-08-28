@@ -2,7 +2,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPlayer, updatePlayer } from '@/lib/firestore/registry';
+import { usePlayer } from './layout';
+import { updatePlayer } from '@/lib/firestore/registry';
 import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getGroups } from '@/lib/firestore/groups';
@@ -50,8 +51,8 @@ export default function PlayerProfilePage() {
   const { id } = useParams();
   const router = useRouter();
   const { isOwner } = useAuth();
+  const { player, setPlayer } = usePlayer();
 
-  const [player, setPlayer] = useState(null);
   const [history, setHistory] = useState([]);
   const [careerStats, setCareerStats] = useState({
     kills: 0,
@@ -65,23 +66,13 @@ export default function PlayerProfilePage() {
   const [globalForm, setGlobalForm] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Photo Avatar Editing State
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
-  const [photoInputUrl, setPhotoInputUrl] = useState('');
+  const [photoInputUrl, setPhotoInputUrl] = useState(player?.photoUrl || '');
   const [savingPhoto, setSavingPhoto] = useState(false);
 
   useEffect(() => {
     async function loadPlayerProfile() {
       try {
-        const p = await getPlayer(id);
-        if (!p) {
-          toast.error('Player not found');
-          router.push('/players');
-          return;
-        }
-        setPlayer(p);
-        setPhotoInputUrl(p.photoUrl || '');
-
         // Fetch tournament data
         const allTourneys = await getTournaments();
 

@@ -133,6 +133,21 @@ const DEFINITIONS = {
     name: 'Fantasy Cost (Credits)',
     measures: 'Player salary valuation (10–40 credits) calibrated from 60% career KPM and 40% rolling Global Form.',
     interpretation: 'Higher credit costs represent top-tier, high-fragging, and in-form slayers. Total team salary cap is 100 credits for a 4-player roster.'
+  },
+  player_influence: {
+    name: 'Player Influence (0–10)',
+    measures: 'A composite score measuring how much a team performs better when this player is present versus absent across duo/trio/squad matches. Built from four components: Positional Finish (placement uplift), Team Kills (kill-rate uplift), Kills Contribution, and Damage Contribution.',
+    interpretation: 'Scores below 3 indicate Low Influence — the team performs similarly with or without the player. 3–6 is Moderate, 6–8 is High, and 8+ is Elite. Requires at least 3 matches both with and without the player for a non-provisional result. Only applicable to duo/trio/squad matches — solo matches are excluded.'
+  },
+  kills_contribution: {
+    name: 'Kills Contribution (%)',
+    measures: 'The average share of team kills this player was responsible for across all duo/trio/squad matches played. Compared against the equal-share baseline (e.g. 25% for a 4-player team).',
+    interpretation: 'Above the baseline means the player pulls more than their equal share of kills. Below baseline means they contribute less than expected from equal distribution. The baseline shifts dynamically with actual team size.'
+  },
+  damage_contribution: {
+    name: 'Damage Contribution (%)',
+    measures: 'The average share of total team damage this player dealt across duo/trio/squad matches played. Compared against the equal-share baseline.',
+    interpretation: 'High damage contribution relative to the baseline indicates a player who creates consistent pressure even when kills may not reflect it. Note: team total damage may be estimated when not separately tracked.'
   }
 };
 
@@ -491,7 +506,22 @@ const ALIASES = {
   'cost (credits)': 'fantasy_cost',
   'credits': 'fantasy_cost',
   'player cost': 'fantasy_cost',
-  'salary': 'fantasy_cost'
+  'salary': 'fantasy_cost',
+
+  'player influence': 'player_influence',
+  'influence': 'player_influence',
+  'influence score': 'player_influence',
+  'player_influence': 'player_influence',
+
+  'kills contribution': 'kills_contribution',
+  'kill contribution': 'kills_contribution',
+  'kills_contribution': 'kills_contribution',
+  'kill share': 'kills_contribution',
+
+  'damage contribution': 'damage_contribution',
+  'damage_contribution': 'damage_contribution',
+  'dmg contribution': 'damage_contribution',
+  'damage share': 'damage_contribution'
 };
 
 export function getMetricDefinition(key) {
