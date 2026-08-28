@@ -567,9 +567,11 @@ function useSheetUpload(onImport) {
 }
 
 // ─── Team Registration Panel ─────────────────────────────────────────────────
+const INITIAL_TEAM_STATE = { slot: '', teamName: '', clanName: '', tier: '' };
+
 function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress, selectedGroupId, canEdit = true, isOwner = false }) {
   const [addingRow, setAddingRow] = useState(false);
-  const [newTeam, setNewTeam] = useState({ slot: '', teamName: '', clanName: '', tier: '' });
+  const [newTeam, setNewTeam] = useState(INITIAL_TEAM_STATE);
   const [teamSearch, setTeamSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -702,7 +704,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
           ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
         });
         toast.success(`${exact.teamName} linked and registered`);
-        setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
+        setNewTeam(INITIAL_TEAM_STATE);
         setAddingRow(false);
         setTeamSearch('');
         await onRefresh();
@@ -729,7 +731,7 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
       };
       setImportQueue([manualItem]);
       setShowImportPreview(true);
-      setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
+      setNewTeam(INITIAL_TEAM_STATE);
       setAddingRow(false);
       setTeamSearch('');
       return;
@@ -747,7 +749,9 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
         ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
       });
       toast.success(`${team.teamName} registered`);
-      setNewTeam({ slot: '', teamName: '', clanName: '', tier: '' });
+      setNewTeam(INITIAL_TEAM_STATE);
+      setAddingRow(false);
+      setTeamSearch('');
       setAddingRow(false);
       setTeamSearch('');
       await onRefresh();
@@ -898,7 +902,14 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
               >
                 <Upload size={13} /> {importing ? 'Importing…' : 'Upload CSV / Excel'}
               </button>
-              <button className="btn btn-primary btn-sm" onClick={() => setAddingRow(true)}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  setNewTeam(INITIAL_TEAM_STATE);
+                  setTeamSearch('');
+                  setAddingRow(true);
+                }}
+              >
                 <Plus size={13} /> Add Team
               </button>
             </>
@@ -949,6 +960,58 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
             </tr>
           </thead>
           <tbody>
+            {addingRow && (
+              <tr style={{ background: 'rgba(201,168,76,0.06)' }}>
+                <td><input className="editable-input" style={{ width: 50 }} placeholder="#" value={newTeam.slot} onChange={e => setNewTeam(p => ({ ...p, slot: e.target.value }))} /></td>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 180 }}
+                    placeholder="Team name..."
+                    value={newTeam.teamName}
+                    autoFocus
+                    onChange={e => {
+                      setNewTeam(p => ({ ...p, teamName: e.target.value }));
+                      setTeamSearch(e.target.value);
+                    }}
+                  />
+                  {exactMatch && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--cyan)', marginTop: 3, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                      onClick={() => { setNewTeam(p => ({ ...p, teamName: exactMatch.teamName, clanName: exactMatch.clanName })); setTeamSearch(''); }}>
+                      <Check size={10} /> Link existing: {exactMatch.teamName}
+                    </div>
+                  )}
+                  {!exactMatch && similarTeams.length > 0 && (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--gold)', marginTop: 4, padding: '4px 6px', background: 'rgba(201,168,76,0.05)', borderRadius: 6, border: '1px dashed rgba(201,168,76,0.15)' }}>
+                      <span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>⚠️ Similar team exists:</span>
+                      {similarTeams.slice(0, 2).map(t => (
+                        <div key={t.id} style={{ cursor: 'pointer', textDecoration: 'underline', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}
+                          onClick={() => { setNewTeam(p => ({ ...p, teamName: t.teamName, clanName: t.clanName })); setTeamSearch(''); }}>
+                          Link: {t.teamName}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td><input className="editable-input" style={{ width: 140 }} placeholder="Clan name..." value={newTeam.clanName} onChange={e => setNewTeam(p => ({ ...p, clanName: e.target.value }))} /></td>
+                <td><input className="editable-input" style={{ width: 100 }} placeholder="T1/T2..." value={newTeam.tier} onChange={e => setNewTeam(p => ({ ...p, tier: e.target.value }))} /></td>
+                <td style={{ display: 'flex', gap: 4 }}>
+                  <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving}>
+                    {saving ? '...' : <Check size={13} />}
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setAddingRow(false);
+                      setNewTeam(INITIAL_TEAM_STATE);
+                      setTeamSearch('');
+                    }}
+                  >
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            )}
             {registrations.length === 0 && !addingRow && (
               <tr><td colSpan={5} className="empty-row">No teams registered yet — add manually, upload, or paste a list</td></tr>
             )}
@@ -986,48 +1049,6 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
                 </td>
               </tr>
             ))}
-            {addingRow && (
-              <tr style={{ background: 'rgba(201,168,76,0.06)' }}>
-                <td><input className="editable-input" style={{ width: 50 }} placeholder="#" value={newTeam.slot} onChange={e => setNewTeam(p => ({ ...p, slot: e.target.value }))} /></td>
-                <td>
-                  <input
-                    className="editable-input"
-                    style={{ width: 180 }}
-                    placeholder="Team name..."
-                    value={newTeam.teamName}
-                    onChange={e => {
-                      setNewTeam(p => ({ ...p, teamName: e.target.value }));
-                      setTeamSearch(e.target.value);
-                    }}
-                  />
-                  {exactMatch && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--cyan)', marginTop: 3, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                      onClick={() => { setNewTeam(p => ({ ...p, teamName: exactMatch.teamName, clanName: exactMatch.clanName })); setTeamSearch(''); }}>
-                      <Check size={10} /> Link existing: {exactMatch.teamName}
-                    </div>
-                  )}
-                  {!exactMatch && similarTeams.length > 0 && (
-                    <div style={{ fontSize: '0.72rem', color: 'var(--gold)', marginTop: 4, padding: '4px 6px', background: 'rgba(201,168,76,0.05)', borderRadius: 6, border: '1px dashed rgba(201,168,76,0.15)' }}>
-                      <span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>⚠️ Similar team exists:</span>
-                      {similarTeams.slice(0, 2).map(t => (
-                        <div key={t.id} style={{ cursor: 'pointer', textDecoration: 'underline', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}
-                          onClick={() => { setNewTeam(p => ({ ...p, teamName: t.teamName, clanName: t.clanName })); setTeamSearch(''); }}>
-                          Link: {t.teamName}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td><input className="editable-input" style={{ width: 140 }} placeholder="Clan name..." value={newTeam.clanName} onChange={e => setNewTeam(p => ({ ...p, clanName: e.target.value }))} /></td>
-                <td><input className="editable-input" style={{ width: 100 }} placeholder="T1/T2..." value={newTeam.tier} onChange={e => setNewTeam(p => ({ ...p, tier: e.target.value }))} /></td>
-                <td style={{ display: 'flex', gap: 4 }}>
-                  <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving}>
-                    {saving ? '...' : <Check size={13} />}
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => setAddingRow(false)}>✕</button>
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
@@ -1130,9 +1151,22 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
 }
 
 // ─── Player Registration Panel ───────────────────────────────────────────────
+const INITIAL_PLAYER_STATE = {
+  slot: '',
+  professionalName: '',
+  ign: '',
+  teamName: '',
+  category: 'Registered',
+  gender: '',
+  region: '',
+  country: '',
+  device: '',
+  deviceModel: '',
+};
+
 function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistrations, globalPlayers, globalTeams, classes, onRefresh, setImportProgress, selectedGroupId, canEdit = true, isOwner = false }) {
   const [addingRow, setAddingRow] = useState(false);
-  const [newPlayer, setNewPlayer] = useState({ slot: '', professionalName: '', ign: '', teamName: '', category: 'Registered', gender: '', region: '', country: '', device: '', deviceModel: '' });
+  const [newPlayer, setNewPlayer] = useState(INITIAL_PLAYER_STATE);
   const [saving, setSaving] = useState(false);
   const [nameSearch, setNameSearch] = useState('');
 
@@ -1418,7 +1452,8 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
         ...(selectedGroupId ? { groupId: selectedGroupId } : {}),
       });
       toast.success(`${player.professionalName || player.ign} registered`);
-      setNewPlayer(p => ({ ...p, slot: '', professionalName: '', ign: '' }));
+      setNewPlayer(INITIAL_PLAYER_STATE);
+      setNameSearch('');
       setAddingRow(false);
       await onRefresh();
     } catch (e) { toast.error(e.message); }
@@ -1583,7 +1618,14 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
               >
                 <Upload size={13} /> {importing ? 'Importing…' : 'Upload CSV / Excel'}
               </button>
-              <button className="btn btn-primary btn-sm" onClick={() => setAddingRow(true)}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  setNewPlayer(INITIAL_PLAYER_STATE);
+                  setNameSearch('');
+                  setAddingRow(true);
+                }}
+              >
                 <Plus size={13} /> Add Player
               </button>
             </>
@@ -1634,6 +1676,142 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
             </tr>
           </thead>
           <tbody>
+            {addingRow && (
+              <tr style={{ background: 'rgba(201,168,76,0.06)' }}>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 130 }}
+                    placeholder="Pro name..."
+                    value={newPlayer.professionalName}
+                    autoFocus
+                    onChange={e => {
+                      setNewPlayer(p => ({ ...p, professionalName: e.target.value }));
+                      setNameSearch(e.target.value);
+                    }}
+                  />
+                  {matchedPlayer && (
+                    <div
+                      style={{ fontSize: '0.72rem', color: 'var(--cyan)', cursor: 'pointer', marginTop: 2 }}
+                      onClick={() => setNewPlayer(p => ({
+                        ...p,
+                        professionalName: matchedPlayer.professionalName,
+                        ign: matchedPlayer.ign,
+                        gender: matchedPlayer.gender || '',
+                        region: matchedPlayer.region || '',
+                        country: matchedPlayer.country || '',
+                        device: matchedPlayer.device || '',
+                        deviceModel: matchedPlayer.deviceModel || '',
+                      }))}
+                    >
+                      <Check size={9} /> Link: {matchedPlayer.professionalName}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 110 }}
+                    placeholder="IGN..."
+                    value={newPlayer.ign}
+                    onChange={e => setNewPlayer(p => ({ ...p, ign: e.target.value }))}
+                  />
+                </td>
+                <td>
+                  <select
+                    className="editable-input"
+                    style={{ width: 120 }}
+                    value={newPlayer.teamName}
+                    onChange={e => setNewPlayer(p => ({ ...p, teamName: e.target.value }))}
+                  >
+                    <option value="">— Team —</option>
+                    {teamRegistrations.map(t => <option key={t.id} value={t.teamName}>{t.teamName}</option>)}
+                  </select>
+                </td>
+                <td>
+                  <select
+                    className="editable-input"
+                    style={{ width: 110 }}
+                    value={newPlayer.category}
+                    onChange={e => setNewPlayer(p => ({ ...p, category: e.target.value }))}
+                  >
+                    <option value="Registered">Registered</option>
+                    <option value="Transferred In">Transferred In</option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 70 }}
+                    placeholder="Gender"
+                    value={newPlayer.gender}
+                    onChange={e => setNewPlayer(p => ({ ...p, gender: e.target.value }))}
+                  />
+                </td>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 80 }}
+                    placeholder="Region"
+                    value={newPlayer.region}
+                    onChange={e => setNewPlayer(p => ({ ...p, region: e.target.value }))}
+                    onBlur={e => {
+                      if (!e.target.value && newPlayer.country) {
+                        setNewPlayer(p => ({ ...p, region: deriveRegion(p.country) }));
+                      }
+                    }}
+                  />
+                </td>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 80 }}
+                    placeholder="Country"
+                    value={newPlayer.country}
+                    onChange={e => {
+                      const country = e.target.value;
+                      setNewPlayer(p => ({ ...p, country, region: p.region || deriveRegion(country) }));
+                    }}
+                  />
+                </td>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 80 }}
+                    placeholder="Device"
+                    value={newPlayer.device}
+                    onChange={e => setNewPlayer(p => ({ ...p, device: e.target.value }))}
+                  />
+                </td>
+                <td>
+                  <input
+                    className="editable-input"
+                    style={{ width: 90 }}
+                    placeholder="Model"
+                    value={newPlayer.deviceModel}
+                    onChange={e => {
+                      const model = e.target.value;
+                      setNewPlayer(p => ({ ...p, deviceModel: model, device: p.device || deriveDevice(model) }));
+                    }}
+                  />
+                </td>
+                <td style={{ display: 'flex', gap: 4 }}>
+                  <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving}>
+                    {saving ? '...' : <Check size={13} />}
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setAddingRow(false);
+                      setNewPlayer(INITIAL_PLAYER_STATE);
+                      setNameSearch('');
+                    }}
+                  >
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            )}
             {registrations.length === 0 && !addingRow && (
               <tr><td colSpan={playerCols.length} className="empty-row">No players registered yet — add manually, upload, or paste a list</td></tr>
             )}
@@ -1702,81 +1880,6 @@ function PlayerRegistrationPanel({ tournamentId, registrations, teamRegistration
                 </tr>
               );
             })}
-            {addingRow && (
-              <tr style={{ background: 'rgba(201,168,76,0.06)' }}>
-                <td>
-                  <input className="editable-input" style={{ width: 130 }} placeholder="Pro name..." value={newPlayer.professionalName}
-                    onChange={e => { setNewPlayer(p => ({ ...p, professionalName: e.target.value })); setNameSearch(e.target.value); }} />
-                  {matchedPlayer && (
-                    <div style={{ fontSize: '0.72rem', color: 'var(--cyan)', cursor: 'pointer', marginTop: 2 }}
-                      onClick={() => setNewPlayer(p => ({ ...p, professionalName: matchedPlayer.professionalName, ign: matchedPlayer.ign, gender: matchedPlayer.gender || '', region: matchedPlayer.region || '', country: matchedPlayer.country || '', device: matchedPlayer.device || '', deviceModel: matchedPlayer.deviceModel || '' }))}>
-                      <Check size={9} /> Link: {matchedPlayer.professionalName}
-                    </div>
-                  )}
-                </td>
-                <td><input className="editable-input" style={{ width: 110 }} placeholder="IGN..." value={newPlayer.ign} onChange={e => setNewPlayer(p => ({ ...p, ign: e.target.value }))} /></td>
-                <td>
-                  <select className="editable-input" style={{ width: 120 }} value={newPlayer.teamName} onChange={e => setNewPlayer(p => ({ ...p, teamName: e.target.value }))}>
-                    <option value="">— Team —</option>
-                    {teamRegistrations.map(t => <option key={t.id} value={t.teamName}>{t.teamName}</option>)}
-                  </select>
-                </td>
-                <td>
-                  <select className="editable-input" style={{ width: 110 }} value={newPlayer.category} onChange={e => setNewPlayer(p => ({ ...p, category: e.target.value }))}>
-                    <option value="Registered">Registered</option>
-                    <option value="Transferred In">Transferred In</option>
-                  </select>
-                </td>
-                <td><input className="editable-input" style={{ width: 70 }} placeholder="Gender" value={newPlayer.gender} onChange={e => setNewPlayer(p => ({ ...p, gender: e.target.value }))} /></td>
-                <td>
-                  <input
-                    className="editable-input"
-                    style={{ width: 80 }}
-                    placeholder="Region"
-                    value={newPlayer.region}
-                    onChange={e => setNewPlayer(p => ({ ...p, region: e.target.value }))}
-                    onBlur={e => { if (!e.target.value && newPlayer.country) setNewPlayer(p => ({ ...p, region: deriveRegion(p.country) })); }}
-                  />
-                </td>
-                <td>
-                  <input
-                    className="editable-input"
-                    style={{ width: 80 }}
-                    placeholder="Country"
-                    value={newPlayer.country}
-                    onChange={e => {
-                      const country = e.target.value;
-                      setNewPlayer(p => ({ ...p, country, region: p.region || deriveRegion(country) }));
-                    }}
-                  />
-                </td>
-                <td>
-                  <input
-                    className="editable-input"
-                    style={{ width: 80 }}
-                    placeholder="Device"
-                    value={newPlayer.device}
-                    onChange={e => setNewPlayer(p => ({ ...p, device: e.target.value }))}
-                  />
-                </td>
-                <td>
-                  <input
-                    className="editable-input"
-                    style={{ width: 90 }}
-                    placeholder="Model"
-                    value={newPlayer.deviceModel}
-                    onChange={e => {
-                      const model = e.target.value;
-                      setNewPlayer(p => ({ ...p, deviceModel: model, device: p.device || deriveDevice(model) }));
-                    }}
-                  />
-                </td>
-                <td style={{ display: 'flex', gap: 4 }}>
-                  <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving}>{saving ? '...' : <Check size={13} />}</button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => setAddingRow(false)}>✕</button>
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
