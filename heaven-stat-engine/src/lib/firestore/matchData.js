@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
+  collection, collectionGroup, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
   query, where, orderBy,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase';
@@ -71,6 +71,20 @@ export async function getTeamMatchResultsByGroup(tournamentId, groupId) {
 }
 
 // ─── Player Match Results ─────────────────────────────────────────────────────
+export async function getAllMatchResultsForPlayer(playerId) {
+  if (!isFirebaseConfigured) {
+    return localDb.localGetAllMatchResultsForPlayer(playerId);
+  }
+  const snap = await getDocs(
+    query(collectionGroup(db, 'playerMatchResults'), where('playerId', '==', playerId))
+  );
+  return snap.docs.map((d) => ({
+    id: d.id,
+    tournamentId: d.ref.parent?.parent?.id || '',
+    ...d.data(),
+  }));
+}
+
 export async function getPlayerMatchResults(tournamentId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetPlayerMatchResults(tournamentId);

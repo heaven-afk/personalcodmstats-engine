@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { usePlayer } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tournaments';
-import { getPlayerMatchResults, getTeamMatchResults } from '@/lib/firestore/matchData';
+import { getTournament, getAllRegistrationsForPlayer } from '@/lib/firestore/tournaments';
+import { getPlayerMatchResults, getTeamMatchResults, getAllMatchResultsForPlayer } from '@/lib/firestore/matchData';
 import { computePlayerInfluence } from '@/lib/engine/playerInfluence';
 import { computePlayerXGSummary } from '@/lib/engine/globalForm';
 import MetricTooltip from '@/components/ui/MetricTooltip';
@@ -99,29 +99,36 @@ export default function PlayerAnalysisPage() {
     if (!isOwner) return; // layout handles redirect, but guard here too
     async function load() {
       try {
-        const allTourneys = await getTournaments();
+        // 1. Fetch this player's registrations and match results directly across all tournaments
+        const [myPlayerRegs, myPlayerMatches] = await Promise.all([
+          getAllRegistrationsForPlayer(id),
+          getAllMatchResultsForPlayer(id),
+        ]);
 
-        // Fetch all match data across all tournaments in parallel
-        const [allPlayerRes, allTeamRes, allPlayerRegs] = await Promise.all([
-          Promise.all(allTourneys.map(t => getPlayerMatchResults(t.id))),
-          Promise.all(allTourneys.map(t => getTeamMatchResults(t.id))),
-          Promise.all(allTourneys.map(t => getPlayerRegistrations(t.id))),
+        // 2. Extract unique tournament IDs where this player registered
+        const tourneyIdSet = new Set();
+        myPlayerRegs.forEach(r => { if (r.tournamentId) tourneyIdSet.add(r.tournamentId); });
+        myPlayerMatches.forEach(m => { if (m.tournamentId) tourneyIdSet.add(m.tournamentId); });
+        const relevantTourneyIds = Array.from(tourneyIdSet);
+
+        // 3. Fetch tournaments, team results, and player results ONLY for relevant tournaments
+        const [relevantTourneys, allTeamRes, allPlayerRes] = await Promise.all([
+          Promise.all(relevantTourneyIds.map(tId => getTournament(tId))),
+          Promise.all(relevantTourneyIds.map(tId => getTeamMatchResults(tId))),
+          Promise.all(relevantTourneyIds.map(tId => getPlayerMatchResults(tId))),
         ]);
 
         const teamMatchHistory = [];
-        // flat list of this player's own match results with event dates (for xG)
         const playerMatchesForXG = [];
 
-        allTourneys.forEach((t, tIdx) => {
+        relevantTourneys.forEach((t, tIdx) => {
+          if (!t) return;
           const playerResults = allPlayerRes[tIdx] || [];
           const teamResults   = allTeamRes[tIdx]   || [];
-          const playerRegs    = allPlayerRegs[tIdx] || [];
 
-          // Find this player's registrations for this tournament
-          const myReg = playerRegs.find(r => r.playerId === id);
-          if (!myReg) return; // player didn't participate in this tournament
-
-          const myTeamId = myReg.teamId;
+          // Find this player's registration for this tournament
+          const myReg = myPlayerRegs.find(r => r.tournamentId === t.id);
+          const myTeamId = myReg?.teamId || playerResults.find(pr => pr.playerId === id)?.teamId;
           if (!myTeamId) return;
 
           // Resolve event date for xG decay

@@ -1,6 +1,6 @@
 import {
-  collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
-  query, orderBy, serverTimestamp, writeBatch,
+  collection, collectionGroup, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
+  query, where, orderBy, serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase';
 import * as localDb from './localStorageDb';
@@ -135,6 +135,20 @@ export async function deleteTeamRegistration(tournamentId, regId) {
 }
 
 // ─── Player Registrations ─────────────────────────────────────────────────────
+export async function getAllRegistrationsForPlayer(playerId) {
+  if (!isFirebaseConfigured) {
+    return localDb.localGetAllRegistrationsForPlayer(playerId);
+  }
+  const snap = await getDocs(
+    query(collectionGroup(db, 'playerRegistrations'), where('playerId', '==', playerId))
+  );
+  return snap.docs.map((d) => ({
+    id: d.id,
+    tournamentId: d.ref.parent?.parent?.id || '',
+    ...d.data(),
+  }));
+}
+
 export async function getPlayerRegistrations(tournamentId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetPlayerRegistrations(tournamentId);

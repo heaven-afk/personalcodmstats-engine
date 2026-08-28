@@ -9,18 +9,19 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "firebase": "^12.14.0",
     "firebase-admin": "11.11.1",
     "html2canvas": "^1.4.1",
     "lucide-react": "^1.18.0",
     "next": "16.2.9",
+    "nodemailer": "^6.9.13",
     "papaparse": "^5.5.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hot-toast": "^2.6.0",
     "recharts": "^3.8.1",
     "swr": "^2.4.2",
-    "nodemailer": "^6.9.13",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -663,3 +663,31 @@ export function localFindClanByName(clanName) {
   const name = clanName?.toLowerCase().trim();
   return clans.find((c) => c.clanName?.toLowerCase().trim() === name) || null;
 }
+
+export function localGetAllMatchResultsForPlayer(playerId) {
+  const tourneys = localGetTournaments();
+  const results = [];
+  tourneys.forEach((t) => {
+    const pResults = localGetPlayerMatchResults(t.id) || [];
+    pResults.forEach((r) => {
+      if (r.playerId === playerId) {
+        results.push({ tournamentId: t.id, ...r });
+      }
+    });
+  });
+  return results;
+}
+
+export function localGetAllRegistrationsForPlayer(playerId) {
+  const tourneys = localGetTournaments();
+  const results = [];
+  tourneys.forEach((t) => {
+    const pRegs = localGetPlayerRegistrations(t.id) || [];
+    pRegs.forEach((r) => {
+      if (r.playerId === playerId) {
+        results.push({ tournamentId: t.id, ...r });
+      }
+    });
+  });
+  return results;
+}

@@ -4,8 +4,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { usePlayer } from './layout';
 import { updatePlayer } from '@/lib/firestore/registry';
-import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tournaments';
-import { getPlayerMatchResults } from '@/lib/firestore/matchData';
+import { getTournament, getAllRegistrationsForPlayer } from '@/lib/firestore/tournaments';
+import { getAllMatchResultsForPlayer } from '@/lib/firestore/matchData';
 import { getGroups } from '@/lib/firestore/groups';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig, getMapForMatch } from '@/lib/utils/mapConfig';
@@ -73,23 +73,32 @@ export default function PlayerProfilePage() {
   useEffect(() => {
     async function loadPlayerProfile() {
       try {
-        // Fetch tournament data
-        const allTourneys = await getTournaments();
+        // 1. Single collection-group queries for this player's matches and registrations
+        const [playerMatches, playerRegs] = await Promise.all([
+          getAllMatchResultsForPlayer(id),
+          getAllRegistrationsForPlayer(id),
+        ]);
 
-        const tRegsPromises = allTourneys.map(t => getPlayerRegistrations(t.id));
-        const tResPromises = allTourneys.map(t => getPlayerMatchResults(t.id));
-        const tGroupsPromises = allTourneys.map(t => t.type === 'qualifier' ? getGroups(t.id) : Promise.resolve([]));
+        // 2. Identify only the specific tournaments this player actually participated in
+        const tourneyIdSet = new Set();
+        playerMatches.forEach(m => { if (m.tournamentId) tourneyIdSet.add(m.tournamentId); });
+        playerRegs.forEach(r => { if (r.tournamentId) tourneyIdSet.add(r.tournamentId); });
+        const tourneyIds = Array.from(tourneyIdSet);
 
-        const allRegs = await Promise.all(tRegsPromises);
-        const allRes = await Promise.all(tResPromises);
-        const allGroupsList = await Promise.all(tGroupsPromises);
+        // 3. Fetch only those specific tournaments (bounded by player history, not platform size)
+        const tournamentsList = (await Promise.all(tourneyIds.map(tId => getTournament(tId)))).filter(Boolean);
+
+        // 4. Fetch qualifier groups only for relevant tournaments that are qualifiers
+        const groupsResults = await Promise.all(
+          tournamentsList.map(t => t.type === 'qualifier' ? getGroups(t.id) : Promise.resolve([]))
+        );
 
         const playerMatchResultsByTournament = {};
-        allTourneys.forEach((tourney, idx) => {
-          playerMatchResultsByTournament[tourney.id] = allRes[idx] || [];
+        tournamentsList.forEach(t => {
+          playerMatchResultsByTournament[t.id] = playerMatches.filter(m => m.tournamentId === t.id);
         });
 
-        const gf = computePlayerGlobalForm(id, allTourneys, playerMatchResultsByTournament);
+        const gf = computePlayerGlobalForm(id, tournamentsList, playerMatchResultsByTournament);
         setGlobalForm(gf);
 
         const participationHistory = [];
@@ -101,15 +110,14 @@ export default function PlayerProfilePage() {
 
         const counts = { Isolated: 0, Blackout: 0, 'Rebirth Island': 0 };
 
-        allTourneys.forEach((t, i) => {
-          const regs = allRegs[i];
-          const res = allRes[i];
-          const gList = allGroupsList[i] || [];
+        tournamentsList.forEach((t, i) => {
+          const tMatches = playerMatches.filter(m => m.tournamentId === t.id);
+          const tReg = playerRegs.find(r => r.tournamentId === t.id);
+          const gList = groupsResults[i] || [];
           const gMap = Object.fromEntries(gList.map(g => [g.id, g]));
 
           // Per-map count for player
-          const playerMatches = res.filter(r => r.playerId === id);
-          playerMatches.forEach(m => {
+          tMatches.forEach(m => {
             const group = m.groupId ? gMap[m.groupId] : null;
             const mapConfig = getActiveMapConfig(t, group);
             const mapName = getMapForMatch(mapConfig, m.day, m.lobby);
@@ -118,17 +126,16 @@ export default function PlayerProfilePage() {
             }
           });
 
-          // Check if player registered
-          const reg = regs.find(r => r.playerId === id);
-          if (reg) {
-            const tKills = playerMatches.reduce((sum, m) => sum + (m.kills || 0), 0);
-            const tMatches = playerMatches.length;
-            const tDamage = playerMatches.reduce((sum, m) => sum + (m.damage || 0), 0);
-            const validAcc = playerMatches.filter(m => m.accuracy != null && m.accuracy > 0);
+          // Check if player registered or played
+          if (tReg || tMatches.length > 0) {
+            const tKills = tMatches.reduce((sum, m) => sum + (m.kills || 0), 0);
+            const tMatchCount = tMatches.length;
+            const tDamage = tMatches.reduce((sum, m) => sum + (m.damage || 0), 0);
+            const validAcc = tMatches.filter(m => m.accuracy != null && m.accuracy > 0);
             const tAccAvg = validAcc.length > 0 ? (validAcc.reduce((sum, m) => sum + m.accuracy, 0) / validAcc.length) : 0;
 
             totalKills += tKills;
-            totalMatches += tMatches;
+            totalMatches += tMatchCount;
             totalDamage += tDamage;
             if (tAccAvg > 0) {
               totalAccSum += tAccAvg;
@@ -142,13 +149,13 @@ export default function PlayerProfilePage() {
               status: t.status,
               isRanked: t.isRanked || false,
               rankedTier: t.rankedTier || null,
-              teamName: reg.teamName || '—',
-              class: reg.class || 'Class 1',
-              ign: reg.ign || p.ign,
+              teamName: tReg?.teamName || tMatches[0]?.teamName || '—',
+              class: tReg?.class || 'Class 1',
+              ign: tReg?.ign || player?.currentIGN || player?.ign || '—',
               kills: tKills,
-              matches: tMatches,
-              killsPerMatch: tMatches > 0 ? Math.round((tKills / tMatches) * 100) / 100 : 0,
-              avgDamage: tMatches > 0 ? Math.round(tDamage / tMatches) : 0,
+              matches: tMatchCount,
+              killsPerMatch: tMatchCount > 0 ? Math.round((tKills / tMatchCount) * 100) / 100 : 0,
+              avgDamage: tMatchCount > 0 ? Math.round(tDamage / tMatchCount) : 0,
               avgAccuracy: tAccAvg,
             });
           }
@@ -173,7 +180,7 @@ export default function PlayerProfilePage() {
     }
 
     loadPlayerProfile();
-  }, [id, router]);
+  }, [id, router, player]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
