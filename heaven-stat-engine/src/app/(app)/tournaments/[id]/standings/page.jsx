@@ -25,9 +25,7 @@ const BASE_TABS = [
   { key: 'season',     label: 'Season' },
   { key: 'teamRank',   label: 'Team Ranking' },
   { key: 'clanRank',   label: 'Clan Ranking' },
-  { key: 'set1',       label: 'Player Set 1' },
-  { key: 'set2',       label: 'Player Set 2' },
-  { key: 'combined',   label: 'Combined' },
+  { key: 'players',    label: 'Player Standings' },
   { key: 'details',    label: 'Details' },
   { key: 'byMap',      label: 'By Map' },
 ];
@@ -74,6 +72,7 @@ export default function StandingsPage() {
   const [tab, setTab] = useState('daily');
   const [selectedDay, setSelectedDay] = useState(1);
   const [selectedMapSubTab, setSelectedMapSubTab] = useState(AVAILABLE_MAPS[0]);
+  const [selectedPlayerClass, setSelectedPlayerClass] = useState('all');
 
   // Qualifier groups state
   const [selectedGroupId, setSelectedGroupId] = useState('');
@@ -216,9 +215,23 @@ export default function StandingsPage() {
 
   // Group-scoped player stats
   const groupPlayerStats = useMemo(() => computePlayerStats(groupPlayerResults, groupPlayerRegs, tournament), [groupPlayerResults, groupPlayerRegs, tournament]);
-  const set1Players = useMemo(() => filterSet1Players(groupPlayerStats), [groupPlayerStats]);
-  const set2Players = useMemo(() => filterSet2Players(groupPlayerStats), [groupPlayerStats]);
-  const combined = useMemo(() => sortCombined(groupPlayerStats), [groupPlayerStats]);
+  
+  // Available classes for player class selector
+  const availableClasses = useMemo(() => {
+    const fromStruct = (tournament?.structure?.playerClasses || []).map(c => c.className).filter(Boolean);
+    const fromData = Array.from(new Set(groupPlayerStats.map(p => p.class).filter(Boolean)));
+    const merged = Array.from(new Set([...fromStruct, ...fromData]));
+    return merged.length > 0 ? merged : ['Class 1', 'Class 2'];
+  }, [tournament, groupPlayerStats]);
+
+  const filteredPlayerStats = useMemo(() => {
+    if (selectedPlayerClass === 'all') {
+      return sortCombined(groupPlayerStats);
+    }
+    return groupPlayerStats
+      .filter(p => p.class?.toLowerCase().trim() === selectedPlayerClass.toLowerCase().trim())
+      .sort((a, b) => b.totalKills - a.totalKills);
+  }, [groupPlayerStats, selectedPlayerClass]);
 
   // Map-filtered statistics using activeMapConfig
   const activeMapConfig = getActiveMapConfig(tournament, selectedGroup);
@@ -602,32 +615,54 @@ export default function StandingsPage() {
           : <ClanTable data={clanRanking} />
       )}
 
-      {/* Set 1 Players */}
-      {tab === 'set1' && (
-        set1Players.length === 0
-          ? <EmptyState icon={BarChart3} title="No Class 1 players" text="Register and enter data for Class 1 players." />
-          : <PlayerTable data={set1Players} totalDays={totalDays} />
-      )}
+      {/* Player Standings (Unified with Class Filter) */}
+      {tab === 'players' && (
+        <div>
+          {/* Class Filter Bar */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginRight: 4 }}>
+              Class View:
+            </span>
+            <button
+              className={`btn btn-sm ${selectedPlayerClass === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setSelectedPlayerClass('all')}
+              style={{ fontWeight: selectedPlayerClass === 'all' ? 700 : 500 }}
+            >
+              All / Combined ({groupPlayerStats.length})
+            </button>
+            {availableClasses.map(cls => {
+              const count = groupPlayerStats.filter(p => p.class?.toLowerCase().trim() === cls.toLowerCase().trim()).length;
+              const isActive = selectedPlayerClass.toLowerCase().trim() === cls.toLowerCase().trim();
+              return (
+                <button
+                  key={cls}
+                  className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSelectedPlayerClass(cls)}
+                  style={{ fontWeight: isActive ? 700 : 500 }}
+                >
+                  {cls} ({count})
+                </button>
+              );
+            })}
+          </div>
 
-      {/* Set 2 Players */}
-      {tab === 'set2' && (
-        set2Players.length === 0
-          ? <EmptyState icon={BarChart3} title="No Class 2 players" text="Register and enter data for Class 2 players." />
-          : <PlayerTable data={set2Players} totalDays={totalDays} showOnlyActiveDays />
-      )}
-
-      {/* Combined */}
-      {tab === 'combined' && (
-        combined.length === 0
-          ? <EmptyState icon={BarChart3} title="No player data" text="Enter player match data to see combined standings." />
-          : <CombinedTable data={combined} />
+          {filteredPlayerStats.length === 0 ? (
+            <EmptyState
+              icon={BarChart3}
+              title={selectedPlayerClass === 'all' ? "No player data" : `No ${selectedPlayerClass} players`}
+              text="Enter player match data or register players to see standings."
+            />
+          ) : (
+            <PlayerTable data={filteredPlayerStats} totalDays={totalDays} />
+          )}
+        </div>
       )}
 
       {/* Details */}
       {tab === 'details' && (
-        combined.length === 0
+        groupPlayerStats.length === 0
           ? <EmptyState icon={BarChart3} title="No data" text="Enter player match data to see details." />
-          : <DetailsTable data={combined} totalDays={totalDays} />
+          : <DetailsTable data={sortCombined(groupPlayerStats)} totalDays={totalDays} />
       )}
 
       {/* By Map Standings */}
@@ -1044,6 +1079,7 @@ function PlayerTable({ data, totalDays }) {
               <TH label="Pro Name" field="playerName" />
               <TH label="IGN" field="ign" />
               <TH label="Team" field="teamName" />
+              <TH label="Clan" field="clanName" />
               <th>Class</th>
               {Array.from({ length: totalDays }, (_, i) => i + 1).map((d) => (
                 <th key={d} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>D{d}</th>
@@ -1062,6 +1098,7 @@ function PlayerTable({ data, totalDays }) {
                 <td style={{ fontWeight: 600 }}>{row.playerName}</td>
                 <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{row.ign}</td>
                 <td style={{ color: 'var(--text-secondary)' }}>{row.teamName}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{row.clanName || '—'}</td>
                 <td><ClassBadge playerClass={row.class} /></td>
                 {Array.from({ length: totalDays }, (_, idx) => idx + 1).map((d) => (
                   <td key={d} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', textAlign: 'center', background: row[`d${d}`] > 0 ? undefined : 'var(--bg-alt-row)' }}>
@@ -1082,61 +1119,6 @@ function PlayerTable({ data, totalDays }) {
   );
 }
 
-function CombinedTable({ data }) {
-  const { sorted, sortKey, sortDir, handleSort } = useSort(data, 'totalKills');
-  const TH = ({ label, field }) => <SortableTH label={label} field={field} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />;
-  return (
-    <div className="data-table-container">
-      <div style={{ overflowX: 'auto' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Class</th>
-              <TH label="Pro Name" field="playerName" />
-              <TH label="IGN" field="ign" />
-              <TH label="Team" field="teamName" />
-              <TH label="Clan" field="clanName" />
-              <TH label="Gender" field="gender" />
-              <TH label="Region" field="region" />
-              <TH label="Country" field="country" />
-              <TH label="Device" field="device" />
-              <TH label="Model" field="deviceModel" />
-              <TH label="Matches" field="totalMatches" />
-              <TH label="Events" field="events" />
-              <TH label="K/M" field="killsPerMatch" />
-              <TH label="K/E" field="killsPerEvent" />
-              <TH label="Total Kills" field="totalKills" />
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((row, i) => (
-              <tr key={row.playerId || i}>
-                <td>{i + 1}</td>
-                <td><ClassBadge playerClass={row.class} /></td>
-                <td style={{ fontWeight: 600 }}>{row.playerName}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{row.ign}</td>
-                <td>{row.teamName}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{row.clanName || '—'}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{row.gender || '—'}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{row.region || '—'}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{row.country || '—'}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{row.device || '—'}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{row.deviceModel || '—'}</td>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{row.totalMatches}</td>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{row.events}</td>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{row.killsPerMatch}</td>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{row.killsPerEvent}</td>
-                <td className="col-total-kills">{row.totalKills}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function DetailsTable({ data, totalDays }) {
   const { sorted, sortKey, sortDir, handleSort } = useSort(data, 'totalKills');
   const TH = ({ label, field }) => <SortableTH label={label} field={field} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />;
@@ -1146,11 +1128,16 @@ function DetailsTable({ data, totalDays }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>#</th><th>Class</th>
+              <th style={{ width: 44 }}>#</th>
               <TH label="Pro Name" field="playerName" />
               <TH label="IGN" field="ign" />
               <TH label="Team" field="teamName" />
               <TH label="Clan" field="clanName" />
+              <TH label="Gender" field="gender" />
+              <TH label="Region" field="region" />
+              <TH label="Country" field="country" />
+              <TH label="Device" field="device" />
+              <TH label="Model" field="deviceModel" />
               {Array.from({ length: totalDays }, (_, i) => i + 1).map((d) => (
                 <th key={d} style={{ fontSize: '0.72rem' }}>D{d} Kills</th>
               ))}
@@ -1165,11 +1152,15 @@ function DetailsTable({ data, totalDays }) {
             {sorted.map((row, i) => (
               <tr key={row.playerId || i}>
                 <td>{i + 1}</td>
-                <td><ClassBadge playerClass={row.class} /></td>
                 <td style={{ fontWeight: 600 }}>{row.playerName}</td>
                 <td style={{ color: 'var(--text-muted)' }}>{row.ign}</td>
                 <td>{row.teamName}</td>
                 <td style={{ color: 'var(--text-muted)' }}>{row.clanName || '—'}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{row.gender || '—'}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{row.region || '—'}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{row.country || '—'}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{row.device || '—'}</td>
+                <td style={{ color: 'var(--text-muted)' }}>{row.deviceModel || '—'}</td>
                 {Array.from({ length: totalDays }, (_, idx) => idx + 1).map((d) => (
                   <td key={d} style={{ fontFamily: 'var(--font-mono)', textAlign: 'center', fontSize: '0.82rem' }}>
                     {row[`d${d}`] || '—'}
