@@ -148,6 +148,11 @@ const DEFINITIONS = {
     name: 'Damage Contribution (%)',
     measures: 'The average share of total team damage this player dealt across duo/trio/squad matches played. Compared against the equal-share baseline.',
     interpretation: 'High damage contribution relative to the baseline indicates a player who creates consistent pressure even when kills may not reflect it. Note: team total damage may be estimated when not separately tracked.'
+  },
+  player_xg: {
+    name: 'Expected Kills (xG)',
+    measures: 'A decayed rolling baseline of expected kills per match, derived from three independently-weighted signals: historical kill rate, accuracy, and damage. xG asks "given this player\'s recent form on all three signals, how many kills should they have earned in this match?"',
+    interpretation: 'A positive delta (Actual − xG) means the player overperformed their baseline — they got more kills than their recent form predicted. A negative delta means they underperformed. Uses the same rolling-window decay as Global Form, but applied to kills, accuracy, and damage separately. Requires at least 3 matches with accuracy and damage data to produce a result.'
   }
 };
 
@@ -521,7 +526,13 @@ const ALIASES = {
   'damage contribution': 'damage_contribution',
   'damage_contribution': 'damage_contribution',
   'dmg contribution': 'damage_contribution',
-  'damage share': 'damage_contribution'
+  'damage share': 'damage_contribution',
+
+  'player xg': 'player_xg',
+  'player_xg': 'player_xg',
+  'expected kills': 'player_xg',
+  'xg': 'player_xg',
+  'xG': 'player_xg'
 };
 
 export function getMetricDefinition(key) {

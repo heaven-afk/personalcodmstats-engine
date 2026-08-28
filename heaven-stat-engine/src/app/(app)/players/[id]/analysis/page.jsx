@@ -1,14 +1,15 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { usePlayer } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTournaments, getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { getPlayerMatchResults, getTeamMatchResults } from '@/lib/firestore/matchData';
 import { computePlayerInfluence } from '@/lib/engine/playerInfluence';
+import { computePlayerXGSummary } from '@/lib/engine/globalForm';
 import MetricTooltip from '@/components/ui/MetricTooltip';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { Activity, Target, Zap, TrendingUp, Info, FlaskConical } from 'lucide-react';
+import { Activity, Target, Zap, TrendingUp, Info, FlaskConical, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 
 // ─── RatingBar (mirrors analytics/page.jsx pattern) ──────────────────────────
 function RatingBar({ label, value, displayValue, metricKey, type = 'primary' }) {
@@ -92,6 +93,7 @@ export default function PlayerAnalysisPage() {
 
   const [loading, setLoading] = useState(true);
   const [influence, setInfluence] = useState(null);
+  const [xgSummary, setXgSummary] = useState(null);
 
   useEffect(() => {
     if (!isOwner) return; // layout handles redirect, but guard here too
@@ -107,6 +109,8 @@ export default function PlayerAnalysisPage() {
         ]);
 
         const teamMatchHistory = [];
+        // flat list of this player's own match results with event dates (for xG)
+        const playerMatchesForXG = [];
 
         allTourneys.forEach((t, tIdx) => {
           const playerResults = allPlayerRes[tIdx] || [];
@@ -119,6 +123,29 @@ export default function PlayerAnalysisPage() {
 
           const myTeamId = myReg.teamId;
           if (!myTeamId) return;
+
+          // Resolve event date for xG decay
+          let eventDate = null;
+          if (t.eventStartDate) {
+            eventDate = new Date(t.eventStartDate);
+          } else if (t.createdAt?.seconds) {
+            eventDate = new Date(t.createdAt.seconds * 1000);
+          } else if (t.createdAt?.toDate) {
+            eventDate = t.createdAt.toDate();
+          } else {
+            eventDate = new Date(0);
+          }
+
+          // Collect this player's own match results for xG
+          const myPlayerResults = playerResults.filter(pr => pr.playerId === id);
+          myPlayerResults.forEach(pr => {
+            playerMatchesForXG.push({
+              kills:    pr.kills    || 0,
+              accuracy: pr.accuracy || null,
+              damage:   pr.damage   || null,
+              date:     eventDate,
+            });
+          });
 
           // Find all team matches this player's team played in this tournament
           const teamMatchesForMyTeam = teamResults.filter(tr => tr.teamId === myTeamId);
@@ -159,6 +186,9 @@ export default function PlayerAnalysisPage() {
 
         const result = computePlayerInfluence(id, teamMatchHistory);
         setInfluence(result);
+
+        const xg = computePlayerXGSummary(playerMatchesForXG);
+        setXgSummary(xg);
       } catch (err) {
         console.error('Analysis load error:', err);
       } finally {
@@ -381,26 +411,160 @@ export default function PlayerAnalysisPage() {
         </div>
       </div>
 
-      {/* ── xG Placeholder ───────────────────────────────────────────────── */}
-      <div className="card" style={{ opacity: 0.7 }}>
-        <h3 className="card-title mb-2 flex items-center gap-2 border-b border-border pb-2">
-          <FlaskConical size={16} style={{ color: 'var(--text-muted)' }} />
+      {/* ── xG Card ──────────────────────────────────────────────────────── */}
+      <XGCard xgSummary={xgSummary} />
+    </div>
+  );
+}
+
+// ─── xG Card component ───────────────────────────────────────────────────────
+function XGCard({ xgSummary }) {
+  const isUnranked = !xgSummary || xgSummary.confidence === 'unranked';
+  const isProvisional = xgSummary?.confidence === 'provisional';
+
+  const delta = xgSummary?.avgDelta ?? null;
+  const overperformed = delta != null && delta > 0;
+  const underperformed = delta != null && delta < 0;
+
+  const deltaColor  = overperformed ? '#4ade80' : underperformed ? '#f87171' : 'var(--text-muted)';
+  const DeltaIcon   = overperformed ? ArrowUp   : underperformed ? ArrowDown  : Minus;
+
+  return (
+    <div className="card">
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 16, paddingBottom: 10, borderBottom: '1px solid var(--border)',
+      }}>
+        <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FlaskConical size={16} style={{ color: 'var(--gold)' }} />
           Expected Kills (xG)
-          <span style={{
-            fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
-            borderRadius: 4, background: 'rgba(148,163,184,0.15)',
-            color: 'var(--text-muted)', border: '1px solid var(--border-md)',
-            textTransform: 'uppercase', letterSpacing: '0.06em',
-          }}>
-            Coming Soon
-          </span>
+          <MetricTooltip metricKey="player_xg" />
         </h3>
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          Expected Kills (xG) will model how many kills a player <em>should</em> have
-          earned based on their team's placements, match size, and historical field
-          averages — separating luck from skill. Formula not yet finalized.
-        </p>
+        {!isUnranked && isProvisional && (
+          <span style={{
+            fontSize: '0.68rem', color: 'var(--text-muted)',
+            background: 'var(--bg-alt-row)', border: '1px solid var(--border-md)',
+            borderRadius: 6, padding: '2px 8px',
+          }}>
+            Provisional — {xgSummary.matchCount} matches
+          </span>
+        )}
       </div>
+
+      {isUnranked ? (
+        /* Insufficient history */
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', padding: '32px 16px', gap: 10,
+          color: 'var(--text-muted)', textAlign: 'center',
+        }}>
+          <Info size={28} style={{ opacity: 0.4 }} />
+          <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Insufficient History</span>
+          <span style={{ fontSize: '0.78rem', maxWidth: 380 }}>
+            xG requires at least 3 matches with accuracy and damage data recorded.
+            Once enough data is available the model will calibrate automatically.
+          </span>
+        </div>
+      ) : (
+        <>
+          {/* Hero metrics */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+            gap: 12, marginBottom: 20,
+          }}>
+            {/* Avg xG */}
+            <div style={{
+              padding: '14px 16px', background: 'var(--bg-alt-row)',
+              border: '1px solid var(--border-md)', borderRadius: 10,
+            }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 4 }}>Avg xG / Match</div>
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.5rem',
+                color: 'var(--gold)',
+              }}>
+                {xgSummary.avgXG ?? '—'}
+              </div>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>expected kills</div>
+            </div>
+
+            {/* Avg Delta */}
+            <div style={{
+              padding: '14px 16px', background: 'var(--bg-alt-row)',
+              border: `1px solid ${overperformed ? 'rgba(74,222,128,0.3)' : underperformed ? 'rgba(248,113,113,0.3)' : 'var(--border-md)'}`,
+              borderRadius: 10,
+            }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 4 }}>Avg Δ (Actual − xG)</div>
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.5rem',
+                color: deltaColor,
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <DeltaIcon size={16} />
+                {delta != null ? (delta > 0 ? '+' : '') + delta : '—'}
+              </div>
+              <div style={{ fontSize: '0.65rem', color: deltaColor, marginTop: 2, opacity: 0.8 }}>
+                {overperformed ? 'overperforming' : underperformed ? 'underperforming' : 'on baseline'}
+              </div>
+            </div>
+
+            {/* Baselines */}
+            <div style={{
+              padding: '14px 16px', background: 'var(--bg-alt-row)',
+              border: '1px solid var(--border-md)', borderRadius: 10,
+            }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 6 }}>Decayed Baselines</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {[['Kills', xgSummary.decayedKills], ['Accuracy', xgSummary.decayedAccuracy ? xgSummary.decayedAccuracy + '%' : null], ['Damage', xgSummary.decayedDamage]].map(([lbl, val]) => (
+                  <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>{lbl}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>{val ?? '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Recent match xG history (up to 8) */}
+          {xgSummary.matchXGs?.length > 0 && (
+            <div>
+              <div style={{
+                fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8,
+              }}>
+                Recent Matches
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table" style={{ fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Actual</th>
+                      <th>xG</th>
+                      <th>Δ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {xgSummary.matchXGs.slice(0, 8).map((m, i) => {
+                      const d = m.delta;
+                      const dColor = d > 0 ? '#4ade80' : d < 0 ? '#f87171' : 'var(--text-muted)';
+                      return (
+                        <tr key={i}>
+                          <td style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{m.kills}</td>
+                          <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--gold)' }}>{m.xG}</td>
+                          <td style={{ fontFamily: 'var(--font-mono)', color: dColor, fontWeight: 700 }}>
+                            {d > 0 ? '+' : ''}{d}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

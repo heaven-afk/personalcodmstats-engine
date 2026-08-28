@@ -197,3 +197,119 @@ export function globalFormLabel(decayedForm, trend, confidence, fieldAvgForm = 0
   if (trend === 'down') return 'Cooling Off';
   return 'Steady';
 }
+
+// ─── xG (Expected Kills) ──────────────────────────────────────────────────────
+
+/**
+ * Build match-point arrays for each of the three xG signals from a player's
+ * raw match results list (all tournaments flattened).
+ *
+ * matchResults: Array of { kills, accuracy, damage, date }
+ * Returns { killMatchPoints, accuracyMatchPoints, damageMatchPoints }
+ */
+export function buildPlayerXGHistory(matchResults) {
+  const killMatchPoints     = [];
+  const accuracyMatchPoints = [];
+  const damageMatchPoints   = [];
+
+  matchResults.forEach(r => {
+    const date = r.date || null;
+    killMatchPoints.push({ date, value: r.kills || 0 });
+    if (r.accuracy != null && r.accuracy > 0) {
+      accuracyMatchPoints.push({ date, value: r.accuracy });
+    }
+    if (r.damage != null && r.damage > 0) {
+      damageMatchPoints.push({ date, value: r.damage });
+    }
+  });
+
+  return { killMatchPoints, accuracyMatchPoints, damageMatchPoints };
+}
+
+/**
+ * Given a single match's stats and the three independently-decayed baselines,
+ * compute xG and the performance delta for that match.
+ *
+ * thisMatch: { kills, accuracy, damage }
+ * decayedKills / decayedAccuracy / decayedDamage: numbers from computeRollingForm
+ *
+ * Returns { xG, performanceDelta } or null when baselines are missing.
+ */
+export function computeMatchXG(thisMatch, decayedKills, decayedAccuracy, decayedDamage) {
+  if (!decayedKills || !decayedAccuracy || !decayedDamage) return null;
+  const accuracyFactor = thisMatch.accuracy / decayedAccuracy;
+  const damageFactor   = thisMatch.damage   / decayedDamage;
+  const xG = decayedKills * accuracyFactor * damageFactor;
+  return {
+    xG:               Math.round(xG * 100) / 100,
+    performanceDelta: Math.round((thisMatch.kills - xG) * 100) / 100, // + = overperformed
+  };
+}
+
+/**
+ * Compute career-level xG summary for a player given their full match history.
+ *
+ * matchResults: flat array of player match result objects, each with:
+ *   { kills, accuracy, damage, date }
+ *
+ * Returns:
+ *   {
+ *     confidence: 'unranked' | 'provisional' | 'full',
+ *     decayedKills, decayedAccuracy, decayedDamage,
+ *     avgXG,            // average expected kills per match
+ *     avgDelta,         // average actual - expected (career over/underperformance)
+ *     matchXGs,         // per-match [{kills, xG, delta}, ...] (most recent first)
+ *   }
+ *   or null when confidence === 'unranked'
+ */
+export function computePlayerXGSummary(matchResults) {
+  if (!matchResults || matchResults.length === 0) return null;
+
+  const { killMatchPoints, accuracyMatchPoints, damageMatchPoints } =
+    buildPlayerXGHistory(matchResults);
+
+  const killForm     = computeRollingForm(killMatchPoints);
+  const accuracyForm = computeRollingForm(accuracyMatchPoints);
+  const damageForm   = computeRollingForm(damageMatchPoints);
+
+  // Use the most conservative confidence across all three signals
+  const confidenceRank = { unranked: 0, provisional: 1, full: 2 };
+  const lowestConfidence = [killForm.confidence, accuracyForm.confidence, damageForm.confidence]
+    .sort((a, b) => confidenceRank[a] - confidenceRank[b])[0];
+
+  if (lowestConfidence === 'unranked') return { confidence: 'unranked' };
+
+  const decayedKills    = killForm.decayedForm;
+  const decayedAccuracy = accuracyForm.decayedForm;
+  const decayedDamage   = damageForm.decayedForm;
+
+  // Compute per-match xG for matches that have all three signals
+  const eligible = matchResults.filter(
+    r => r.accuracy != null && r.accuracy > 0 && r.damage != null && r.damage > 0
+  );
+
+  const matchXGs = eligible.map(r => {
+    const result = computeMatchXG(r, decayedKills, decayedAccuracy, decayedDamage);
+    return result ? { kills: r.kills, xG: result.xG, delta: result.performanceDelta } : null;
+  }).filter(Boolean);
+
+  const avgXG = matchXGs.length
+    ? Math.round((matchXGs.reduce((s, m) => s + m.xG, 0) / matchXGs.length) * 100) / 100
+    : null;
+
+  const avgDelta = matchXGs.length
+    ? Math.round((matchXGs.reduce((s, m) => s + m.delta, 0) / matchXGs.length) * 100) / 100
+    : null;
+
+  return {
+    confidence:   lowestConfidence,
+    decayedKills,
+    decayedAccuracy,
+    decayedDamage,
+    avgXG,
+    avgDelta,
+    matchCount: matchXGs.length,
+    matchXGs: [...matchXGs].reverse(), // most recent first
+  };
+}
+
