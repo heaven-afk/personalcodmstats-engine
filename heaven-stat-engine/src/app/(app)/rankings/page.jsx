@@ -12,7 +12,7 @@ import MetricTooltip from '@/components/ui/MetricTooltip';
 import { BarChart3, Search, Star, Trophy, Users, Shield, TrendingUp, TrendingDown, Minus, Sparkles, Flame, AlertCircle, Download, Copy, Info, HelpCircle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
-import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
+import { GLOBAL_FORM_CATEGORIES, computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel } from '@/lib/engine/globalForm';
 
 export default function RankingsPage() {
   const searchParams = useSearchParams();
@@ -20,9 +20,8 @@ export default function RankingsPage() {
 
   const [activeTab, setActiveTab] = useState('career'); // 'career' | 'teamForm' | 'playerForm'
 
+  const [rawData, setRawData] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
-  const [teamFormList, setTeamFormList] = useState([]);
-  const [playerFormList, setPlayerFormList] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Modal state for Global Form (i) calculation & sample walkthrough
@@ -34,6 +33,7 @@ export default function RankingsPage() {
 
   // Filters
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'Tier 1' | 'Tier 2' | 'Tier 3' | 'unranked'
   const [regionFilter, setRegionFilter] = useState('');
   const [classFilter, setClassFilter] = useState('');
 
@@ -136,60 +136,14 @@ export default function RankingsPage() {
         computedLeaderboard.sort((a, b) => b.totalKills - a.totalKills);
         setLeaderboard(computedLeaderboard);
 
-        // 2. Team Global Form
-        const rawTeamForm = allTeams.map(t => {
-          const gf = computeTeamGlobalForm(t.id, allTourneys, teamMatchResultsByTournament);
-          return {
-            ...t,
-            globalForm: gf,
-          };
+        setRawData({
+          allPlayers,
+          allTeams,
+          allTourneys,
+          teamMatchResultsByTournament,
+          playerMatchResultsByTournament,
+          playerStatsMap,
         });
-
-        const rankedTeamForms = rawTeamForm.filter(t => t.globalForm.confidence !== 'unranked');
-        const fieldAvgTeamForm = rankedTeamForms.length > 0
-          ? rankedTeamForms.reduce((sum, t) => sum + (t.globalForm.decayedForm || 0), 0) / rankedTeamForms.length
-          : 0;
-
-        const processedTeamForm = rawTeamForm.map(t => {
-          const label = globalFormLabel(t.globalForm.decayedForm, t.globalForm.trend, t.globalForm.confidence, fieldAvgTeamForm);
-          return { ...t, formLabel: label };
-        });
-
-        processedTeamForm.sort((a, b) => {
-          if (a.globalForm.confidence === 'unranked' && b.globalForm.confidence !== 'unranked') return 1;
-          if (a.globalForm.confidence !== 'unranked' && b.globalForm.confidence === 'unranked') return -1;
-          return (b.globalForm.decayedForm || 0) - (a.globalForm.decayedForm || 0);
-        });
-        setTeamFormList(processedTeamForm);
-
-        // 3. Player Global Form
-        const rawPlayerForm = allPlayers.map(p => {
-          const gf = computePlayerGlobalForm(p.id, allTourneys, playerMatchResultsByTournament);
-          const meta = playerStatsMap[p.id] || {};
-          return {
-            ...p,
-            lastTeam: meta.lastTeam || '—',
-            lastClass: meta.lastClass || 'Class 1',
-            globalForm: gf,
-          };
-        });
-
-        const rankedPlayerForms = rawPlayerForm.filter(p => p.globalForm.confidence !== 'unranked');
-        const fieldAvgPlayerForm = rankedPlayerForms.length > 0
-          ? rankedPlayerForms.reduce((sum, p) => sum + (p.globalForm.decayedForm || 0), 0) / rankedPlayerForms.length
-          : 0;
-
-        const processedPlayerForm = rawPlayerForm.map(p => {
-          const label = globalFormLabel(p.globalForm.decayedForm, p.globalForm.trend, p.globalForm.confidence, fieldAvgPlayerForm);
-          return { ...p, formLabel: label };
-        });
-
-        processedPlayerForm.sort((a, b) => {
-          if (a.globalForm.confidence === 'unranked' && b.globalForm.confidence !== 'unranked') return 1;
-          if (a.globalForm.confidence !== 'unranked' && b.globalForm.confidence === 'unranked') return -1;
-          return (b.globalForm.decayedForm || 0) - (a.globalForm.decayedForm || 0);
-        });
-        setPlayerFormList(processedPlayerForm);
 
       } catch (err) {
         toast.error('Failed to load rankings: ' + err.message);
@@ -199,6 +153,73 @@ export default function RankingsPage() {
     }
     loadRankingsData();
   }, []);
+
+  // Compute team global form for the selected category
+  const teamFormList = useMemo(() => {
+    if (!rawData) return [];
+    const { allTeams, allTourneys, teamMatchResultsByTournament } = rawData;
+
+    const rawTeamForm = allTeams.map(t => {
+      const gf = computeTeamGlobalForm(t.id, allTourneys, teamMatchResultsByTournament, categoryFilter);
+      return {
+        ...t,
+        globalForm: gf,
+      };
+    });
+
+    const rankedTeamForms = rawTeamForm.filter(t => t.globalForm.confidence !== 'unranked');
+    const fieldAvgTeamForm = rankedTeamForms.length > 0
+      ? rankedTeamForms.reduce((sum, t) => sum + (t.globalForm.decayedForm || 0), 0) / rankedTeamForms.length
+      : 0;
+
+    const processedTeamForm = rawTeamForm.map(t => {
+      const label = globalFormLabel(t.globalForm.decayedForm, t.globalForm.trend, t.globalForm.confidence, fieldAvgTeamForm);
+      return { ...t, formLabel: label };
+    });
+
+    processedTeamForm.sort((a, b) => {
+      if (a.globalForm.confidence === 'unranked' && b.globalForm.confidence !== 'unranked') return 1;
+      if (a.globalForm.confidence !== 'unranked' && b.globalForm.confidence === 'unranked') return -1;
+      return (b.globalForm.decayedForm || 0) - (a.globalForm.decayedForm || 0);
+    });
+
+    return processedTeamForm;
+  }, [rawData, categoryFilter]);
+
+  // Compute player global form for the selected category
+  const playerFormList = useMemo(() => {
+    if (!rawData) return [];
+    const { allPlayers, allTourneys, playerMatchResultsByTournament, playerStatsMap } = rawData;
+
+    const rawPlayerForm = allPlayers.map(p => {
+      const gf = computePlayerGlobalForm(p.id, allTourneys, playerMatchResultsByTournament, categoryFilter);
+      const meta = playerStatsMap[p.id] || {};
+      return {
+        ...p,
+        lastTeam: meta.lastTeam || '—',
+        lastClass: meta.lastClass || 'Class 1',
+        globalForm: gf,
+      };
+    });
+
+    const rankedPlayerForms = rawPlayerForm.filter(p => p.globalForm.confidence !== 'unranked');
+    const fieldAvgPlayerForm = rankedPlayerForms.length > 0
+      ? rankedPlayerForms.reduce((sum, p) => sum + (p.globalForm.decayedForm || 0), 0) / rankedPlayerForms.length
+      : 0;
+
+    const processedPlayerForm = rawPlayerForm.map(p => {
+      const label = globalFormLabel(p.globalForm.decayedForm, p.globalForm.trend, p.globalForm.confidence, fieldAvgPlayerForm);
+      return { ...p, formLabel: label };
+    });
+
+    processedPlayerForm.sort((a, b) => {
+      if (a.globalForm.confidence === 'unranked' && b.globalForm.confidence !== 'unranked') return 1;
+      if (a.globalForm.confidence !== 'unranked' && b.globalForm.confidence === 'unranked') return -1;
+      return (b.globalForm.decayedForm || 0) - (a.globalForm.decayedForm || 0);
+    });
+
+    return processedPlayerForm;
+  }, [rawData, categoryFilter]);
 
   // Filter career leaderboard
   const filteredRankings = useMemo(() => {
@@ -255,10 +276,13 @@ export default function RankingsPage() {
       return;
     }
 
+    const catLabel = categoryFilter === 'all' ? 'All' : categoryFilter;
     const rows = targets.map((t, idx) => ({
       Rank: t.globalForm.confidence === 'unranked' ? 'Unranked' : idx + 1,
       'Team Name': t.teamName,
       Clan: t.clanName || '—',
+      'Dominant Tier': t.rankedTier || 'Unranked',
+      Category: catLabel,
       'Global Form Score': t.globalForm.decayedForm ?? '—',
       'Raw Form Score': t.globalForm.rawForm ?? '—',
       'Status Label': t.formLabel,
@@ -274,10 +298,11 @@ export default function RankingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `global_team_form_${new Date().toISOString().slice(0, 10)}.csv`;
+    const catSlug = categoryFilter.toLowerCase().replace(/\s+/g, '_');
+    a.download = `global_team_form_${catSlug}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`Exported ${targets.length} team form records to CSV`);
+    toast.success(`Exported ${targets.length} team form (${catLabel}) records to CSV`);
   };
 
   const handleCopyTeamFormSummary = () => {
@@ -290,11 +315,12 @@ export default function RankingsPage() {
       return;
     }
 
+    const catLabel = categoryFilter === 'all' ? 'All Categories' : categoryFilter;
     const lines = targets.map((t, idx) =>
-      `#${t.globalForm.confidence === 'unranked' ? '—' : idx + 1} ${t.teamName} | Global Form: ${t.globalForm.decayedForm ?? '—'} (${t.formLabel}) | Trend: ${t.globalForm.trend} | Matches: ${t.globalForm.matchesUsed}/8`
+      `#${t.globalForm.confidence === 'unranked' ? '—' : idx + 1} ${t.teamName} | [${catLabel}] Form: ${t.globalForm.decayedForm ?? '—'} (${t.formLabel}) | Trend: ${t.globalForm.trend} | Matches: ${t.globalForm.matchesUsed}/8`
     );
     navigator.clipboard.writeText(lines.join('\n'));
-    toast.success(`Copied ${targets.length} team form summaries to clipboard`);
+    toast.success(`Copied ${targets.length} team form summaries (${catLabel}) to clipboard`);
   };
 
   // Player Form Export Handlers
@@ -308,12 +334,15 @@ export default function RankingsPage() {
       return;
     }
 
+    const catLabel = categoryFilter === 'all' ? 'All' : categoryFilter;
     const rows = targets.map((p, idx) => ({
       Rank: p.globalForm.confidence === 'unranked' ? 'Unranked' : idx + 1,
       'Pro Name': p.professionalName,
       IGN: p.ign,
       Team: p.lastTeam,
+      'Dominant Tier': p.rankedTier || 'Unranked',
       Class: p.lastClass,
+      Category: catLabel,
       'Global Form Score (Kills/Match)': p.globalForm.decayedForm ?? '—',
       'Raw Form Score': p.globalForm.rawForm ?? '—',
       'Status Label': p.formLabel,
@@ -328,10 +357,29 @@ export default function RankingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `global_player_form_${new Date().toISOString().slice(0, 10)}.csv`;
+    const catSlug = categoryFilter.toLowerCase().replace(/\s+/g, '_');
+    a.download = `global_player_form_${catSlug}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`Exported ${targets.length} player form records to CSV`);
+    toast.success(`Exported ${targets.length} player form (${catLabel}) records to CSV`);
+  };
+
+  const handleCopyPlayerFormSummary = () => {
+    const targets = selectedPlayerIds.length > 0
+      ? filteredPlayerForm.filter(p => selectedPlayerIds.includes(p.id))
+      : filteredPlayerForm;
+
+    if (targets.length === 0) {
+      toast.error('No player form records available');
+      return;
+    }
+
+    const catLabel = categoryFilter === 'all' ? 'All Categories' : categoryFilter;
+    const lines = targets.map((p, idx) =>
+      `#${p.globalForm.confidence === 'unranked' ? '—' : idx + 1} ${p.professionalName} (${p.ign}) | [${catLabel}] Form: ${p.globalForm.decayedForm ?? '—'} (${p.formLabel}) | Trend: ${p.globalForm.trend} | Matches: ${p.globalForm.matchesUsed}/8`
+    );
+    navigator.clipboard.writeText(lines.join('\n'));
+    toast.success(`Copied ${targets.length} player form summaries (${catLabel}) to clipboard`);
   };
 
   const careerColumns = [
@@ -435,7 +483,14 @@ export default function RankingsPage() {
       ),
     },
     {
-      header: 'Global Form',
+      header: 'Dominant Tier',
+      accessor: 'rankedTier',
+      render: (row) => row.rankedTier
+        ? <TierBadge tier={row.rankedTier} size="xs" />
+        : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>,
+    },
+    {
+      header: categoryFilter === 'all' ? 'Global Form (All)' : `Global Form (${categoryFilter})`,
       accessor: 'decayedForm',
       render: (row) => row.globalForm.decayedForm != null ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -541,12 +596,19 @@ export default function RankingsPage() {
     },
     { header: 'Team', accessor: 'lastTeam' },
     {
+      header: 'Dominant Tier',
+      accessor: 'rankedTier',
+      render: (row) => row.rankedTier
+        ? <TierBadge tier={row.rankedTier} size="xs" />
+        : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>,
+    },
+    {
       header: 'Class',
       accessor: 'lastClass',
       render: (row) => <ClassBadge playerClass={row.lastClass} />,
     },
     {
-      header: 'Global Form (Kills/Match)',
+      header: categoryFilter === 'all' ? 'Global Form (All)' : `Global Form (${categoryFilter})`,
       accessor: 'decayedForm',
       render: (row) => row.globalForm.decayedForm != null ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -644,19 +706,41 @@ export default function RankingsPage() {
       {/* Filter and Search Bar */}
       <div className="card">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="md:col-span-2">
+          <div className={activeTab === 'career' ? 'md:col-span-2' : 'md:col-span-1'}>
             <label className="form-label">Search</label>
             <div className="search-input-wrap" style={{ marginTop: 4 }}>
               <Search size={16} className="search-icon" />
               <input
                 type="text"
                 className="form-input search-input"
-                placeholder="Search name, IGN, team..."
+                placeholder={activeTab === 'teamForm' ? "Search team or clan..." : "Search name, IGN, team..."}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
           </div>
+
+          {activeTab !== 'career' && (
+            <div>
+              <label className="form-label">Form Category / Tier</label>
+              <select
+                className="form-input font-medium"
+                style={{ marginTop: 4, borderColor: categoryFilter !== 'all' ? 'var(--gold)' : undefined }}
+                value={categoryFilter}
+                onChange={e => {
+                  setCategoryFilter(e.target.value);
+                  setSelectedTeamIds([]);
+                  setSelectedPlayerIds([]);
+                }}
+              >
+                <option value="all">All Tournaments (Combined)</option>
+                <option value="Tier 1">Tier 1 Tournaments Only</option>
+                <option value="Tier 2">Tier 2 Tournaments Only</option>
+                <option value="Tier 3">Tier 3 Tournaments Only</option>
+                <option value="unranked">Unranked Tournaments Only</option>
+              </select>
+            </div>
+          )}
 
           {activeTab !== 'teamForm' && (
             <>
@@ -714,7 +798,9 @@ export default function RankingsPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
                 <MetricTooltip metricKey="global_form">
-                  <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
+                  <span style={{ fontWeight: 700, color: 'var(--gold)' }}>
+                    Global Form {categoryFilter !== 'all' ? `(${categoryFilter})` : ''}
+                  </span>
                 </MetricTooltip>
                 <button
                   type="button"
@@ -740,7 +826,7 @@ export default function RankingsPage() {
                   i
                 </button>
                 <span style={{ color: 'var(--text-secondary)' }}>
-                  Cross-tournament rolling momentum calculated from each team's <strong>last 8 matches</strong> across all events.
+                  Rolling momentum calculated from each team's <strong>last 8 matches</strong> {categoryFilter === 'all' ? 'across all tournaments.' : `in ${categoryFilter} tournaments only.`}
                 </span>
               </div>
 
@@ -785,7 +871,7 @@ export default function RankingsPage() {
               columns={teamFormColumns}
               data={filteredTeamForm}
               searchable={false}
-              emptyMessage="No teams found matching your criteria"
+              emptyMessage={`No team records found for category "${categoryFilter === 'all' ? 'All' : categoryFilter}"`}
               pageSize={50}
             />
           </div>
@@ -805,7 +891,9 @@ export default function RankingsPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem' }}>
                 <MetricTooltip metricKey="global_form">
-                  <span style={{ fontWeight: 700, color: 'var(--gold)' }}>What is Global Form?</span>
+                  <span style={{ fontWeight: 700, color: 'var(--gold)' }}>
+                    Global Form {categoryFilter !== 'all' ? `(${categoryFilter})` : ''}
+                  </span>
                 </MetricTooltip>
                 <button
                   type="button"
@@ -831,7 +919,7 @@ export default function RankingsPage() {
                   i
                 </button>
                 <span style={{ color: 'var(--text-secondary)' }}>
-                  Cross-tournament rolling fragging momentum calculated from each player's <strong>last 8 matches (kills/match)</strong> across all events.
+                  Rolling fragging momentum calculated from each player's <strong>last 8 matches (kills/match)</strong> {categoryFilter === 'all' ? 'across all tournaments.' : `in ${categoryFilter} tournaments only.`}
                 </span>
               </div>
 
@@ -859,6 +947,14 @@ export default function RankingsPage() {
                 >
                   <Download size={13} /> Export CSV
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleCopyPlayerFormSummary}
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  <Copy size={13} /> Copy Summary
+                </button>
               </div>
             </div>
           </div>
@@ -868,7 +964,7 @@ export default function RankingsPage() {
               columns={playerFormColumns}
               data={filteredPlayerForm}
               searchable={false}
-              emptyMessage="No players found matching your criteria"
+              emptyMessage={`No player records found for category "${categoryFilter === 'all' ? 'All' : categoryFilter}"`}
               pageSize={50}
             />
           </div>
@@ -930,7 +1026,7 @@ export default function RankingsPage() {
                   <Sparkles size={16} /> 1. Core Mechanics & Formulas
                 </h4>
                 <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, color: '#CBD5E1' }}>
-                  <li><strong>Chronological Ordering</strong>: Matches across all tournaments are sorted by event start date (`eventStartDate` or fallback creation timestamp).</li>
+                  <li><strong>Chronological Ordering</strong>: Matches across tournaments are sorted by event start date (`eventStartDate` or fallback creation timestamp).</li>
                   <li><strong>8-Match Rolling Window</strong>: Evaluates up to the most recent 8 matches (N ≤ 8). Linear weights [1, 2, 3, 4, 5, 6, 7, 8] are assigned (Match 8 = newest).</li>
                   <li><strong>Raw Form Score Formula</strong>:
                     <div style={{ fontFamily: 'var(--font-mono)', background: 'rgba(15, 23, 42, 0.8)', padding: '8px 12px', borderRadius: 6, marginTop: 4, color: 'var(--gold)', fontSize: '0.82rem' }}>
@@ -946,10 +1042,25 @@ export default function RankingsPage() {
                 </ul>
               </div>
 
-              {/* Section 2: Sample Data Table */}
+              {/* Section 2: Category / Tier Scoping */}
+              <div style={{ background: 'rgba(30, 41, 59, 0.6)', padding: 18, borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+                <h4 style={{ fontSize: '0.95rem', color: 'var(--gold)', fontWeight: 800, marginTop: 0, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Shield size={16} /> 2. Category & Tier Scoping
+                </h4>
+                <p style={{ margin: '0 0 8px', color: '#CBD5E1' }}>
+                  Global Form can be evaluated across all tournaments or isolated to specific competitive categories:
+                </p>
+                <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, color: '#CBD5E1' }}>
+                  <li><strong>All Tournaments</strong>: Combines all matches across ranked and unranked tournaments for an overall momentum rating.</li>
+                  <li><strong>Tier 1 / Tier 2 / Tier 3</strong>: Evaluates rolling form using only matches from tournaments with that specific ranked tier label.</li>
+                  <li><strong>Unranked</strong>: Evaluates rolling form considering only scrims and unranked events.</li>
+                </ul>
+              </div>
+
+              {/* Section 3: Sample Data Table */}
               <div>
                 <h4 style={{ fontSize: '0.95rem', color: 'var(--gold)', fontWeight: 800, marginTop: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <BarChart3 size={16} /> 2. Worked Example with Sample Match Data
+                  <BarChart3 size={16} /> 3. Worked Example with Sample Match Data
                 </h4>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 12 }}>
                   Here is a step-by-step example for a team with 8 matches played across 3 tournaments:
@@ -1033,10 +1144,10 @@ export default function RankingsPage() {
                 </div>
               </div>
 
-              {/* Section 3: Calculation Walkthrough */}
+              {/* Section 4: Calculation Walkthrough */}
               <div style={{ background: 'rgba(15, 23, 42, 0.8)', padding: 18, borderRadius: 12, border: '1px solid rgba(201,168,76,0.2)' }}>
                 <h4 style={{ fontSize: '0.92rem', color: '#FFFFFF', fontWeight: 800, marginTop: 0, marginBottom: 10 }}>
-                  Calculation Step-by-Step Output:
+                  4. Calculation Step-by-Step Output:
                 </h4>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                   <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>

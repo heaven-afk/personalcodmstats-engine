@@ -14,9 +14,9 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
 import { ClassBadge, TierBadge } from '@/components/ui/Badge';
 import MetricTooltip from '@/components/ui/MetricTooltip';
-import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame, Camera, Upload, X, Trash2, Image as ImageIcon } from 'lucide-react';
+import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame, Camera, Upload, X, Trash2, Image as ImageIcon, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { computePlayerGlobalForm } from '@/lib/engine/globalForm';
+import { computePlayerGlobalForm, computePlayerCategoryForms, GLOBAL_FORM_CATEGORIES } from '@/lib/engine/globalForm';
 
 function HistoryList({ label, items, renderItem }) {
   const [open, setOpen] = useState(false);
@@ -64,6 +64,8 @@ export default function PlayerProfilePage() {
   });
   const [mapCounts, setMapCounts] = useState({ Isolated: 0, Blackout: 0, 'Rebirth Island': 0 });
   const [globalForm, setGlobalForm] = useState(null);
+  const [categoryForms, setCategoryForms] = useState({});
+  const [selectedFormCategory, setSelectedFormCategory] = useState('all');
   const [loading, setLoading] = useState(true);
 
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
@@ -98,8 +100,9 @@ export default function PlayerProfilePage() {
           playerMatchResultsByTournament[t.id] = playerMatches.filter(m => m.tournamentId === t.id);
         });
 
-        const gf = computePlayerGlobalForm(id, tournamentsList, playerMatchResultsByTournament);
-        setGlobalForm(gf);
+        const catForms = computePlayerCategoryForms(id, tournamentsList, playerMatchResultsByTournament);
+        setCategoryForms(catForms);
+        setGlobalForm(catForms.all || computePlayerGlobalForm(id, tournamentsList, playerMatchResultsByTournament));
 
         const participationHistory = [];
         let totalKills = 0;
@@ -575,6 +578,133 @@ export default function PlayerProfilePage() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Global Form by Category Card */}
+          <div className="card" style={{ border: '1px solid var(--border-gold)', background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <h2 className="card-title flex items-center gap-2" style={{ margin: 0, fontSize: '0.95rem' }}>
+                <Flame size={16} className="text-gold fill-gold" />
+                Fragging Momentum (Form)
+              </h2>
+              <MetricTooltip metricKey="global_form">
+                <span style={{ fontSize: '0.68rem', color: 'var(--gold)', cursor: 'help' }}>8-Match Rolling</span>
+              </MetricTooltip>
+            </div>
+
+            {/* Category Selector Tabs */}
+            <div style={{ display: 'flex', gap: 4, padding: 3, background: 'rgba(0,0,0,0.3)', borderRadius: 8, marginBottom: 14, overflowX: 'auto' }}>
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'Tier 1', label: 'Tier 1' },
+                { id: 'Tier 2', label: 'Tier 2' },
+                { id: 'Tier 3', label: 'Tier 3' },
+                { id: 'unranked', label: 'Unranked' },
+              ].map(cat => {
+                const active = selectedFormCategory === cat.id;
+                const formForCat = categoryForms[cat.id];
+                const hasMatches = formForCat && formForCat.matchesUsed > 0;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedFormCategory(cat.id)}
+                    style={{
+                      flex: 1,
+                      padding: '5px 8px',
+                      borderRadius: 6,
+                      fontSize: '0.72rem',
+                      fontWeight: active ? 800 : 500,
+                      background: active ? 'var(--gold)' : 'transparent',
+                      color: active ? '#000' : hasMatches ? 'var(--text-primary)' : 'var(--text-muted)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      whiteSpace: 'nowrap',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {cat.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active Category Display */}
+            {(() => {
+              const curForm = categoryForms[selectedFormCategory] || { confidence: 'unranked', matchesUsed: 0 };
+              const isUnranked = curForm.confidence === 'unranked' || curForm.decayedForm == null;
+              return (
+                <div className="space-y-3">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {selectedFormCategory === 'all' ? 'Overall Fragging Form' : `${selectedFormCategory} Fragging Form`}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+                        <span style={{ fontSize: '1.6rem', fontWeight: 900, color: isUnranked ? 'var(--text-muted)' : 'var(--gold)', fontFamily: 'var(--font-mono)' }}>
+                          {curForm.decayedForm != null ? `${curForm.decayedForm} KPM` : '—'}
+                        </span>
+                        {!isUnranked && curForm.rawForm && (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            raw: {curForm.rawForm}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        color: curForm.trend === 'up' ? 'var(--success)' : curForm.trend === 'down' ? 'var(--danger)' : 'var(--text-muted)',
+                      }}>
+                        {curForm.trend === 'up' ? <TrendingUp size={14} /> : curForm.trend === 'down' ? <TrendingDown size={14} /> : <Minus size={14} />}
+                        {curForm.trend === 'up' ? 'Rising' : curForm.trend === 'down' ? 'Falling' : curForm.trend === 'flat' ? 'Steady' : 'New'}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'capitalize', marginTop: 2 }}>
+                        {curForm.confidence} ({curForm.matchesUsed}/8 matches)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Category Form Comparison Mini-Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: '0.7rem' }}>
+                    {[
+                      { key: 'all', label: 'All' },
+                      { key: 'Tier 1', label: 'T1' },
+                      { key: 'Tier 2', label: 'T2' },
+                      { key: 'unranked', label: 'Unrk' },
+                    ].map(item => {
+                      const f = categoryForms[item.key];
+                      const score = f?.decayedForm != null ? `${f.decayedForm}` : '—';
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => setSelectedFormCategory(item.key)}
+                          style={{
+                            textAlign: 'center',
+                            padding: '4px 2px',
+                            background: selectedFormCategory === item.key ? 'rgba(201, 168, 76, 0.15)' : 'rgba(255,255,255,0.02)',
+                            border: `1px solid ${selectedFormCategory === item.key ? 'var(--gold)' : 'rgba(255,255,255,0.05)'}`,
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>{item.label}</div>
+                          <div style={{ fontWeight: 800, color: score !== '—' ? 'var(--gold)' : 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                            {score}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Career Stats */}

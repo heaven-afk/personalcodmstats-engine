@@ -87,14 +87,32 @@ function computeSingleMatchPPM(matchResults, scoring = {}) {
   return totalPts;
 }
 
+export const GLOBAL_FORM_CATEGORIES = ['all', 'Tier 1', 'Tier 2', 'Tier 3', 'unranked'];
+
+/**
+ * Filters tournaments by category / tier:
+ * - 'all' / 'All': all tournaments
+ * - 'unranked' / 'Unranked': tournaments where !isRanked || !rankedTier
+ * - 'Tier 1', 'Tier 2', etc.: tournaments where isRanked && rankedTier matches category
+ */
+export function filterTournamentsByCategory(tournaments = [], category = 'all') {
+  if (!category || category === 'all' || category === 'All') return tournaments;
+  const cat = String(category).toLowerCase().trim();
+  if (cat === 'unranked') {
+    return tournaments.filter(t => !t.isRanked || !t.rankedTier);
+  }
+  return tournaments.filter(t => t.isRanked && t.rankedTier && t.rankedTier.toLowerCase().trim() === cat);
+}
+
 /**
  * Adapter: builds team match points across tournaments
  */
-export function buildTeamFormHistory(teamId, tournaments = [], teamMatchResultsByTournament = {}) {
+export function buildTeamFormHistory(teamId, tournaments = [], teamMatchResultsByTournament = {}, category = 'all') {
   const points = [];
   let hasUndatedTournaments = false;
+  const filteredTournaments = filterTournamentsByCategory(tournaments, category);
 
-  tournaments.forEach(tourney => {
+  filteredTournaments.forEach(tourney => {
     const results = teamMatchResultsByTournament[tourney.id] || [];
     const teamResults = results.filter(r => r.teamId === teamId);
     if (teamResults.length === 0) return;
@@ -133,11 +151,12 @@ export function buildTeamFormHistory(teamId, tournaments = [], teamMatchResultsB
 /**
  * Adapter: builds player match points across tournaments
  */
-export function buildPlayerFormHistory(playerId, tournaments = [], playerMatchResultsByTournament = {}) {
+export function buildPlayerFormHistory(playerId, tournaments = [], playerMatchResultsByTournament = {}, category = 'all') {
   const points = [];
   let hasUndatedTournaments = false;
+  const filteredTournaments = filterTournamentsByCategory(tournaments, category);
 
-  tournaments.forEach(tourney => {
+  filteredTournaments.forEach(tourney => {
     const results = playerMatchResultsByTournament[tourney.id] || [];
     const playerResults = results.filter(r => r.playerId === playerId);
     if (playerResults.length === 0) return;
@@ -164,22 +183,46 @@ export function buildPlayerFormHistory(playerId, tournaments = [], playerMatchRe
   return { points, hasUndatedTournaments };
 }
 
-export function computeTeamGlobalForm(teamId, tournaments, teamMatchResultsByTournament) {
-  const history = buildTeamFormHistory(teamId, tournaments, teamMatchResultsByTournament);
+export function computeTeamGlobalForm(teamId, tournaments, teamMatchResultsByTournament, category = 'all') {
+  const history = buildTeamFormHistory(teamId, tournaments, teamMatchResultsByTournament, category);
   const form = computeRollingForm(history.points);
   return {
     ...form,
+    category,
     hasUndatedTournaments: history.hasUndatedTournaments,
   };
 }
 
-export function computePlayerGlobalForm(playerId, tournaments, playerMatchResultsByTournament) {
-  const history = buildPlayerFormHistory(playerId, tournaments, playerMatchResultsByTournament);
+export function computePlayerGlobalForm(playerId, tournaments, playerMatchResultsByTournament, category = 'all') {
+  const history = buildPlayerFormHistory(playerId, tournaments, playerMatchResultsByTournament, category);
   const form = computeRollingForm(history.points);
   return {
     ...form,
+    category,
     hasUndatedTournaments: history.hasUndatedTournaments,
   };
+}
+
+/**
+ * Computes Global Form for a team across all categories (all, Tier 1, Tier 2, Tier 3, unranked)
+ */
+export function computeTeamCategoryForms(teamId, tournaments, teamMatchResultsByTournament, categories = GLOBAL_FORM_CATEGORIES) {
+  const result = {};
+  categories.forEach(cat => {
+    result[cat] = computeTeamGlobalForm(teamId, tournaments, teamMatchResultsByTournament, cat);
+  });
+  return result;
+}
+
+/**
+ * Computes Global Form for a player across all categories (all, Tier 1, Tier 2, Tier 3, unranked)
+ */
+export function computePlayerCategoryForms(playerId, tournaments, playerMatchResultsByTournament, categories = GLOBAL_FORM_CATEGORIES) {
+  const result = {};
+  categories.forEach(cat => {
+    result[cat] = computePlayerGlobalForm(playerId, tournaments, playerMatchResultsByTournament, cat);
+  });
+  return result;
 }
 
 /**
