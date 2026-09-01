@@ -70,19 +70,49 @@ export async function getTeamMatchResultsByGroup(tournamentId, groupId) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-// ─── Player Match Results ─────────────────────────────────────────────────────
 export async function getAllMatchResultsForPlayer(playerId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetAllMatchResultsForPlayer(playerId);
   }
-  const snap = await getDocs(
-    query(collectionGroup(db, 'playerMatchResults'), where('playerId', '==', playerId))
-  );
-  return snap.docs.map((d) => ({
-    id: d.id,
-    tournamentId: d.ref.parent?.parent?.id || '',
-    ...d.data(),
-  }));
+  try {
+    const snap = await getDocs(
+      query(collectionGroup(db, 'playerMatchResults'), where('playerId', '==', playerId))
+    );
+    return snap.docs.map((d) => ({
+      id: d.id,
+      tournamentId: d.ref.parent?.parent?.id || '',
+      ...d.data(),
+    }));
+  } catch (err) {
+    console.warn('[getAllMatchResultsForPlayer] collectionGroup query failed, using fallback:', err);
+    try {
+      const tourneysSnap = await getDocs(collection(db, 'tournaments'));
+      const tourneys = tourneysSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const allMatchesNested = await Promise.all(
+        tourneys.map(async (t) => {
+          try {
+            const snap = await getDocs(
+              query(
+                collection(db, 'tournaments', t.id, 'playerMatchResults'),
+                where('playerId', '==', playerId)
+              )
+            );
+            return snap.docs.map((d) => ({
+              id: d.id,
+              tournamentId: t.id,
+              ...d.data(),
+            }));
+          } catch (e) {
+            return [];
+          }
+        })
+      );
+      return allMatchesNested.flat();
+    } catch (fallbackErr) {
+      console.error('[getAllMatchResultsForPlayer] Fallback failed:', fallbackErr);
+      throw err;
+    }
+  }
 }
 
 export async function getPlayerMatchResults(tournamentId) {

@@ -31,6 +31,8 @@ async function fetchPlayersData() {
   allPlayers.forEach(p => {
     playerStatsMap[p.id] = {
       ...p,
+      ign: p.currentIGN || p.ign || '—',
+      device: p.currentDevice || p.device || (p.deviceModel ? p.deviceModel : '—'),
       careerKills: 0,
       careerMatches: 0,
       tournamentsCount: 0,
@@ -87,8 +89,11 @@ export default function PlayersPage() {
     const matchSearch = 
       p.professionalName?.toLowerCase().includes(q) ||
       p.ign?.toLowerCase().includes(q) ||
+      p.currentIGN?.toLowerCase().includes(q) ||
+      (Array.isArray(p.ignHistory) && p.ignHistory.some(h => h?.toLowerCase().includes(q))) ||
       p.device?.toLowerCase().includes(q) ||
-      p.deviceModel?.toLowerCase().includes(q);
+      p.deviceModel?.toLowerCase().includes(q) ||
+      p.country?.toLowerCase().includes(q);
       
     const matchRegion = regionFilter ? p.region === regionFilter : true;
     const matchClass = classFilter ? p.lastClass === classFilter : true;

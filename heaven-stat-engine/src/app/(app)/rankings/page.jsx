@@ -75,13 +75,17 @@ export default function RankingsPage() {
         // 1. Career Player Leaderboard
         const playerStatsMap = {};
         allPlayers.forEach(p => {
+          const latestIgn = p.currentIGN || p.ign || '—';
+          const latestDevice = p.currentDevice || p.device || (p.deviceModel ? p.deviceModel : '—');
           playerStatsMap[p.id] = {
             id: p.id,
             professionalName: p.professionalName,
-            ign: p.ign,
+            ign: latestIgn,
+            currentIGN: p.currentIGN || '',
+            ignHistory: p.ignHistory || [],
             region: p.region || '—',
             country: p.country || '—',
-            device: p.device || '—',
+            device: latestDevice,
             lastClass: 'Class 1',
             lastTeam: '—',
             clanName: '—',
@@ -194,10 +198,17 @@ export default function RankingsPage() {
     const rawPlayerForm = allPlayers.map(p => {
       const gf = computePlayerGlobalForm(p.id, allTourneys, playerMatchResultsByTournament, categoryFilter);
       const meta = playerStatsMap[p.id] || {};
+      const latestIgn = p.currentIGN || p.ign || meta.ign || '—';
+      const latestDevice = p.currentDevice || p.device || meta.device || '—';
       return {
         ...p,
+        ign: latestIgn,
+        currentIGN: p.currentIGN || '',
+        ignHistory: p.ignHistory || meta.ignHistory || [],
+        device: latestDevice,
         lastTeam: meta.lastTeam || '—',
         lastClass: meta.lastClass || 'Class 1',
+        clanName: meta.clanName || '—',
         globalForm: gf,
       };
     });
@@ -228,6 +239,9 @@ export default function RankingsPage() {
       const matchSearch =
         p.professionalName?.toLowerCase().includes(q) ||
         p.ign?.toLowerCase().includes(q) ||
+        p.currentIGN?.toLowerCase().includes(q) ||
+        (Array.isArray(p.ignHistory) && p.ignHistory.some(h => h?.toLowerCase().includes(q))) ||
+        p.device?.toLowerCase().includes(q) ||
         p.lastTeam?.toLowerCase().includes(q) ||
         p.clanName?.toLowerCase().includes(q);
 
@@ -253,6 +267,9 @@ export default function RankingsPage() {
       const matchSearch =
         p.professionalName?.toLowerCase().includes(q) ||
         p.ign?.toLowerCase().includes(q) ||
+        p.currentIGN?.toLowerCase().includes(q) ||
+        (Array.isArray(p.ignHistory) && p.ignHistory.some(h => h?.toLowerCase().includes(q))) ||
+        p.device?.toLowerCase().includes(q) ||
         p.lastTeam?.toLowerCase().includes(q);
 
       const matchRegion = regionFilter ? p.region === regionFilter : true;

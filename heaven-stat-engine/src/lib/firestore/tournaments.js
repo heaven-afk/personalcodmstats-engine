@@ -134,19 +134,49 @@ export async function deleteTeamRegistration(tournamentId, regId) {
   await deleteDoc(doc(db, 'tournaments', tournamentId, 'teamRegistrations', regId));
 }
 
-// ─── Player Registrations ─────────────────────────────────────────────────────
 export async function getAllRegistrationsForPlayer(playerId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetAllRegistrationsForPlayer(playerId);
   }
-  const snap = await getDocs(
-    query(collectionGroup(db, 'playerRegistrations'), where('playerId', '==', playerId))
-  );
-  return snap.docs.map((d) => ({
-    id: d.id,
-    tournamentId: d.ref.parent?.parent?.id || '',
-    ...d.data(),
-  }));
+  try {
+    const snap = await getDocs(
+      query(collectionGroup(db, 'playerRegistrations'), where('playerId', '==', playerId))
+    );
+    return snap.docs.map((d) => ({
+      id: d.id,
+      tournamentId: d.ref.parent?.parent?.id || '',
+      ...d.data(),
+    }));
+  } catch (err) {
+    console.warn('[getAllRegistrationsForPlayer] collectionGroup query failed, using fallback:', err);
+    try {
+      const tourneysSnap = await getDocs(collection(db, 'tournaments'));
+      const tourneys = tourneysSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const allRegsNested = await Promise.all(
+        tourneys.map(async (t) => {
+          try {
+            const snap = await getDocs(
+              query(
+                collection(db, 'tournaments', t.id, 'playerRegistrations'),
+                where('playerId', '==', playerId)
+              )
+            );
+            return snap.docs.map((d) => ({
+              id: d.id,
+              tournamentId: t.id,
+              ...d.data(),
+            }));
+          } catch (e) {
+            return [];
+          }
+        })
+      );
+      return allRegsNested.flat();
+    } catch (fallbackErr) {
+      console.error('[getAllRegistrationsForPlayer] Fallback failed:', fallbackErr);
+      throw err;
+    }
+  }
 }
 
 export async function getPlayerRegistrations(tournamentId) {
