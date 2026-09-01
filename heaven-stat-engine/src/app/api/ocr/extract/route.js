@@ -68,13 +68,13 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Helper to call Google Gemini Vision API with model fallback and robust JSON parsing
 async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType = 'image/jpeg') {
   const models = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro',
-    'gemini-flash-latest'
+    'gemini-1.5-flash',       // 1500 RPD free — primary workhorse
+    'gemini-1.5-flash-8b',    // 1500 RPD free — fast & lightweight
+    'gemini-2.0-flash',       // 200 RPD free
+    'gemini-2.0-flash-lite',  // 200 RPD free
+    'gemini-1.5-pro',         // 50 RPD free
+    'gemini-2.5-flash',       // 25 RPD free
+    'gemini-flash-latest'     // alias fallback
   ];
   let lastError = null;
 
@@ -150,13 +150,13 @@ async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, 
 // Helper to retry with conversation history
 async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText, mimeType = 'image/jpeg') {
   const models = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro',
-    'gemini-flash-latest'
+    'gemini-1.5-flash',       // 1500 RPD free — primary workhorse
+    'gemini-1.5-flash-8b',    // 1500 RPD free — fast & lightweight
+    'gemini-2.0-flash',       // 200 RPD free
+    'gemini-2.0-flash-lite',  // 200 RPD free
+    'gemini-1.5-pro',         // 50 RPD free
+    'gemini-2.5-flash',       // 25 RPD free
+    'gemini-flash-latest'     // alias fallback
   ];
   let lastError = null;
 
