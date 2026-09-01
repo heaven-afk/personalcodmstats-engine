@@ -15,6 +15,7 @@ const OWNER_ONLY_PREFIXES = [
   '/simulate',
   '/rankings',
   '/fantasy',
+  '/admin',
 ];
 
 export default function AppLayout({ children }) {

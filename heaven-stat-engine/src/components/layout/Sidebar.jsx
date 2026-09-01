@@ -6,7 +6,7 @@ import Wordmark from '@/components/ui/Wordmark';
 import UserAvatar from '@/components/ui/UserAvatar';
 import {
   LayoutDashboard, FolderGit2, Trophy, Users, Shield, BarChart3, Settings, LogOut, GitCompare,
-  FlaskConical, Sparkles, Coins, X, User as UserIcon
+  FlaskConical, Sparkles, Coins, X, User as UserIcon, ShieldAlert
 } from 'lucide-react';
 
 const NAV = [
@@ -21,6 +21,7 @@ const NAV = [
   { href: '/analysis',    label: 'Analysis Board', icon: Sparkles },
   { href: '/simulate',    label: 'Simulate',      icon: FlaskConical },
   { href: '/settings',    label: 'Settings',      icon: Settings },
+  { href: '/admin',       label: 'Admin',         icon: ShieldAlert, ownerOnly: true },
 ];
 
 export default function Sidebar({ mobileOpen, onClose }) {
@@ -33,6 +34,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
 
   // Role-gate navigation: operators see Dashboard, My Projects, Tournaments, Players, Teams, Settings, Analysis Board
   const visibleNav = NAV.filter(item => {
+    if (item.ownerOnly && !isOwner) return false;
     if (isOperator) {
       return ['/dashboard', '/projects', '/tournaments', '/players', '/teams', '/settings', '/analysis'].includes(item.href);
     }

@@ -305,17 +305,34 @@ export async function POST(req) {
     const mimeType = file.type || 'image/jpeg';
 
     let extractedData;
+    let usedModel = 'unknown';
+    const scanStart = Date.now();
+
+    // Helper: fire-and-forget log to Firestore via internal endpoint
+    const logScan = (success, errorCode = null) => {
+      const latencyMs = Date.now() - scanStart;
+      fetch('/api/ocr/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyIndex, model: usedModel, success, latencyMs, errorCode, type, lobbyNumber }),
+      }).catch(() => {}); // never throw
+    };
+
     try {
       extractedData = await callGeminiVisionAPI(primaryKey, systemPrompt, userText, base64Image, mimeType);
+      usedModel = extractedData?._model || 'gemini-2.5-flash';
     } catch (primaryErr) {
       // If primary key fails and we have a fallback key, try it
       if (fallbackKey) {
         try {
           extractedData = await callGeminiVisionAPI(fallbackKey, systemPrompt, userText, base64Image, mimeType);
+          usedModel = extractedData?._model || 'gemini-2.5-flash';
         } catch (fallbackErr) {
+          logScan(false, 'all_keys_failed');
           return NextResponse.json({ error: 'gemini_failed', message: primaryErr.message }, { status: 500 });
         }
       } else {
+        logScan(false, primaryErr.message?.includes('429') ? '429' : '503');
         return NextResponse.json({ error: 'gemini_failed', message: primaryErr.message }, { status: 500 });
       }
     }
@@ -369,6 +386,7 @@ export async function POST(req) {
       retried
     };
 
+    logScan(true);
     return NextResponse.json(responsePayload);
 
   } catch (err) {
