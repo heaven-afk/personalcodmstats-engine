@@ -260,17 +260,16 @@ export default function PlayerInfluenceCard({ influence, xgSummary, scopeLabel =
         </div>
 
         {!hasInfluence ? (
-          /* Not applicable — solo-only */
+          /* Insufficient or no match records */
           <div style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', padding: '32px 16px', gap: 10,
             color: 'var(--text-muted)', textAlign: 'center',
           }}>
             <Info size={28} style={{ opacity: 0.4 }} />
-            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Not Applicable — Solo Only</span>
+            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>No Match Data Available</span>
             <span style={{ fontSize: '0.78rem', maxWidth: 360 }}>
-              Player Influence requires at least one duo, trio, or squad match.
-              All recorded matches in this scope are solo.
+              Player Influence requires at least one match result recorded for this player and their team.
             </span>
           </div>
         ) : (
@@ -359,7 +358,7 @@ export default function PlayerInfluenceCard({ influence, xgSummary, scopeLabel =
 
           {!hasInfluence || !breakdown?.killsContribution ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-              {!hasInfluence ? 'Not applicable — solo-only matches.' : 'Insufficient data.'}
+              No team match data recorded for kills contribution.
             </p>
           ) : (
             <div className="space-y-4">
@@ -394,7 +393,7 @@ export default function PlayerInfluenceCard({ influence, xgSummary, scopeLabel =
 
           {!hasInfluence || !breakdown?.damageContribution ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-              {!hasInfluence ? 'Not applicable — solo-only matches.' : 'Insufficient data.'}
+              No team match data recorded for damage contribution.
             </p>
           ) : (
             <div className="space-y-4">

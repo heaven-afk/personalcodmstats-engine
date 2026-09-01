@@ -467,10 +467,15 @@ function GlobalPlayerAnalysisSection({
             });
           });
 
+          const isSoloTourney = t.format === 'solo' || t.isSolo === true;
+          const distinctTeammatesInTourney = new Set(playerResults.filter(pr => pr.teamId === myTeamId).map(pr => pr.playerId)).size;
           const teamMatchesForMyTeam = teamResults.filter(tr => tr.teamId === myTeamId);
+          const processedMatchKeys = new Set();
 
           teamMatchesForMyTeam.forEach(tm => {
             const matchKey = `${tm.day}-${tm.lobby}${tm.groupId ? '-' + tm.groupId : ''}`;
+            processedMatchKeys.add(matchKey);
+
             const allPlayerResultsThisMatch = playerResults.filter(pr =>
               pr.teamId === myTeamId &&
               pr.day === tm.day &&
@@ -478,21 +483,71 @@ function GlobalPlayerAnalysisSection({
               (tm.groupId ? pr.groupId === tm.groupId : true)
             );
 
-            const teamSize = new Set(allPlayerResultsThisMatch.map(pr => pr.playerId)).size || 1;
+            const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(pr => pr.playerId)).size;
+            const teamSize = isSoloTourney
+              ? 1
+              : (distinctPlayersThisMatch > 1
+                  ? distinctPlayersThisMatch
+                  : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (t.playersPerTeam || 4)));
+
             const myResult = allPlayerResultsThisMatch.find(pr => pr.playerId === selectedPlayerId);
             const present = Boolean(myResult);
-            const teamTotalDamage = allPlayerResultsThisMatch.reduce((s, pr) => s + (pr.damage || 0), 0);
+
+            let teamTotalDamage = allPlayerResultsThisMatch.reduce((s, pr) => s + (pr.damage || 0), 0);
+            if (myResult?.damage && teamTotalDamage <= myResult.damage && (tm.kills || 0) > (myResult?.kills || 0)) {
+              teamTotalDamage = myResult.kills > 0
+                ? Math.round((myResult.damage / myResult.kills) * (tm.kills || 1))
+                : myResult.damage + ((tm.kills || 1) * 250);
+            }
 
             teamMatchHistory.push({
               matchId: `${t.id}-${matchKey}`,
               teamId: myTeamId,
               present,
               placement: tm.placement || 0,
-              teamTotalKills: tm.kills || 0,
+              teamTotalKills: tm.kills || myResult?.kills || 0,
               playerKills: myResult?.kills || 0,
               playerDamage: myResult?.damage || 0,
               teamTotalDamage,
               teamSize,
+              isSolo: isSoloTourney,
+            });
+          });
+
+          // Handle player matches that might not be in teamResults
+          myPlayerResults.forEach(pr => {
+            const matchKey = `${pr.day}-${pr.lobby}${pr.groupId ? '-' + pr.groupId : ''}`;
+            if (processedMatchKeys.has(matchKey)) return;
+            processedMatchKeys.add(matchKey);
+
+            const allPlayerResultsThisMatch = playerResults.filter(r =>
+              r.teamId === myTeamId &&
+              r.day === pr.day &&
+              r.lobby === pr.lobby &&
+              (pr.groupId ? r.groupId === pr.groupId : true)
+            );
+
+            const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(r => r.playerId)).size;
+            const teamSize = isSoloTourney
+              ? 1
+              : (distinctPlayersThisMatch > 1
+                  ? distinctPlayersThisMatch
+                  : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (t.playersPerTeam || 4)));
+
+            const teamTotalKills = allPlayerResultsThisMatch.reduce((s, r) => s + (r.kills || 0), 0);
+            const teamTotalDamage = allPlayerResultsThisMatch.reduce((s, r) => s + (r.damage || 0), 0);
+
+            teamMatchHistory.push({
+              matchId: `${t.id}-${matchKey}`,
+              teamId: myTeamId,
+              present: true,
+              placement: pr.placement || 0,
+              teamTotalKills: teamTotalKills || pr.kills || 0,
+              playerKills: pr.kills || 0,
+              playerDamage: pr.damage || 0,
+              teamTotalDamage: teamTotalDamage || pr.damage || 0,
+              teamSize,
+              isSolo: isSoloTourney,
             });
           });
         });
