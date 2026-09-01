@@ -1055,7 +1055,7 @@ export default function TeamEntryPage() {
       return item;
     }));
 
-    // Pool-based concurrency runner — limits simultaneous Gemini calls
+    // Pool-based concurrency runner — distributes images across 2 Gemini API keys for 2x throughput
     const runPool = async (tasks, concurrency) => {
       const results = [];
       let idx = 0;
@@ -1069,7 +1069,8 @@ export default function TeamEntryPage() {
       return results;
     };
 
-    const tasks = pendingItems.map((item) => async () => {
+    const tasks = pendingItems.map((item, taskIdx) => async () => {
+      const keyIndex = taskIdx % 2; // Alternate: even images → key1, odd images → key2
       let progressInterval = null;
       try {
         progressInterval = setInterval(() => {
@@ -1081,7 +1082,7 @@ export default function TeamEntryPage() {
           }));
         }, 800);
 
-        const data = await uploadAndParseImage(item.file, item.lobby, 'team');
+        const data = await uploadAndParseImage(item.file, item.lobby, 'team', keyIndex);
 
         const mappedRows = (data.rows || []).map(row => {
           const matchResult = matchOcrRowToTeam(row, activeTeamRegs);

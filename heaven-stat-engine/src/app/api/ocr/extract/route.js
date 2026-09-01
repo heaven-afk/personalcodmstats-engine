@@ -266,15 +266,22 @@ function isRankAnomaly(rows) {
 
 export async function POST(req) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'gemini_failed', message: 'No API key configured for Google Gemini on the server. Please set GEMINI_API_KEY or GOOGLE_API_KEY.' }, { status: 500 });
+    const key1 = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const key2 = process.env.GEMINI_API_KEY_2;
+
+    if (!key1 && !key2) {
+      return NextResponse.json({ error: 'gemini_failed', message: 'No API key configured for Google Gemini on the server. Please set GEMINI_API_KEY.' }, { status: 500 });
     }
 
     const formData = await req.formData();
     const file = formData.get('image');
     const lobbyNumberInput = formData.get('lobbyNumber');
     const type = formData.get('type') || 'team'; // 'team' | 'player'
+    const keyIndex = parseInt(formData.get('keyIndex') || '0');
+
+    // Pick primary key based on keyIndex, fall back to the other key
+    const primaryKey = keyIndex === 1 && key2 ? key2 : (key1 || key2);
+    const fallbackKey = primaryKey === key1 ? key2 : key1;
 
     if (!file) {
       return NextResponse.json({ error: 'missing_file', message: 'No screenshot file uploaded.' }, { status: 400 });
@@ -299,9 +306,18 @@ export async function POST(req) {
 
     let extractedData;
     try {
-      extractedData = await callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType);
-    } catch (err) {
-      return NextResponse.json({ error: 'gemini_failed', message: err.message }, { status: 500 });
+      extractedData = await callGeminiVisionAPI(primaryKey, systemPrompt, userText, base64Image, mimeType);
+    } catch (primaryErr) {
+      // If primary key fails and we have a fallback key, try it
+      if (fallbackKey) {
+        try {
+          extractedData = await callGeminiVisionAPI(fallbackKey, systemPrompt, userText, base64Image, mimeType);
+        } catch (fallbackErr) {
+          return NextResponse.json({ error: 'gemini_failed', message: primaryErr.message }, { status: 500 });
+        }
+      } else {
+        return NextResponse.json({ error: 'gemini_failed', message: primaryErr.message }, { status: 500 });
+      }
     }
 
     if (extractedData.error) {
@@ -314,12 +330,12 @@ export async function POST(req) {
     let isLowConfidence = totalRows > 0 && (nullKills / totalRows) > 0.3;
 
     let retried = false;
-    // Auto-Retry once if low confidence (Gemini multi-turn only; skip for Groq)
-    if (isLowConfidence && usedProvider === 'gemini' && geminiApiKey) {
+    // Auto-Retry once if low confidence
+    if (isLowConfidence) {
       try {
         const followUpText = "The kills column appears to be a number on the right side of each row. Please re-extract focusing on that column.";
         extractedData = await callGeminiVisionAPIWithHistory(
-          geminiApiKey,
+          primaryKey,
           systemPrompt,
           userText,
           base64Image,
