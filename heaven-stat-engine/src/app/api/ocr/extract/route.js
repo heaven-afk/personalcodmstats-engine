@@ -63,63 +63,83 @@ Response schema:
   ]
 }`;
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Helper to call Google Gemini Vision API with model fallback and robust JSON parsing
 async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType = 'image/jpeg') {
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+  const models = [
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-pro',
+    'gemini-flash-latest'
+  ];
   let lastError = null;
 
   for (const model of models) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [
-              { text: systemPrompt }
-            ]
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
           },
-          contents: [
-            {
+          body: JSON.stringify({
+            systemInstruction: {
               parts: [
-                { text: userText },
-                {
-                  inlineData: {
-                    mimeType: mimeType || 'image/jpeg',
-                    data: base64Image
-                  }
-                }
+                { text: systemPrompt }
               ]
+            },
+            contents: [
+              {
+                parts: [
+                  { text: userText },
+                  {
+                    inlineData: {
+                      mimeType: mimeType || 'image/jpeg',
+                      data: base64Image
+                    }
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0
             }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          lastError = new Error(`Gemini API (${model}) returned ${response.status}: ${errorText}`);
+          // If 503 (high demand) or 429 (rate limit), wait briefly and retry once on this model before moving to next
+          if ((response.status === 503 || response.status === 429) && attempt === 0) {
+            await delay(800);
+            continue;
           }
-        })
-      });
+          break;
+        }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        lastError = new Error(`Gemini API (${model}) returned ${response.status}: ${errorText}`);
-        continue;
+        const data = await response.json();
+        let rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawJsonText) {
+          throw new Error('Gemini Vision API returned empty message content');
+        }
+
+        // Clean markdown code fence formatting if present
+        rawJsonText = rawJsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+
+        return JSON.parse(rawJsonText);
+      } catch (err) {
+        lastError = err;
+        if (attempt === 0) {
+          await delay(500);
+          continue;
+        }
+        break;
       }
-
-      const data = await response.json();
-      let rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawJsonText) {
-        throw new Error('Gemini Vision API returned empty message content');
-      }
-
-      // Clean markdown code fence formatting if present
-      rawJsonText = rawJsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-
-      return JSON.parse(rawJsonText);
-    } catch (err) {
-      lastError = err;
-      continue;
     }
   }
 
@@ -128,73 +148,90 @@ async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, 
 
 // Helper to retry with conversation history
 async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText, mimeType = 'image/jpeg') {
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+  const models = [
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-pro',
+    'gemini-flash-latest'
+  ];
   let lastError = null;
 
   for (const model of models) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [
-              { text: systemPrompt }
-            ]
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
           },
-          contents: [
-            {
-              role: "user",
+          body: JSON.stringify({
+            systemInstruction: {
               parts: [
-                { text: userText },
-                {
-                  inlineData: {
-                    mimeType: mimeType || 'image/jpeg',
-                    data: base64Image
+                { text: systemPrompt }
+              ]
+            },
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { text: userText },
+                  {
+                    inlineData: {
+                      mimeType: mimeType || 'image/jpeg',
+                      data: base64Image
+                    }
                   }
-                }
-              ]
-            },
-            {
-              role: "model",
-              parts: [
-                { text: firstAssistantMsg }
-              ]
-            },
-            {
-              role: "user",
-              parts: [
-                { text: followUpText }
-              ]
+                ]
+              },
+              {
+                role: "model",
+                parts: [
+                  { text: firstAssistantMsg }
+                ]
+              },
+              {
+                role: "user",
+                parts: [
+                  { text: followUpText }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0
             }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          lastError = new Error(`Gemini API retry (${model}) returned ${response.status}: ${errorText}`);
+          if ((response.status === 503 || response.status === 429) && attempt === 0) {
+            await delay(800);
+            continue;
           }
-        })
-      });
+          break;
+        }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        lastError = new Error(`Gemini API retry (${model}) returned ${response.status}: ${errorText}`);
-        continue;
+        const data = await response.json();
+        let rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawJsonText) {
+          throw new Error('Gemini Vision API retry returned empty message content');
+        }
+
+        rawJsonText = rawJsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+
+        return JSON.parse(rawJsonText);
+      } catch (err) {
+        lastError = err;
+        if (attempt === 0) {
+          await delay(500);
+          continue;
+        }
+        break;
       }
-
-      const data = await response.json();
-      let rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawJsonText) {
-        throw new Error('Gemini Vision API retry returned empty message content');
-      }
-
-      rawJsonText = rawJsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-
-      return JSON.parse(rawJsonText);
-    } catch (err) {
-      lastError = err;
-      continue;
     }
   }
 
