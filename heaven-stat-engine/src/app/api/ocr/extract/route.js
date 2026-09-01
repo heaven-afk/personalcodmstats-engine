@@ -240,86 +240,6 @@ async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, ba
   throw lastError || new Error('Gemini API retry failed across all models');
 }
 
-// Groq Vision API fallback — used when all Gemini models are unavailable
-async function callGroqVisionAPI(groqApiKey, systemPrompt, userText, base64Image, mimeType = 'image/jpeg') {
-  // Groq vision models in order of preference
-  const models = [
-    'meta-llama/llama-4-scout-17b-16e-instruct',
-    'llama-3.2-11b-vision-preview',
-    'llama-3.2-90b-vision-preview',
-  ];
-  let lastError = null;
-
-  for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${groqApiKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0,
-            max_tokens: 4096,
-            messages: [
-              {
-                role: 'system',
-                content: systemPrompt,
-              },
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:${mimeType || 'image/jpeg'};base64,${base64Image}`,
-                    },
-                  },
-                  {
-                    type: 'text',
-                    text: userText,
-                  },
-                ],
-              },
-            ],
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          lastError = new Error(`Groq API (${model}) returned ${response.status}: ${errorText}`);
-          if ((response.status === 503 || response.status === 429) && attempt === 0) {
-            await delay(800);
-            continue;
-          }
-          break;
-        }
-
-        const data = await response.json();
-        let rawJsonText = data.choices?.[0]?.message?.content;
-        if (!rawJsonText) {
-          throw new Error('Groq Vision API returned empty message content');
-        }
-
-        // Clean markdown code fence formatting if present
-        rawJsonText = rawJsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-
-        return JSON.parse(rawJsonText);
-      } catch (err) {
-        lastError = err;
-        if (attempt === 0) {
-          await delay(500);
-          continue;
-        }
-        break;
-      }
-    }
-  }
-
-  throw lastError || new Error('Groq Vision API call failed across all models');
-}
 
 // Check if ranks have duplicates or are not sequential (allowing starting at any number)
 function isRankAnomaly(rows) {
@@ -346,11 +266,9 @@ function isRankAnomaly(rows) {
 
 export async function POST(req) {
   try {
-    const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    const groqApiKey = process.env.GROQ_API_KEY;
-
-    if (!geminiApiKey && !groqApiKey) {
-      return NextResponse.json({ error: 'ocr_failed', message: 'No API key configured for OCR. Please set GEMINI_API_KEY or GROQ_API_KEY.' }, { status: 500 });
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: 'gemini_failed', message: 'No API key configured for Google Gemini on the server. Please set GEMINI_API_KEY or GOOGLE_API_KEY.' }, { status: 500 });
     }
 
     const formData = await req.formData();
@@ -380,33 +298,10 @@ export async function POST(req) {
     const mimeType = file.type || 'image/jpeg';
 
     let extractedData;
-    let usedProvider = 'gemini';
-
-    // Try Gemini first, fall back to Groq if all Gemini models fail
-    if (geminiApiKey) {
-      try {
-        extractedData = await callGeminiVisionAPI(geminiApiKey, systemPrompt, userText, base64Image, mimeType);
-      } catch (geminiErr) {
-        console.warn('All Gemini models failed, falling back to Groq Vision:', geminiErr.message);
-        if (groqApiKey) {
-          try {
-            extractedData = await callGroqVisionAPI(groqApiKey, systemPrompt, userText, base64Image, mimeType);
-            usedProvider = 'groq';
-          } catch (groqErr) {
-            return NextResponse.json({ error: 'ocr_failed', message: `Gemini: ${geminiErr.message} | Groq: ${groqErr.message}` }, { status: 500 });
-          }
-        } else {
-          return NextResponse.json({ error: 'gemini_failed', message: geminiErr.message }, { status: 500 });
-        }
-      }
-    } else {
-      // No Gemini key — go straight to Groq
-      try {
-        extractedData = await callGroqVisionAPI(groqApiKey, systemPrompt, userText, base64Image, mimeType);
-        usedProvider = 'groq';
-      } catch (groqErr) {
-        return NextResponse.json({ error: 'ocr_failed', message: groqErr.message }, { status: 500 });
-      }
+    try {
+      extractedData = await callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType);
+    } catch (err) {
+      return NextResponse.json({ error: 'gemini_failed', message: err.message }, { status: 500 });
     }
 
     if (extractedData.error) {
@@ -455,8 +350,7 @@ export async function POST(req) {
       lobby: lobbyNumber,
       rows,
       warnings,
-      retried,
-      provider: usedProvider
+      retried
     };
 
     return NextResponse.json(responsePayload);
