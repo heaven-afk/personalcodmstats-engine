@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { fetchOcrLogs, computeOcrStats } from '@/lib/firestore/ocrLogs';
 import {
   Activity, CheckCircle, XCircle, Clock, Key, Zap,
-  RefreshCw, TrendingUp, DollarSign, BarChart2, Shield
+  RefreshCw, TrendingUp, DollarSign, BarChart2, Shield,
+  Users, User
 } from 'lucide-react';
 
 const PERIODS = [
@@ -35,19 +36,20 @@ function StatCard({ icon: Icon, label, value, sub, color = 'var(--accent)' }) {
   );
 }
 
-function ModelBar({ model, count, total }) {
+function BreakdownBar({ label, count, total, color = 'var(--accent)' }) {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  const shortModel = model.replace('gemini-', '').replace('-flash', '⚡').replace('-pro', '★');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-        <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{shortModel}</span>
-        <span style={{ color: 'var(--text-muted)' }}>{count} ({pct}%)</span>
+        <span style={{ color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+          {label}
+        </span>
+        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{count} ({pct}%)</span>
       </div>
       <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
         <div style={{
           width: `${pct}%`, height: '100%', borderRadius: 3,
-          background: 'linear-gradient(90deg, var(--accent), #7c3aed)',
+          background: color,
           transition: 'width 0.6s ease',
         }} />
       </div>
@@ -56,26 +58,48 @@ function ModelBar({ model, count, total }) {
 }
 
 function RecentLogsTable({ logs }) {
-  const recent = logs.slice(0, 20);
-  if (!recent.length) return <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No logs yet.</p>;
+  const recent = logs.slice(0, 30);
+  if (!recent.length) return <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No scan logs recorded for this time range.</p>;
 
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border)' }}>
-            {['Time', 'Model', 'Key', 'Type', 'Lobby', 'Status', 'Latency'].map(h => (
+            {['Time', 'User', 'File / Scope', 'Model', 'Key', 'Type', 'Status', 'Latency'].map(h => (
               <th key={h} style={{ padding: '8px 12px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {recent.map((log, i) => {
-            const ts = log.createdAt?.toDate?.() || new Date();
+            const ts = log.createdAt?.toDate ? log.createdAt.toDate() : (log.createdAt ? new Date(log.createdAt) : new Date());
+            const userDisplay = log.userEmail || log.userName || 'Anonymous';
             return (
               <tr key={log.id || i} style={{ borderBottom: '1px solid var(--border)', opacity: 0.9 }}>
-                <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{ts.toLocaleTimeString()}</td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{log.model?.replace('gemini-', '') || '—'}</td>
+                <td style={{ padding: '8px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                <td style={{ padding: '8px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: '50%', background: 'rgba(201,168,76,0.18)',
+                      color: 'var(--gold)', fontSize: '0.65rem', fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      {(userDisplay[0] || 'U').toUpperCase()}
+                    </div>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.78rem' }}>
+                      {userDisplay}
+                    </span>
+                  </div>
+                </td>
+                <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                  <div style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.fileName || `Lobby #${log.lobbyNumber || 1}`}>
+                    {log.fileName || (log.lobbyNumber ? `Lobby #${log.lobbyNumber}` : '—')}
+                  </div>
+                </td>
+                <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                  {(log.model || 'gemini').replace('gemini-', '')}
+                </td>
                 <td style={{ padding: '8px 12px' }}>
                   <span style={{
                     padding: '2px 7px', borderRadius: 4, fontSize: '0.7rem', fontWeight: 700,
@@ -83,15 +107,18 @@ function RecentLogsTable({ logs }) {
                     color: log.keyIndex === 0 ? '#818cf8' : '#34d399',
                   }}>Key {(log.keyIndex ?? 0) + 1}</span>
                 </td>
-                <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{log.type || '—'}</td>
-                <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>#{log.lobbyNumber || '—'}</td>
+                <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
+                  {log.type || 'team'}
+                </td>
                 <td style={{ padding: '8px 12px' }}>
                   {log.success
-                    ? <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}><CheckCircle size={12} /> OK</span>
-                    : <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: 4 }}><XCircle size={12} /> {log.errorCode || 'Fail'}</span>
+                    ? <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}><CheckCircle size={12} /> OK</span>
+                    : <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}><XCircle size={12} /> {log.errorCode || 'Fail'}</span>
                   }
                 </td>
-                <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>{log.latencyMs ? `${(log.latencyMs / 1000).toFixed(1)}s` : '—'}</td>
+                <td style={{ padding: '8px 12px', color: 'var(--text-muted)' }}>
+                  {log.latencyMs ? `${(log.latencyMs / 1000).toFixed(1)}s` : '—'}
+                </td>
               </tr>
             );
           })}
@@ -137,9 +164,10 @@ export default function AdminPage() {
   if (loading || !isOwner) return null;
 
   const successColor = stats?.successRate >= 90 ? '#34d399' : stats?.successRate >= 70 ? '#fbbf24' : '#f87171';
+  const uniqueUsersCount = stats && stats.userBreakdown ? Object.keys(stats.userBreakdown).length : 0;
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 20px' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 20px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -152,7 +180,7 @@ export default function AdminPage() {
           </div>
           <div>
             <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Admin Dashboard</h1>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>OCR Usage & API Health Monitor</p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Global OCR Usage & Multi-User Activity Monitor</p>
           </div>
         </div>
 
@@ -182,20 +210,45 @@ export default function AdminPage() {
 
       {lastRefresh && (
         <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 20 }}>
-          Last updated: {lastRefresh.toLocaleTimeString()}
+          Last refreshed: {lastRefresh.toLocaleTimeString()} · Monitoring all users across workspace
         </p>
       )}
 
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 28 }}>
         <StatCard icon={Activity} label="Total Scans" value={stats?.total ?? '—'} sub={`${period === 1 ? 'Today' : `Last ${period} days`}`} />
-        <StatCard icon={CheckCircle} label="Success Rate" value={stats ? `${stats.successRate}%` : '—'} sub={`${stats?.success ?? 0} succeeded, ${stats?.failed ?? 0} failed`} color={successColor} />
+        <StatCard icon={Users} label="Active Users" value={uniqueUsersCount} sub="uploaded screenshots" color="#38bdf8" />
+        <StatCard icon={CheckCircle} label="Success Rate" value={stats ? `${stats.successRate}%` : '—'} sub={`${stats?.success ?? 0} OK, ${stats?.failed ?? 0} errors`} color={successColor} />
         <StatCard icon={Clock} label="Avg Speed" value={stats?.avgLatencyMs ? `${(stats.avgLatencyMs / 1000).toFixed(1)}s` : '—'} sub="per scan" color="#60a5fa" />
-        <StatCard icon={DollarSign} label="Est. Cost" value={stats ? `$${stats.estimatedCostUsd}` : '—'} sub="~$0.0002 per scan" color="#fbbf24" />
+        <StatCard icon={DollarSign} label="Est. Cost" value={stats ? `$${stats.estimatedCostUsd}` : '—'} sub="~$0.0002 / scan" color="#fbbf24" />
       </div>
 
-      {/* Key Distribution */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 28 }}>
+      {/* 3-Column Breakdown: Users, Keys, Models */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 28 }}>
+        {/* User Activity */}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <Users size={13} /> Scans by User
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {stats && Object.keys(stats.userBreakdown || {}).length > 0
+              ? Object.entries(stats.userBreakdown)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([userKey, count]) => (
+                    <BreakdownBar
+                      key={userKey}
+                      label={userKey}
+                      count={count}
+                      total={stats.total}
+                      color="linear-gradient(90deg, #38bdf8, #818cf8)"
+                    />
+                  ))
+              : <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>No user activity yet.</p>
+            }
+          </div>
+        </div>
+
+        {/* Key Distribution */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             <Key size={13} /> Key Distribution
@@ -228,11 +281,17 @@ export default function AdminPage() {
             <BarChart2 size={13} /> Model Breakdown
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {stats && Object.keys(stats.modelBreakdown).length > 0
+            {stats && Object.keys(stats.modelBreakdown || {}).length > 0
               ? Object.entries(stats.modelBreakdown)
                   .sort((a, b) => b[1] - a[1])
                   .map(([model, count]) => (
-                    <ModelBar key={model} model={model} count={count} total={stats.total} />
+                    <BreakdownBar
+                      key={model}
+                      label={model.replace('gemini-', '')}
+                      count={count}
+                      total={stats.total}
+                      color="linear-gradient(90deg, var(--accent), #a855f7)"
+                    />
                   ))
               : <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>No data yet.</p>
             }
@@ -243,10 +302,10 @@ export default function AdminPage() {
       {/* Recent Logs */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          <Zap size={13} /> Recent Scans (last 20)
+          <Zap size={13} /> Recent Scans across All Users (last 30)
         </div>
         {fetching
-          ? <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading...</p>
+          ? <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading logs...</p>
           : <RecentLogsTable logs={logs} />
         }
       </div>

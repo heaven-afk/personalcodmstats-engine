@@ -1,26 +1,49 @@
 import {
-  collection, addDoc, getDocs, query, where,
-  orderBy, limit, serverTimestamp, Timestamp
+  collection, addDoc, getDocs, query,
+  orderBy, limit, serverTimestamp
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebase';
+import { db, isFirebaseConfigured, auth } from '../firebase';
 
 const COLLECTION = 'ocrLogs';
 
 /**
- * Log a single OCR scan result — called from the API route via a fire-and-forget
- * fetch to an internal logging endpoint (keeps the route server-side).
+ * Log a single OCR scan result to Firestore.
+ * Automatically picks up the active authenticated user's email/name.
  */
-export async function logOcrScan({ keyIndex, model, success, latencyMs, errorCode, type, lobbyNumber }) {
+export async function logOcrScan({
+  keyIndex = 0,
+  model = 'gemini-2.5-flash',
+  success = true,
+  latencyMs = null,
+  errorCode = null,
+  type = 'team',
+  lobbyNumber = null,
+  fileName = '',
+  tournamentId = null,
+  userEmail = null,
+  userName = null,
+  userId = null,
+}) {
   if (!isFirebaseConfigured || !db) return;
   try {
+    const currentAuthUser = typeof window !== 'undefined' ? auth?.currentUser : null;
+    const resolvedEmail = userEmail || currentAuthUser?.email || 'unknown';
+    const resolvedName = userName || currentAuthUser?.displayName || (resolvedEmail.split('@')[0]) || 'User';
+    const resolvedUid = userId || currentAuthUser?.uid || null;
+
     await addDoc(collection(db, COLLECTION), {
       keyIndex: keyIndex ?? 0,
-      model: model || 'unknown',
+      model: model || 'gemini-2.5-flash',
       success: Boolean(success),
       latencyMs: latencyMs ?? null,
       errorCode: errorCode || null,
       type: type || 'team',
       lobbyNumber: lobbyNumber ?? null,
+      fileName: fileName || '',
+      tournamentId: tournamentId || null,
+      userEmail: resolvedEmail,
+      userName: resolvedName,
+      userId: resolvedUid,
       createdAt: serverTimestamp(),
     });
   } catch (err) {
@@ -29,21 +52,30 @@ export async function logOcrScan({ keyIndex, model, success, latencyMs, errorCod
 }
 
 /**
- * Fetch OCR log entries for the last N days. Owner-only.
+ * Fetch OCR log entries for the last N days across all users. Owner-only.
+ * Fetches recent logs ordered by createdAt and filters by date in memory
+ * to avoid requiring complex composite indexes in Firestore.
  */
 export async function fetchOcrLogs(days = 1) {
   if (!isFirebaseConfigured || !db) return [];
   try {
-    const since = new Date();
-    since.setDate(since.getDate() - days);
     const q = query(
       collection(db, COLLECTION),
-      where('createdAt', '>=', Timestamp.fromDate(since)),
       orderBy('createdAt', 'desc'),
       limit(500)
     );
     const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Filter by date cutoff
+    return docs.filter(doc => {
+      if (!doc.createdAt) return true;
+      const docDate = doc.createdAt?.toDate ? doc.createdAt.toDate() : new Date(doc.createdAt);
+      return docDate >= since;
+    });
   } catch (err) {
     console.warn('[ocrLogs] Failed to fetch logs:', err.message);
     return [];
@@ -57,7 +89,7 @@ export function computeOcrStats(logs) {
   if (!logs.length) return {
     total: 0, success: 0, failed: 0, successRate: 0,
     avgLatencyMs: 0, key1Count: 0, key2Count: 0,
-    estimatedCostUsd: 0, modelBreakdown: {},
+    estimatedCostUsd: 0, modelBreakdown: {}, userBreakdown: {},
   };
 
   const success = logs.filter(l => l.success).length;
@@ -80,5 +112,22 @@ export function computeOcrStats(logs) {
     if (l.model) modelBreakdown[l.model] = (modelBreakdown[l.model] || 0) + 1;
   });
 
-  return { total: logs.length, success, failed, successRate, avgLatencyMs, key1Count, key2Count, estimatedCostUsd, modelBreakdown };
+  const userBreakdown = {};
+  logs.forEach(l => {
+    const userLabel = l.userEmail || l.userName || 'Unknown User';
+    userBreakdown[userLabel] = (userBreakdown[userLabel] || 0) + 1;
+  });
+
+  return {
+    total: logs.length,
+    success,
+    failed,
+    successRate,
+    avgLatencyMs,
+    key1Count,
+    key2Count,
+    estimatedCostUsd,
+    modelBreakdown,
+    userBreakdown,
+  };
 }

@@ -1082,7 +1082,7 @@ export default function TeamEntryPage() {
           }));
         }, 800);
 
-        const data = await uploadAndParseImage(item.file, item.lobby, 'team', keyIndex);
+        const data = await uploadAndParseImage(item.file, item.lobby, 'team', keyIndex, { tournamentId: id });
 
         const mappedRows = (data.rows || []).map(row => {
           const matchResult = matchOcrRowToTeam(row, activeTeamRegs);

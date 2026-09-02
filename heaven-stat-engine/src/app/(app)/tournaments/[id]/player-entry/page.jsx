@@ -1359,7 +1359,7 @@ export default function PlayerEntryPage() {
           }));
         }, 800);
 
-        const data = await uploadAndParseImage(item.file, item.lobby, 'player', keyIndex);
+        const data = await uploadAndParseImage(item.file, item.lobby, 'player', keyIndex, { tournamentId: id });
 
         const mappedRows = (data.rows || []).map(row => {
           const nameInput = row.name || '';
