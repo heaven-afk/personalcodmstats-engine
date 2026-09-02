@@ -849,6 +849,11 @@ export default function TeamEntryPage() {
       mode: currentConfig.mode || 'flexible',
       schedule: updatedSchedule,
     };
+    Object.keys(updatedConfig).forEach(k => {
+      if (updatedConfig[k] === undefined) {
+        delete updatedConfig[k];
+      }
+    });
 
     try {
       if (isQualifier && selectedGroupId) {
@@ -865,7 +870,7 @@ export default function TeamEntryPage() {
 
   const handleFlexibleReviveChange = async (lobbyNum, newRevive) => {
     if (!canEdit) return;
-    const currentConfig = activeReviveConfig || { mode: 'flexible', defaultType: REVIVE_TYPES.GULAG_REDEPLOY, schedule: {} };
+    const currentConfig = activeReviveConfig || { mode: 'flexible', reviveType: REVIVE_TYPES[0]?.id || 'auto', schedule: {} };
     const currentSchedule = currentConfig.schedule || {};
     const key = `day${day}_lobby${lobbyNum}`;
     const updatedSchedule = {
@@ -875,8 +880,15 @@ export default function TeamEntryPage() {
     const updatedReviveConfig = {
       ...currentConfig,
       mode: currentConfig.mode || 'flexible',
+      reviveType: currentConfig.reviveType || 'auto',
       schedule: updatedSchedule,
     };
+    delete updatedReviveConfig.defaultType;
+    Object.keys(updatedReviveConfig).forEach(k => {
+      if (updatedReviveConfig[k] === undefined) {
+        delete updatedReviveConfig[k];
+      }
+    });
 
     try {
       if (isQualifier && selectedGroupId) {
