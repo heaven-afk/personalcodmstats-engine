@@ -68,13 +68,8 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Helper to call Google Gemini Vision API with model fallback and robust JSON parsing
 async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, mimeType = 'image/jpeg') {
   const models = [
-    'gemini-2.5-flash',    // Best quality — no quota cap on paid tier
-    'gemini-2.0-flash',    // Fast & accurate
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro',
-    'gemini-flash-latest'
+    'gemini-3.6-flash',    // Current best model
+    'gemini-flash-latest', // Alias fallback
   ];
   let lastError = null;
 
@@ -150,13 +145,8 @@ async function callGeminiVisionAPI(apiKey, systemPrompt, userText, base64Image, 
 // Helper to retry with conversation history
 async function callGeminiVisionAPIWithHistory(apiKey, systemPrompt, userText, base64Image, firstAssistantMsg, followUpText, mimeType = 'image/jpeg') {
   const models = [
-    'gemini-2.5-flash',    // Best quality — no quota cap on paid tier
-    'gemini-2.0-flash',    // Fast & accurate
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro',
-    'gemini-flash-latest'
+    'gemini-3.6-flash',    // Current best model
+    'gemini-flash-latest', // Alias fallback
   ];
   let lastError = null;
 
@@ -305,7 +295,7 @@ export async function POST(req) {
     const mimeType = file.type || 'image/jpeg';
 
     let extractedData;
-    let usedModel = 'gemini-2.5-flash';
+    let usedModel = 'gemini-3.6-flash';
 
     try {
       extractedData = await callGeminiVisionAPI(primaryKey, systemPrompt, userText, base64Image, mimeType);

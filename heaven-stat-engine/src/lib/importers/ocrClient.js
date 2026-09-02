@@ -38,7 +38,7 @@ export async function uploadAndParseImage(file, lobbyNumber, type, keyIndex = 0,
       // Log failure to Firestore
       logOcrScan({
         keyIndex,
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         success: false,
         latencyMs,
         errorCode: errorData.error || `HTTP_${res.status}`,
@@ -76,7 +76,7 @@ export async function uploadAndParseImage(file, lobbyNumber, type, keyIndex = 0,
       const latencyMs = Date.now() - startTime;
       logOcrScan({
         keyIndex,
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         success: false,
         latencyMs,
         errorCode: 'network_error',
