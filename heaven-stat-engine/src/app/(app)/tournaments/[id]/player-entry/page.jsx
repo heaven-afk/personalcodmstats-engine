@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -407,13 +408,16 @@ function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers) {
     return { playerId: null, playerName: parsedName, ign: parsedName, teamName: '', accuracy: 0, matchType: null, confidence: 'none' };
   }
 
+  const safeRegs = Array.isArray(regs) ? regs : [];
+  const safePlayers = Array.isArray(allPlayers) ? allPlayers : [];
+
   let bestMatch = null;
   let maxScore = -1;
   let maxAccuracy = 0;
   let matchType = null;
 
-  for (const reg of regs) {
-    const globalPlayer = allPlayers.find(p => p.id === reg.playerId);
+  for (const reg of safeRegs) {
+    const globalPlayer = safePlayers.find(p => p.id === reg.playerId);
     const ign = reg.ign || globalPlayer?.ign || '';
     const profName = reg.professionalName || globalPlayer?.professionalName || '';
     const regTeam = reg.teamName || '';
@@ -612,6 +616,7 @@ function parsePlayerEntryPaste(text, playerRegs) {
 }
 
 export default function PlayerEntryPage() {
+  const { id } = useParams();
   const { tournament } = useTournament();
   const { user, isOwner, isOperator } = useAuth();
   const [day, setDay] = useState(1);
@@ -1359,7 +1364,11 @@ export default function PlayerEntryPage() {
           }));
         }, 800);
 
-        const data = await uploadAndParseImage(item.file, item.lobby, 'player', keyIndex, { tournamentId: id });
+        const data = await uploadAndParseImage(item.file, item.lobby, 'player', keyIndex, {
+          tournamentId: id || tournament?.id,
+          userEmail: user?.email || null,
+          userName: user?.displayName || null,
+        });
 
         const mappedRows = (data.rows || []).map(row => {
           const nameInput = row.name || '';
@@ -2076,7 +2085,11 @@ export default function PlayerEntryPage() {
                         {item.status === 'pending' && <span style={{ color: 'var(--text-muted)' }}>Pending</span>}
                         {item.status === 'scanning' && <span style={{ color: 'var(--gold)' }}>Scanning ({item.progress}%)</span>}
                         {item.status === 'ready' && <span style={{ color: 'var(--success)' }}>Ready</span>}
-                        {item.status === 'error' && <span style={{ color: 'var(--danger)' }} title={item.errorMessage}>Failed</span>}
+                        {item.status === 'error' && (
+                          <span style={{ color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 4 }} title={item.errorMessage}>
+                            Failed: {item.errorMessage || 'Scan failed'}
+                          </span>
+                        )}
                       </span>
                       {item.status === 'scanning' && (
                         <LoadingSpinner size="sm" style={{ width: 12, height: 12 }} />
@@ -2850,7 +2863,7 @@ export default function PlayerEntryPage() {
               <AlertCircle size={32} style={{ color: 'var(--gold)', margin: '0 auto 10px' }} />
               <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>No player stats preview available yet</div>
               <p style={{ fontSize: '0.8rem', maxWidth: 460, margin: '6px auto 14px' }}>
-                Map your spreadsheet columns above to match player names and lobby stats, then click <strong>"Save & Reload Preview"</strong>.
+                Map your spreadsheet columns above to match player names and lobby stats, then click <strong>&quot;Save &amp; Reload Preview&quot;</strong>.
               </p>
               {!isEditingMapping && (
                 <button
