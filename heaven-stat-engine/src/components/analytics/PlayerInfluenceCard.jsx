@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import MetricTooltip from '@/components/ui/MetricTooltip';
-import { Activity, Target, Zap, TrendingUp, Info, FlaskConical, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { Activity, Target, Zap, TrendingUp, Info, FlaskConical, ArrowUp, ArrowDown, Minus, AlertTriangle } from 'lucide-react';
 
 // ─── RatingBar (mirrors analytics/page.jsx pattern) ──────────────────────────
 export function RatingBar({ label, value, displayValue, metricKey, type = 'primary' }) {
@@ -307,8 +307,8 @@ export default function PlayerInfluenceCard({ influence, xgSummary, scopeLabel =
                     {' '}· Absent in <strong style={{ color: 'var(--text-secondary)' }}>{sampleSize?.without}</strong> matches
                   </span>
                   {isProvisional && (
-                    <div style={{ marginTop: 2, color: '#f59e0b', fontSize: '0.72rem' }}>
-                      ⚠ Provisional — fewer than 3 matches in one or both groups
+                    <div style={{ marginTop: 2, color: '#f59e0b', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <AlertTriangle size={12} style={{ color: '#f59e0b', flexShrink: 0 }} /> Provisional — fewer than 3 matches in one or both groups
                     </div>
                   )}
                 </div>

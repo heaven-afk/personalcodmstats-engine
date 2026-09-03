@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import Link from 'next/link';
 import useSWR from 'swr';
 import html2canvas from 'html2canvas';
 import {
   Shield, User, Download, Sparkles, TrendingUp, TrendingDown,
   Trophy, Target, ChevronDown, ChevronUp, MapPin, BarChart2,
   Calendar, Flame, Award, AlertCircle, AlertTriangle,
-  Crosshair, Zap, Swords, Activity, Percent
+  Crosshair, Zap, Swords, Activity, Percent, MinusCircle
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -227,36 +228,43 @@ export default function DeepAnalysisView({
   const { data: careerGlobalData, isLoading: careerLoading } = useSWR(
     'deep-analysis-career-global',
     async () => {
-      const [allTournaments, registryTeams, registryPlayers] = await Promise.all([
-        getTournaments(), getTeams(), getPlayers(),
-      ]);
-      const [allTeamRes, allTeamBonuses, allPlayerRes, allTeamRegs, allPlayerRegs] = await Promise.all([
-        Promise.all(allTournaments.map(t => getTeamMatchResults(t.id))),
-        Promise.all(allTournaments.map(t => getBonusPoints(t.id))),
-        Promise.all(allTournaments.map(t => getPlayerMatchResults(t.id))),
-        Promise.all(allTournaments.map(t => getTeamRegistrations(t.id))),
-        Promise.all(allTournaments.map(t => getPlayerRegistrations(t.id))),
-      ]);
+      try {
+        const [allTournaments, registryTeams, registryPlayers] = await Promise.all([
+          getTournaments().catch(() => []),
+          getTeams().catch(() => []),
+          getPlayers().catch(() => []),
+        ]);
+        const [allTeamRes, allTeamBonuses, allPlayerRes, allTeamRegs, allPlayerRegs] = await Promise.all([
+          Promise.all(allTournaments.map(t => getTeamMatchResults(t.id).catch(() => []))),
+          Promise.all(allTournaments.map(t => getBonusPoints(t.id).catch(() => []))),
+          Promise.all(allTournaments.map(t => getPlayerMatchResults(t.id).catch(() => []))),
+          Promise.all(allTournaments.map(t => getTeamRegistrations(t.id).catch(() => []))),
+          Promise.all(allTournaments.map(t => getPlayerRegistrations(t.id).catch(() => []))),
+        ]);
 
-      const teamMatchResultsByTournament = {};
-      const playerMatchResultsByTournament = {};
-      allTournaments.forEach((t, idx) => {
-        teamMatchResultsByTournament[t.id] = allTeamRes[idx] || [];
-        playerMatchResultsByTournament[t.id] = allPlayerRes[idx] || [];
-      });
+        const teamMatchResultsByTournament = {};
+        const playerMatchResultsByTournament = {};
+        allTournaments.forEach((t, idx) => {
+          teamMatchResultsByTournament[t.id] = allTeamRes[idx] || [];
+          playerMatchResultsByTournament[t.id] = allPlayerRes[idx] || [];
+        });
 
-      return {
-        allTournaments,
-        registryTeams,
-        registryPlayers,
-        allTeamRes,
-        allTeamBonuses,
-        allPlayerRes,
-        allTeamRegs,
-        allPlayerRegs,
-        teamMatchResultsByTournament,
-        playerMatchResultsByTournament,
-      };
+        return {
+          allTournaments,
+          registryTeams,
+          registryPlayers,
+          allTeamRes,
+          allTeamBonuses,
+          allPlayerRes,
+          allTeamRegs,
+          allPlayerRegs,
+          teamMatchResultsByTournament,
+          playerMatchResultsByTournament,
+        };
+      } catch (err) {
+        console.warn('Failed to load career global data:', err);
+        return null;
+      }
     },
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
@@ -368,14 +376,22 @@ export default function DeepAnalysisView({
               <button
                 className={`btn btn-sm ${entityType === 'team' ? 'btn-primary' : 'btn-ghost'}`}
                 style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                onClick={() => { setEntityType('team'); setExpandedCareerRow(null); }}
+                onClick={() => {
+                  setEntityType('team');
+                  setSelectedEntityId(teamAnalyticsData[0]?.teamId || '');
+                  setExpandedCareerRow(null);
+                }}
               >
                 <Shield size={14} style={{ marginRight: 6 }} /> Teams
               </button>
               <button
                 className={`btn btn-sm ${entityType === 'player' ? 'btn-primary' : 'btn-ghost'}`}
                 style={{ padding: '4px 12px', fontSize: '0.8rem' }}
-                onClick={() => { setEntityType('player'); setExpandedCareerRow(null); }}
+                onClick={() => {
+                  setEntityType('player');
+                  setSelectedEntityId(playerAnalyticsData[0]?.playerId || '');
+                  setExpandedCareerRow(null);
+                }}
               >
                 <User size={14} style={{ marginRight: 6 }} /> Players
               </button>
@@ -389,17 +405,25 @@ export default function DeepAnalysisView({
               onChange={(e) => setSelectedEntityId(e.target.value)}
             >
               {entityType === 'team' ? (
-                teamAnalyticsData.map(t => (
-                  <option key={t.teamId} value={t.teamId}>
-                    {t.teamName} (Rank #{t.analyticsRank})
-                  </option>
-                ))
+                teamAnalyticsData.length > 0 ? (
+                  teamAnalyticsData.map(t => (
+                    <option key={t.teamId} value={t.teamId}>
+                      {t.teamName} (Rank #{t.analyticsRank})
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No teams available</option>
+                )
               ) : (
-                playerAnalyticsData.map(p => (
-                  <option key={p.playerId} value={p.playerId}>
-                    {p.ign || p.playerName} ({p.teamName ? `${p.teamName}` : 'Free Agent'})
-                  </option>
-                ))
+                playerAnalyticsData.length > 0 ? (
+                  playerAnalyticsData.map(p => (
+                    <option key={p.playerId} value={p.playerId}>
+                      {p.ign || p.playerName} ({p.teamName ? `${p.teamName}` : 'Free Agent'})
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No player records found</option>
+                )
               )}
             </select>
 
@@ -450,26 +474,47 @@ export default function DeepAnalysisView({
             />
             {entityType === 'team' ? (
               <TournamentTeamView
-                team={currentTeam}
+                team={currentTeam || teamAnalyticsData[0]}
                 tournamentField={teamAnalyticsData}
                 teamMatchResults={teamMatchResults}
                 activeMapConfig={activeMapConfig}
-                teamReg={teamRegMap[currentTeam?.teamId]}
+                teamReg={teamRegMap[(currentTeam || teamAnalyticsData[0])?.teamId]}
                 globalForm={teamGlobalForm}
                 playerAnalyticsData={playerAnalyticsData}
                 playerMatchResults={playerMatchResults}
               />
             ) : (
-              <TournamentPlayerView
-                player={currentPlayer}
-                tournament={tournament}
-                tournamentField={playerAnalyticsData}
-                playerMatchResults={playerMatchResults}
-                teamMatchResults={teamMatchResults}
-                activeMapConfig={activeMapConfig}
-                playerReg={playerRegMap[currentPlayer?.playerId]}
-                globalForm={playerGlobalForm}
-              />
+              playerAnalyticsData.length === 0 ? (
+                <div className="card" style={{ padding: '48px 24px', textAlign: 'center', margin: '24px 0', border: '1px dashed rgba(201, 168, 76, 0.4)', borderRadius: 12 }}>
+                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(201, 168, 76, 0.12)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                    <User size={28} style={{ color: 'var(--gold)' }} />
+                  </div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8 }}>
+                    No Player Match Results Recorded
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: 520, margin: '0 auto 20px auto', lineHeight: 1.6 }}>
+                    Individual player analytics, weapon accuracy distributions, fragger impact, and squad contribution metrics are calculated from match-by-match player statistics.
+                  </p>
+                  <Link
+                    href={`/tournaments/${tournament?.id}/player-entry`}
+                    className="btn btn-gold btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', fontWeight: 700 }}
+                  >
+                    <Crosshair size={16} /> Enter Player Match Results
+                  </Link>
+                </div>
+              ) : (
+                <TournamentPlayerView
+                  player={currentPlayer || playerAnalyticsData[0]}
+                  tournament={tournament}
+                  tournamentField={playerAnalyticsData}
+                  playerMatchResults={playerMatchResults}
+                  teamMatchResults={teamMatchResults}
+                  activeMapConfig={activeMapConfig}
+                  playerReg={playerRegMap[(currentPlayer || playerAnalyticsData[0])?.playerId]}
+                  globalForm={playerGlobalForm}
+                />
+              )
             )}
           </>
         ) : (
@@ -1755,17 +1800,24 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
       const pts = tm.totalPts ?? (tm.kills * 2 + (tm.placementPts || 0));
 
       teamMatchHistory.push({
+        matchId: `${tournament?.id || 't'}-${matchKey}`,
+        teamId,
+        present: played,
+        played,
+        placement: tm.placement || 0,
+        teamTotalKills: teamKills,
+        playerKills: playerResult?.kills || 0,
+        playerDamage: playerResult?.damage || 0,
+        teamTotalDamage: teamDamage,
+        teamSize: isSoloTourney ? 1 : Math.max(2, teammatesResults.length + 1),
+        isSolo: isSoloTourney,
         day: tm.day,
         lobby: tm.lobby,
         groupId: tm.groupId || null,
-        played,
-        playerKills: playerResult?.kills || 0,
-        playerDamage: playerResult?.damage || 0,
         killsWithoutPlayer,
         damageWithoutPlayer,
         teamKills,
         teamDamage,
-        placement: tm.placement,
         points: pts,
         isWin,
         isTop3,
@@ -1791,17 +1843,24 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
         const pts = playerKills * 2;
 
         teamMatchHistory.push({
+          matchId: `${tournament?.id || 't'}-${matchKey}`,
+          teamId,
+          present: played,
+          played,
+          placement: 99,
+          teamTotalKills: teamKills,
+          playerKills,
+          playerDamage,
+          teamTotalDamage: teamDamage,
+          teamSize: 1,
+          isSolo: true,
           day: pm.day,
           lobby: pm.lobby,
           groupId: pm.groupId || null,
-          played,
-          playerKills,
-          playerDamage,
           killsWithoutPlayer,
           damageWithoutPlayer,
           teamKills,
           teamDamage,
-          placement: 99,
           points: pts,
           isWin,
           isTop3,
@@ -1817,12 +1876,18 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
   // Tournament-scoped xG calculation
   const tournamentXG = useMemo(() => {
     if (!player?.playerId || !playerMatchResults?.length) return null;
-    const eventDate = tournament?.eventStartDate
-      ? (tournament.eventStartDate.toDate ? tournament.eventStartDate.toDate().toISOString() : new Date(tournament.eventStartDate).toISOString())
-      : new Date().toISOString();
+    let eventDate = new Date().toISOString();
+    try {
+      if (tournament?.eventStartDate) {
+        const d = tournament.eventStartDate.toDate ? tournament.eventStartDate.toDate() : new Date(tournament.eventStartDate);
+        if (!isNaN(d.getTime())) {
+          eventDate = d.toISOString();
+        }
+      }
+    } catch {}
 
     const playerMatchesForXG = playerMatchResults
-      .filter(pr => pr.playerId === player.playerId)
+      .filter(pr => String(pr.playerId) === String(player.playerId))
       .map(pr => ({
         kills: pr.kills || 0,
         accuracy: pr.accuracy || null,
@@ -1846,7 +1911,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
   const matches = useMemo(() => {
     if (!player?.playerId) return [];
     return (playerMatchResults || [])
-      .filter(r => r.playerId === player.playerId)
+      .filter(r => String(r.playerId) === String(player.playerId))
       .map(r => ({
         ...r,
         teamPlacement: placementMap[`${r.day}_${r.lobby}_${r.teamId}`] || '—'
@@ -2001,9 +2066,13 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
                 background: 'linear-gradient(90deg, #F59E0B 0%, #FBBF24 50%, #34D399 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
-                display: 'inline-block',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
               }}>
-                🔥 {bestMatch.kills} kills <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)', WebkitTextFillColor: 'initial' }}>({bestMatch.damage || 0} dmg)</span>
+                <Flame size={18} style={{ color: '#F59E0B' }} />
+                <span>{bestMatch.kills} kills</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)', WebkitTextFillColor: 'initial' }}>({bestMatch.damage || 0} dmg)</span>
               </div>
             </div>
           ) : <div style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.8rem', fontStyle: 'italic' }}>No match data available</div>}
@@ -2076,9 +2145,13 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
                 fontWeight: 900,
                 fontFamily: 'var(--font-mono)',
                 color: '#94A3B8',
-                display: 'inline-block',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
               }}>
-                😐 {worstMatch.kills} kills <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>({worstMatch.damage || 0} dmg)</span>
+                <MinusCircle size={18} style={{ color: '#94A3B8' }} />
+                <span>{worstMatch.kills} kills</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>({worstMatch.damage || 0} dmg)</span>
               </div>
             </div>
           ) : <div style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: '0.8rem', fontStyle: 'italic' }}>No match data available</div>}
@@ -2215,7 +2288,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
                 <tr><td colSpan={8} className="empty-row">No match results recorded for this player yet.</td></tr>
               ) : matches.map((m, idx) => {
                 const mapName = getMapForMatch(activeMapConfig, m.day, m.lobby, m) || '—';
-                const revId = getReviveTypeForMatch(tournamentField?.reviveConfig, m.day, m.lobby, m);
+                const revId = getReviveTypeForMatch(tournament?.reviveConfig, m.day, m.lobby, m);
                 const revMeta = getReviveType(revId);
                 return (
                   <tr key={`p-match-${m.id || idx}`}>

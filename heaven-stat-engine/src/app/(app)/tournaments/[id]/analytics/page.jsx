@@ -74,12 +74,12 @@ export default function AnalyticsPage() {
     async function load() {
       try {
         const [tr, pr, preg, bp, allTeams, allPlayers] = await Promise.all([
-          getTeamMatchResults(tournament.id),
-          getPlayerMatchResults(tournament.id),
-          getPlayerRegistrations(tournament.id),
-          getBonusPoints(tournament.id),
-          getTeams(),
-          getPlayers(),
+          getTeamMatchResults(tournament.id).catch(e => { console.warn('Failed to load teamMatchResults:', e); return []; }),
+          getPlayerMatchResults(tournament.id).catch(e => { console.warn('Failed to load playerMatchResults:', e); return []; }),
+          getPlayerRegistrations(tournament.id).catch(e => { console.warn('Failed to load playerRegistrations:', e); return []; }),
+          getBonusPoints(tournament.id).catch(e => { console.warn('Failed to load bonusPoints:', e); return []; }),
+          getTeams().catch(e => { console.warn('Failed to load teams:', e); return []; }),
+          getPlayers().catch(e => { console.warn('Failed to load players:', e); return []; }),
         ]);
         const teamMap = Object.fromEntries(allTeams.map((t) => [t.id, t]));
         const enrichedTr = tr.map((r) => ({

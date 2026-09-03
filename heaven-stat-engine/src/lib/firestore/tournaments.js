@@ -103,10 +103,18 @@ export async function getTeamRegistrations(tournamentId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetTeamRegistrations(tournamentId);
   }
-  const snap = await getDocs(
-    query(collection(db, 'tournaments', tournamentId, 'teamRegistrations'), orderBy('slot'))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'tournaments', tournamentId, 'teamRegistrations'), orderBy('slot'))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn('[getTeamRegistrations] orderBy query failed, falling back to in-memory sort:', err);
+    const snap = await getDocs(collection(db, 'tournaments', tournamentId, 'teamRegistrations'));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
+  }
 }
 
 export async function addTeamRegistration(tournamentId, data) {
@@ -183,10 +191,18 @@ export async function getPlayerRegistrations(tournamentId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetPlayerRegistrations(tournamentId);
   }
-  const snap = await getDocs(
-    query(collection(db, 'tournaments', tournamentId, 'playerRegistrations'), orderBy('slot'))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'tournaments', tournamentId, 'playerRegistrations'), orderBy('slot'))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn('[getPlayerRegistrations] orderBy query failed, falling back to in-memory sort:', err);
+    const snap = await getDocs(collection(db, 'tournaments', tournamentId, 'playerRegistrations'));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
+  }
 }
 
 export async function addPlayerRegistration(tournamentId, data) {

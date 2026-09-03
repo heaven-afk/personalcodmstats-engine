@@ -1011,11 +1011,11 @@ export default function PlayerEntryPage() {
     setLoading(true);
     try {
       const [regs, allPlayers, results, teamRegs, gList] = await Promise.all([
-        getPlayerRegistrations(tournament.id),
+        getPlayerRegistrations(id),
         getPlayers(),
-        getPlayerMatchResults(tournament.id),
-        getTeamRegistrations(tournament.id),
-        getGroups(tournament.id),
+        getPlayerMatchResults(id),
+        getTeamRegistrations(id),
+        getGroups(id),
       ]);
 
       setGroups(gList);
@@ -1070,7 +1070,7 @@ export default function PlayerEntryPage() {
       setFormData(fd);
     } catch (err) { toast.error('Load failed'); console.error(err); }
     finally { setLoading(false); }
-  }, [tournament.id, day, isQualifier, selectedGroupId]);
+  }, [id, day, isQualifier, selectedGroupId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

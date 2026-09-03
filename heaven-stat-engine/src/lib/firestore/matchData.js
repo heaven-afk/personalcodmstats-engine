@@ -10,10 +10,21 @@ export async function getTeamMatchResults(tournamentId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetTeamMatchResults(tournamentId);
   }
-  const snap = await getDocs(
-    query(collection(db, 'tournaments', tournamentId, 'teamMatchResults'), orderBy('day'), orderBy('lobby'))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'tournaments', tournamentId, 'teamMatchResults'), orderBy('day'), orderBy('lobby'))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn('[getTeamMatchResults] Composite orderBy query failed, falling back to in-memory sort:', err);
+    const snap = await getDocs(collection(db, 'tournaments', tournamentId, 'teamMatchResults'));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        if ((a.day || 0) !== (b.day || 0)) return (a.day || 0) - (b.day || 0);
+        return (a.lobby || 0) - (b.lobby || 0);
+      });
+  }
 }
 
 export async function getTeamMatchResultsByDayLobby(tournamentId, day, lobby) {
@@ -119,10 +130,21 @@ export async function getPlayerMatchResults(tournamentId) {
   if (!isFirebaseConfigured) {
     return localDb.localGetPlayerMatchResults(tournamentId);
   }
-  const snap = await getDocs(
-    query(collection(db, 'tournaments', tournamentId, 'playerMatchResults'), orderBy('day'), orderBy('lobby'))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'tournaments', tournamentId, 'playerMatchResults'), orderBy('day'), orderBy('lobby'))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn('[getPlayerMatchResults] Composite orderBy query failed, falling back to in-memory sort:', err);
+    const snap = await getDocs(collection(db, 'tournaments', tournamentId, 'playerMatchResults'));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        if ((a.day || 0) !== (b.day || 0)) return (a.day || 0) - (b.day || 0);
+        return (a.lobby || 0) - (b.lobby || 0);
+      });
+  }
 }
 
 export async function getPlayerMatchResultsByGroup(tournamentId, groupId) {
