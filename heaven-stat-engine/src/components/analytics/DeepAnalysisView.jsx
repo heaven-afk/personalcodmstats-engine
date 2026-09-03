@@ -170,12 +170,12 @@ export default function DeepAnalysisView({
   // Initialize selected entity ID if not set
   useEffect(() => {
     if (entityType === 'team' && teamAnalyticsData.length > 0) {
-      if (!teamAnalyticsData.some(t => t.teamId === selectedEntityId)) {
-        setSelectedEntityId(teamAnalyticsData[0]?.teamId || '');
+      if (!teamAnalyticsData.some(t => String(t.teamId) === String(selectedEntityId))) {
+        setSelectedEntityId(String(teamAnalyticsData[0]?.teamId || ''));
       }
     } else if (entityType === 'player' && playerAnalyticsData.length > 0) {
-      if (!playerAnalyticsData.some(p => p.playerId === selectedEntityId)) {
-        setSelectedEntityId(playerAnalyticsData[0]?.playerId || '');
+      if (!playerAnalyticsData.some(p => String(p.playerId) === String(selectedEntityId))) {
+        setSelectedEntityId(String(playerAnalyticsData[0]?.playerId || ''));
       }
     }
   }, [entityType, teamAnalyticsData, playerAnalyticsData, selectedEntityId]);
@@ -183,12 +183,12 @@ export default function DeepAnalysisView({
   // Lookup selected team / player analytics for current tournament
   const currentTeam = useMemo(() => {
     if (entityType !== 'team') return null;
-    return teamAnalyticsData.find(t => t.teamId === selectedEntityId) || null;
+    return teamAnalyticsData.find(t => String(t.teamId) === String(selectedEntityId)) || teamAnalyticsData[0] || null;
   }, [entityType, teamAnalyticsData, selectedEntityId]);
 
   const currentPlayer = useMemo(() => {
     if (entityType !== 'player') return null;
-    return playerAnalyticsData.find(p => p.playerId === selectedEntityId) || null;
+    return playerAnalyticsData.find(p => String(p.playerId) === String(selectedEntityId)) || playerAnalyticsData[0] || null;
   }, [entityType, playerAnalyticsData, selectedEntityId]);
 
   // Registries lookup maps
@@ -1768,7 +1768,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
     const isSoloTourney = tournament?.format === 'solo' || tournament?.isSolo === true;
     const distinctTeammatesInTourney = new Set((playerMatchResults || []).filter(pr => pr.teamId === teamId).map(pr => pr.playerId)).size;
     const myTeamMatches = (teamMatchResults || []).filter(tm => tm.teamId === teamId);
-    const myPlayerMatches = (playerMatchResults || []).filter(pr => pr.playerId === player.playerId);
+    const myPlayerMatches = (playerMatchResults || []).filter(pr => String(pr.playerId) === String(player.playerId));
 
     const teamMatchHistory = [];
     const processedMatchKeys = new Set();
@@ -1784,10 +1784,10 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
         (!tm.groupId || pr.groupId === tm.groupId)
       );
 
-      const playerResult = allPlayerResultsThisMatch.find(pr => pr.playerId === player.playerId);
+      const playerResult = allPlayerResultsThisMatch.find(pr => String(pr.playerId) === String(player.playerId));
       const played = !!playerResult;
 
-      const teammatesResults = allPlayerResultsThisMatch.filter(pr => pr.playerId !== player.playerId);
+      const teammatesResults = allPlayerResultsThisMatch.filter(pr => String(pr.playerId) !== String(player.playerId));
       const teamKills = tm.kills ?? 0;
       const killsWithoutPlayer = Math.max(0, teamKills - (playerResult?.kills || 0));
 
@@ -1957,7 +1957,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
                 <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
                   {player.ign || player.playerName}
                 </h2>
-                {player.class && <ClassBadge label={player.class} />}
+                {player.class && <ClassBadge playerClass={player.class} />}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Team: <strong>{player.teamName || '—'}</strong></span>

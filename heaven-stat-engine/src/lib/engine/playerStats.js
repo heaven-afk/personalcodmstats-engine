@@ -5,7 +5,7 @@
  */
 
 // ─── Per-tournament player stats ──────────────────────────────────────────────
-export function computePlayerStats(playerMatchResults, playerRegistrations = [], tournamentConfig = {}) {
+export function computePlayerStats(playerMatchResults, playerRegistrations = [], tournamentConfig = {}, teamMatchResults = []) {
   const { playerClasses = [], totalDays = 6, lobbiesPerDay = 4 } = tournamentConfig?.structure || {};
 
   // Build registration lookup by playerId, id, ign, and professionalName
@@ -22,9 +22,33 @@ export function computePlayerStats(playerMatchResults, playerRegistrations = [],
     if (reg.playerName) regByName[String(reg.playerName).trim().toLowerCase()] = reg;
   }
 
+  // Pre-calculate team total kills from teamMatchResults if available
+  const teamTotalKillsMap = {};
+  for (const tr of (teamMatchResults || [])) {
+    if (tr?.teamId) {
+      teamTotalKillsMap[tr.teamId] = (teamTotalKillsMap[tr.teamId] || 0) + (Number(tr.kills) || 0);
+    }
+  }
+
+  // Fallback player-derived team kills
+  const playerDerivedTeamKillsMap = {};
+  for (const result of (playerMatchResults || [])) {
+    if (!result) continue;
+    const key = result.playerId || result.playerName || result.ign;
+    const reg = (result.playerId && regByPlayerId[String(result.playerId).trim()]) ||
+      (regByPlayerId[String(key).trim()]) ||
+      (result.ign && regByIgn[String(result.ign).trim().toLowerCase()]) ||
+      (result.playerName && regByName[String(result.playerName).trim().toLowerCase()]) ||
+      null;
+    const tId = reg?.teamId || result.teamId;
+    if (tId) {
+      playerDerivedTeamKillsMap[tId] = (playerDerivedTeamKillsMap[tId] || 0) + (Number(result.kills) || 0);
+    }
+  }
+
   const playerMap = {};
 
-  for (const result of playerMatchResults) {
+  for (const result of (playerMatchResults || [])) {
     if (!result) continue;
     const key = result.playerId || result.playerName || result.ign;
     if (!key) continue;
@@ -114,6 +138,11 @@ export function computePlayerStats(playerMatchResults, playerRegistrations = [],
     const killsPerMatch = p.totalMatches > 0 ? Math.round((p.totalKills / p.totalMatches) * 100) / 100 : 0;
     const killsPerEvent = events > 0 ? Math.round((p.totalKills / events) * 100) / 100 : 0;
 
+    const teamTotalKills = teamTotalKillsMap[p.teamId] !== undefined
+      ? teamTotalKillsMap[p.teamId]
+      : (playerDerivedTeamKillsMap[p.teamId] || 0);
+    const killShare = teamTotalKills > 0 ? Math.round((p.totalKills / teamTotalKills) * 1000) / 10 : 0;
+
     // Per-day kill breakdown for active days only
     const perDayKills = {};
     for (const d of p.activeDays) {
@@ -127,10 +156,156 @@ export function computePlayerStats(playerMatchResults, playerRegistrations = [],
       avgAccuracy,
       killsPerMatch,
       killsPerEvent,
+      teamTotalKills,
+      killShare,
+      killSharePct: killShare,
       activeDays: [...p.activeDays].sort(),
       ...perDayKills,
     };
   });
+}
+
+// ─── Daily Player Standings ──────────────────────────────────────────────────
+export function computeDailyPlayerStandings(
+  playerMatchResults = [],
+  playerRegistrations = [],
+  tournamentConfig = {},
+  day = 1,
+  teamMatchResults = []
+) {
+  const { playerClasses = [] } = tournamentConfig?.structure || {};
+
+  const regByPlayerId = {};
+  const regByIgn = {};
+  const regByName = {};
+
+  for (const reg of playerRegistrations) {
+    if (!reg) continue;
+    if (reg.playerId) regByPlayerId[String(reg.playerId).trim()] = reg;
+    if (reg.id) regByPlayerId[String(reg.id).trim()] = reg;
+    if (reg.ign) regByIgn[String(reg.ign).trim().toLowerCase()] = reg;
+    if (reg.professionalName) regByName[String(reg.professionalName).trim().toLowerCase()] = reg;
+    if (reg.playerName) regByName[String(reg.playerName).trim().toLowerCase()] = reg;
+  }
+
+  // Calculate team total kills on this specific day from teamMatchResults
+  const teamDayKills = {};
+  for (const tr of (teamMatchResults || [])) {
+    if (Number(tr.day) === Number(day) && tr.teamId) {
+      teamDayKills[tr.teamId] = (teamDayKills[tr.teamId] || 0) + (Number(tr.kills) || 0);
+    }
+  }
+
+  // Filter player matches for the specific day
+  const dayResults = (playerMatchResults || []).filter(r => Number(r.day) === Number(day));
+
+  // Fallback: calculate team kills by aggregating player kills on this day
+  const playerDerivedTeamKills = {};
+  for (const r of dayResults) {
+    const key = r.playerId || r.playerName || r.ign;
+    const reg = (r.playerId && regByPlayerId[String(r.playerId).trim()]) ||
+      (regByPlayerId[String(key).trim()]) ||
+      (r.ign && regByIgn[String(r.ign).trim().toLowerCase()]) ||
+      (r.playerName && regByName[String(r.playerName).trim().toLowerCase()]) ||
+      null;
+    const tId = reg?.teamId || r.teamId;
+    if (tId) {
+      playerDerivedTeamKills[tId] = (playerDerivedTeamKills[tId] || 0) + (Number(r.kills) || 0);
+    }
+  }
+
+  const playerMap = {};
+
+  for (const result of dayResults) {
+    if (!result) continue;
+    const key = result.playerId || result.playerName || result.ign;
+    if (!key) continue;
+
+    const reg = (result.playerId && regByPlayerId[String(result.playerId).trim()]) ||
+      (regByPlayerId[String(key).trim()]) ||
+      (result.ign && regByIgn[String(result.ign).trim().toLowerCase()]) ||
+      (result.playerName && regByName[String(result.playerName).trim().toLowerCase()]) ||
+      null;
+
+    // Check active day for this player's class if defined
+    if (reg) {
+      const playerClass = playerClasses.find((c) => c.className === reg.class);
+      if (playerClass && playerClass.activeDays && !playerClass.activeDays.includes(Number(day))) {
+        continue; // Skip inactive days
+      }
+    }
+
+    if (!playerMap[key]) {
+      const tId = reg?.teamId || result.teamId || '';
+      playerMap[key] = {
+        playerId: result.playerId || reg?.playerId || reg?.id || key,
+        playerName: reg?.professionalName || result.playerName || reg?.playerName || result.playerId || '',
+        ign: reg?.ign || result.ign || result.playerName || '',
+        teamId: tId,
+        teamName: reg?.teamName || result.teamName || '',
+        clanName: reg?.clanName || result.clanName || '',
+        class: reg?.class || result.class || '',
+        slot: reg?.slot || result.slot || 0,
+        day: Number(day),
+        totalKills: 0,
+        totalDamage: 0,
+        totalAccuracy: 0,
+        accuracyCount: 0,
+        matches: 0,
+        lobbies: {},
+      };
+    }
+
+    const p = playerMap[key];
+    const k = Number(result.kills) || 0;
+    const d = Number(result.damage) || 0;
+    const acc = result.accuracy != null && Number(result.accuracy) > 0 ? Number(result.accuracy) : null;
+
+    p.totalKills += k;
+    p.totalDamage += d;
+    if (acc !== null) {
+      p.totalAccuracy += acc;
+      p.accuracyCount++;
+    }
+    p.matches++;
+    p.lobbies[result.lobby] = {
+      kills: k,
+      damage: d,
+      accuracy: acc,
+    };
+  }
+
+  const list = Object.values(playerMap).map(p => {
+    const avgDamage = p.matches > 0 ? Math.round(p.totalDamage / p.matches) : 0;
+    const avgAccuracy = p.accuracyCount > 0 ? Math.round((p.totalAccuracy / p.accuracyCount) * 10) / 10 : 0;
+    const teamTotalKills = teamDayKills[p.teamId] !== undefined
+      ? teamDayKills[p.teamId]
+      : (playerDerivedTeamKills[p.teamId] || 0);
+
+    const killShare = teamTotalKills > 0
+      ? Math.round((p.totalKills / teamTotalKills) * 1000) / 10
+      : 0;
+
+    return {
+      ...p,
+      avgDamage,
+      avgAccuracy,
+      teamTotalKills,
+      killShare,
+      killSharePct: killShare,
+    };
+  });
+
+  return list
+    .sort((a, b) => {
+      if (b.totalKills !== a.totalKills) return b.totalKills - a.totalKills;
+      if (b.avgDamage !== a.avgDamage) return b.avgDamage - a.avgDamage;
+      return b.avgAccuracy - a.avgAccuracy;
+    })
+    .map((p, idx) => ({
+      ...p,
+      rank: idx + 1,
+    }));
 }
 
 // ─── Filter helpers for each standings tab ────────────────────────────────────

@@ -11,6 +11,16 @@ function round2(n) {
  * Computes rolling Form from a chronologically-sorted array of match points.
  * matchPoints: [{ date: Date, value: number }, ...]
  */
+function toTimestamp(d) {
+  if (!d) return 0;
+  if (typeof d.getTime === 'function') return d.getTime();
+  if (typeof d === 'number') return d;
+  if (typeof d.toDate === 'function') return d.toDate().getTime();
+  if (d.seconds != null) return d.seconds * 1000;
+  const parsed = new Date(d).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 export function computeRollingForm(matchPoints) {
   if (!matchPoints || matchPoints.length === 0) {
     return {
@@ -24,7 +34,7 @@ export function computeRollingForm(matchPoints) {
     };
   }
 
-  const sorted = [...matchPoints].sort((a, b) => (a.date ? a.date.getTime() : 0) - (b.date ? b.date.getTime() : 0));
+  const sorted = [...matchPoints].sort((a, b) => toTimestamp(a.date) - toTimestamp(b.date));
   const window = sorted.slice(-WINDOW_SIZE);
   const matchesUsed = window.length;
 
@@ -35,7 +45,7 @@ export function computeRollingForm(matchPoints) {
   const confidence = matchesUsed >= WINDOW_SIZE ? 'full' : matchesUsed >= 3 ? 'provisional' : 'unranked';
 
   const lastMatchDate = sorted[sorted.length - 1].date;
-  const lastTime = lastMatchDate ? lastMatchDate.getTime() : Date.now();
+  const lastTime = toTimestamp(lastMatchDate) || Date.now();
   const daysInactive = Math.max(0, (Date.now() - lastTime) / (1000 * 60 * 60 * 24));
   const decayMultiplier = daysInactive <= GRACE_PERIOD_DAYS
     ? 1

@@ -4,6 +4,7 @@
  * All functions are pure — no Firestore calls.
  */
 import { getPlacementPoints, applyTiebreakers } from './scoring.js';
+export { computeDailyPlayerStandings } from './playerStats.js';
 
 // ─── Daily standings ──────────────────────────────────────────────────────────
 export function computeDailyStandings(teamMatchResults, bonusPoints, scoringConfig, day) {

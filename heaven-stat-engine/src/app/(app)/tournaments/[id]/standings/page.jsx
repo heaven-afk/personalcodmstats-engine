@@ -7,12 +7,12 @@ import { getTeamRegistrations, getPlayerRegistrations, createTournament, addTeam
 import { getGroups, createGroup } from '@/lib/firestore/groups';
 import { getTeams, getPlayers } from '@/lib/firestore/registry';
 import { computeDailyStandings, computeSeasonStandings, computeTeamRanking, computeClanRanking } from '@/lib/engine/standings';
-import { computePlayerStats, filterSet1Players, filterSet2Players, sortCombined } from '@/lib/engine/playerStats';
+import { computePlayerStats, computeDailyPlayerStandings, filterSet1Players, filterSet2Players, sortCombined } from '@/lib/engine/playerStats';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import Modal from '@/components/ui/Modal';
 import { RankBadge, ClassBadge } from '@/components/ui/Badge';
-import { BarChart3, ArrowUpDown, ArrowUp, ArrowDown, Shield, AlertTriangle, Trophy, CheckCircle, ArrowRight, Zap, Plus } from 'lucide-react';
+import { BarChart3, ArrowUpDown, ArrowUp, ArrowDown, Shield, AlertTriangle, Trophy, CheckCircle, ArrowRight, Zap, Plus, User, Flame, Percent, Crosshair, Target } from 'lucide-react';
 import { cleanImageUrl } from '@/lib/utils/image';
 import toast from 'react-hot-toast';
 
@@ -21,13 +21,14 @@ import { getActiveMapConfig, filterResultsByMap } from '@/lib/utils/mapConfig';
 import useSWR from 'swr';
 
 const BASE_TABS = [
-  { key: 'daily',      label: 'Daily' },
-  { key: 'season',     label: 'Season' },
-  { key: 'teamRank',   label: 'Team Ranking' },
-  { key: 'clanRank',   label: 'Clan Ranking' },
-  { key: 'players',    label: 'Player Standings' },
-  { key: 'details',    label: 'Details' },
-  { key: 'byMap',      label: 'By Map' },
+  { key: 'daily',        label: 'Daily' },
+  { key: 'dailyPlayers', label: 'Daily Players' },
+  { key: 'season',       label: 'Season' },
+  { key: 'teamRank',     label: 'Team Ranking' },
+  { key: 'clanRank',     label: 'Clan Ranking' },
+  { key: 'players',      label: 'Player Standings' },
+  { key: 'details',      label: 'Details' },
+  { key: 'byMap',        label: 'By Map' },
 ];
 
 function SortableTH({ label, field, sortKey, sortDir, onSort }) {
@@ -70,9 +71,18 @@ export default function StandingsPage() {
   const { tournament } = useTournament();
   const router = useRouter();
   const [tab, setTab] = useState('daily');
+  const [dailyView, setDailyView] = useState('teams'); // 'teams' | 'players'
   const [selectedDay, setSelectedDay] = useState(1);
   const [selectedMapSubTab, setSelectedMapSubTab] = useState(AVAILABLE_MAPS[0]);
   const [selectedPlayerClass, setSelectedPlayerClass] = useState('all');
+
+  useEffect(() => {
+    if (tab === 'dailyPlayers') {
+      setDailyView('players');
+    } else if (tab === 'daily') {
+      setDailyView('teams');
+    }
+  }, [tab]);
 
   // Qualifier groups state
   const [selectedGroupId, setSelectedGroupId] = useState('');
@@ -213,8 +223,14 @@ export default function StandingsPage() {
   const teamRanking = useMemo(() => computeTeamRanking(groupTeamResults, groupBonuses, scoring), [groupTeamResults, groupBonuses, scoring]);
   const clanRanking = useMemo(() => computeClanRanking(teamRanking), [teamRanking]);
 
-  // Group-scoped player stats
-  const groupPlayerStats = useMemo(() => computePlayerStats(groupPlayerResults, groupPlayerRegs, tournament), [groupPlayerResults, groupPlayerRegs, tournament]);
+  // Group-scoped player stats (with team match results to compute season kill share)
+  const groupPlayerStats = useMemo(() => computePlayerStats(groupPlayerResults, groupPlayerRegs, tournament, groupTeamResults), [groupPlayerResults, groupPlayerRegs, tournament, groupTeamResults]);
+
+  // Group-scoped daily player standings
+  const dailyPlayerStandings = useMemo(
+    () => computeDailyPlayerStandings(groupPlayerResults, groupPlayerRegs, tournament, selectedDay, groupTeamResults),
+    [groupPlayerResults, groupPlayerRegs, tournament, selectedDay, groupTeamResults]
+  );
   
   // Available classes for player class selector
   const availableClasses = useMemo(() => {
@@ -232,6 +248,36 @@ export default function StandingsPage() {
       .filter(p => p.class?.toLowerCase().trim() === selectedPlayerClass.toLowerCase().trim())
       .sort((a, b) => b.totalKills - a.totalKills);
   }, [groupPlayerStats, selectedPlayerClass]);
+
+  const filteredDailyPlayerStats = useMemo(() => {
+    if (selectedPlayerClass === 'all') {
+      return dailyPlayerStandings;
+    }
+    return dailyPlayerStandings.filter(p => p.class?.toLowerCase().trim() === selectedPlayerClass.toLowerCase().trim());
+  }, [dailyPlayerStandings, selectedPlayerClass]);
+
+  // Top daily player performers for the selected day
+  const dailyTopFragger = useMemo(() => {
+    if (!filteredDailyPlayerStats || filteredDailyPlayerStats.length === 0) return null;
+    return [...filteredDailyPlayerStats].sort((a, b) => (b.totalKills || 0) - (a.totalKills || 0))[0];
+  }, [filteredDailyPlayerStats]);
+
+  const dailyTopKillShare = useMemo(() => {
+    if (!filteredDailyPlayerStats || filteredDailyPlayerStats.length === 0) return null;
+    const withKills = filteredDailyPlayerStats.filter(p => (p.totalKills || 0) > 0);
+    return withKills.length > 0 ? withKills.sort((a, b) => (b.killShare || 0) - (a.killShare || 0))[0] : null;
+  }, [filteredDailyPlayerStats]);
+
+  const dailyTopAvgDamage = useMemo(() => {
+    if (!filteredDailyPlayerStats || filteredDailyPlayerStats.length === 0) return null;
+    return [...filteredDailyPlayerStats].sort((a, b) => (b.avgDamage || 0) - (a.avgDamage || 0))[0];
+  }, [filteredDailyPlayerStats]);
+
+  const dailyTopAccuracy = useMemo(() => {
+    if (!filteredDailyPlayerStats || filteredDailyPlayerStats.length === 0) return null;
+    const withAcc = filteredDailyPlayerStats.filter(p => p.avgAccuracy != null && p.avgAccuracy > 0);
+    return withAcc.length > 0 ? withAcc.sort((a, b) => (b.avgAccuracy || 0) - (a.avgAccuracy || 0))[0] : null;
+  }, [filteredDailyPlayerStats]);
 
   // Map-filtered statistics using activeMapConfig
   const activeMapConfig = getActiveMapConfig(tournament, selectedGroup);
@@ -524,17 +570,129 @@ export default function StandingsPage() {
         ))}
       </div>
 
-      {/* Daily */}
-      {tab === 'daily' && (
+      {/* Daily (Teams & Players) */}
+      {(tab === 'daily' || tab === 'dailyPlayers') && (
         <div>
-          <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
-            {Array.from({ length: totalDays }, (_, i) => i + 1).map((d) => (
-              <button key={d} className={`btn btn-sm ${d === selectedDay ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setSelectedDay(d)}>Day {d}</button>
-            ))}
+          {/* Top Controls: Entity View Toggle & Day Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+            {/* View Toggle */}
+            <div style={{ display: 'inline-flex', background: 'var(--bg-header)', padding: 3, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <button
+                className={`btn btn-sm ${dailyView === 'teams' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => { setDailyView('teams'); setTab('daily'); }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '4px 12px' }}
+              >
+                <Shield size={14} /> Team Standings
+              </button>
+              <button
+                className={`btn btn-sm ${dailyView === 'players' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => { setDailyView('players'); setTab('dailyPlayers'); }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', padding: '4px 12px' }}
+              >
+                <User size={14} /> Player Standings
+              </button>
+            </div>
+
+            {/* Day Selector Buttons */}
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {Array.from({ length: totalDays }, (_, i) => i + 1).map((d) => (
+                <button
+                  key={d}
+                  className={`btn btn-sm ${d === selectedDay ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSelectedDay(d)}
+                  style={{ fontWeight: d === selectedDay ? 700 : 500 }}
+                >
+                  Day {d}
+                </button>
+              ))}
+            </div>
           </div>
-          {daily.length === 0
-            ? <EmptyState icon={BarChart3} title="No data" text={`Enter match data for Day ${selectedDay} to see standings.`} />
-            : renderTeamTable(daily.map((r, i) => ({ ...r, rank: i + 1 })), true)}
+
+          {dailyView === 'teams' ? (
+            daily.length === 0
+              ? <EmptyState icon={BarChart3} title="No team data" text={`Enter match data for Day ${selectedDay} to see team standings.`} />
+              : renderTeamTable(daily.map((r, i) => ({ ...r, rank: i + 1 })), true)
+          ) : (
+            <div>
+              {/* Class Filter Bar for Daily Players */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginRight: 4 }}>
+                  Class View:
+                </span>
+                <button
+                  className={`btn btn-sm ${selectedPlayerClass === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSelectedPlayerClass('all')}
+                  style={{ fontWeight: selectedPlayerClass === 'all' ? 700 : 500 }}
+                >
+                  All / Combined ({dailyPlayerStandings.length})
+                </button>
+                {availableClasses.map(cls => {
+                  const count = dailyPlayerStandings.filter(p => p.class?.toLowerCase().trim() === cls.toLowerCase().trim()).length;
+                  const isActive = selectedPlayerClass.toLowerCase().trim() === cls.toLowerCase().trim();
+                  return (
+                    <button
+                      key={cls}
+                      className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setSelectedPlayerClass(cls)}
+                      style={{ fontWeight: isActive ? 700 : 500 }}
+                    >
+                      {cls} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {filteredDailyPlayerStats.length === 0 ? (
+                <EmptyState
+                  icon={User}
+                  title={`No player data for Day ${selectedDay}`}
+                  text={`Enter player match data for Day ${selectedDay} in Player Entry to see daily player standings.`}
+                />
+              ) : (
+                <>
+                  {/* Daily Highlights / Standout Cards */}
+                  <div className="card-grid" style={{ marginBottom: 20 }}>
+                    <div className="stat-card">
+                      <div className="stat-card-icon gold"><Flame size={20} /></div>
+                      <div>
+                        <div className="stat-card-value" style={{ fontSize: '1.05rem' }}>{dailyTopFragger?.ign || dailyTopFragger?.playerName || '—'}</div>
+                        <div className="stat-card-label">Day {selectedDay} Kill Leader ({dailyTopFragger?.totalKills || 0} Kills)</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-card-icon cyan"><Percent size={20} /></div>
+                      <div>
+                        <div className="stat-card-value" style={{ fontSize: '1.05rem' }}>{dailyTopKillShare?.ign || dailyTopKillShare?.playerName || '—'}</div>
+                        <div className="stat-card-label">Peak Kill Share ({dailyTopKillShare?.killShare || 0}% of Team)</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-card-icon red"><Crosshair size={20} /></div>
+                      <div>
+                        <div className="stat-card-value" style={{ fontSize: '1.05rem' }}>{dailyTopAvgDamage?.ign || dailyTopAvgDamage?.playerName || '—'}</div>
+                        <div className="stat-card-label">Top Avg Damage ({dailyTopAvgDamage?.avgDamage || 0} Dmg/M)</div>
+                      </div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-card-icon emerald"><Target size={20} /></div>
+                      <div>
+                        <div className="stat-card-value" style={{ fontSize: '1.05rem' }}>{dailyTopAccuracy?.ign || dailyTopAccuracy?.playerName || '—'}</div>
+                        <div className="stat-card-label">Top Accuracy ({dailyTopAccuracy?.avgAccuracy || 0}%)</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Daily Player Table */}
+                  <DailyPlayerTable
+                    data={filteredDailyPlayerStats}
+                    selectedDay={selectedDay}
+                    lobbiesPerDay={activeStructure.lobbiesPerDay || 4}
+                    teamMap={teamMap}
+                  />
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1087,6 +1245,7 @@ function PlayerTable({ data, totalDays }) {
               <TH label="Matches" field="totalMatches" />
               <TH label="Events" field="events" />
               <TH label="Total Kills" field="totalKills" />
+              <TH label="Kill Share %" field="killShare" />
               <TH label="Avg Dmg" field="avgDamage" />
               <TH label="Avg Acc%" field="avgAccuracy" />
             </tr>
@@ -1108,10 +1267,101 @@ function PlayerTable({ data, totalDays }) {
                 <td style={{ fontFamily: 'var(--font-mono)' }}>{row.totalMatches}</td>
                 <td style={{ fontFamily: 'var(--font-mono)' }}>{row.events}</td>
                 <td className="col-total-kills">{row.totalKills}</td>
+                <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: (row.killShare || 0) >= 35 ? 'var(--gold)' : ((row.killShare || 0) >= 25 ? 'var(--cyan)' : 'var(--text-secondary)') }}>
+                  {row.killShare ?? 0}%
+                </td>
                 <td className="col-avg-red">{row.avgDamage}</td>
                 <td className="col-avg-red">{row.avgAccuracy}%</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DailyPlayerTable({ data, selectedDay, lobbiesPerDay = 4, teamMap }) {
+  const { sorted, sortKey, sortDir, handleSort } = useSort(data, 'totalKills');
+  const TH = ({ label, field }) => <SortableTH label={label} field={field} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />;
+
+  return (
+    <div className="data-table-container">
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th style={{ width: 48 }}>#</th>
+              <TH label="Player" field="playerName" />
+              <TH label="IGN" field="ign" />
+              <TH label="Team" field="teamName" />
+              <TH label="Clan" field="clanName" />
+              <th>Class</th>
+              {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map((l) => (
+                <th key={l} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textAlign: 'center' }}>L{l}</th>
+              ))}
+              <TH label="Matches" field="matches" />
+              <TH label="Total Kills" field="totalKills" />
+              <TH label="Kill Share %" field="killShare" />
+              <TH label="Avg Dmg" field="avgDamage" />
+              <TH label="Avg Acc%" field="avgAccuracy" />
+              <TH label="Total Dmg" field="totalDamage" />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((row, i) => {
+              const team = teamMap?.[row.teamId];
+              const logoSrc = cleanImageUrl(team?.logo || team?.logoUrl);
+              const killShareColor = (row.killShare || 0) >= 35
+                ? 'var(--gold)'
+                : ((row.killShare || 0) >= 25 ? 'var(--cyan)' : 'var(--text-secondary)');
+
+              return (
+                <tr key={row.playerId || i}>
+                  <td><RankBadge rank={i + 1} /></td>
+                  <td style={{ fontWeight: 600 }}>{row.playerName}</td>
+                  <td style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{row.ign}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {logoSrc ? (
+                        <img src={logoSrc} alt="" className="team-logo-thumbnail" width={18} height={18} referrerPolicy="no-referrer" />
+                      ) : (
+                        <Shield size={14} className="text-gold flex-shrink-0" />
+                      )}
+                      <span>{row.teamName}</span>
+                    </div>
+                  </td>
+                  <td style={{ color: 'var(--text-muted)' }}>{row.clanName || '—'}</td>
+                  <td><ClassBadge playerClass={row.class} /></td>
+                  {Array.from({ length: lobbiesPerDay }, (_, idx) => idx + 1).map((l) => {
+                    const lData = row.lobbies?.[l];
+                    const hasPlayed = lData !== undefined;
+                    return (
+                      <td key={l} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', textAlign: 'center', background: hasPlayed ? undefined : 'var(--bg-alt-row)' }}>
+                        {hasPlayed ? (lData.kills ?? 0) : '—'}
+                      </td>
+                    );
+                  })}
+                  <td style={{ fontFamily: 'var(--font-mono)' }}>{row.matches}</td>
+                  <td className="col-total-kills" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)' }}>
+                    {row.totalKills}
+                  </td>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: killShareColor }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span>{row.killShare ?? 0}%</span>
+                      {(row.killShare || 0) >= 35 && (
+                        <span style={{ fontSize: '0.62rem', background: 'rgba(201,168,76,0.15)', color: 'var(--gold)', border: '1px solid rgba(201,168,76,0.3)', borderRadius: 4, padding: '1px 4px', fontWeight: 800 }}>
+                          DOMINANT
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="col-avg-red" style={{ fontFamily: 'var(--font-mono)' }}>{row.avgDamage}</td>
+                  <td className="col-avg-red" style={{ fontFamily: 'var(--font-mono)' }}>{row.avgAccuracy != null && row.avgAccuracy > 0 ? `${row.avgAccuracy}%` : '—'}</td>
+                  <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{row.totalDamage}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
