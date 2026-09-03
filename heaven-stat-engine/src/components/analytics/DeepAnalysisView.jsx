@@ -6,7 +6,8 @@ import html2canvas from 'html2canvas';
 import {
   Shield, User, Download, Sparkles, TrendingUp, TrendingDown,
   Trophy, Target, ChevronDown, ChevronUp, MapPin, BarChart2,
-  Calendar, Flame, Award, AlertCircle, AlertTriangle
+  Calendar, Flame, Award, AlertCircle, AlertTriangle,
+  Crosshair, Zap, Swords, Activity, Percent
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -24,6 +25,7 @@ import { getReviveTypeForMatch, getActiveReviveConfig } from '@/lib/utils/revive
 
 import { computeTeamAnalytics, getTeamRatingRankLabel } from '@/lib/engine/analytics';
 import { computePlayerAnalytics, computePlayerStats } from '@/lib/engine/playerStats';
+import { computeTournamentPlayerRecords, computeTeamRosterAnalytics } from '@/lib/engine/playerRecords';
 import { detectTeamInsights, detectPlayerInsights, computePercentile, formatPercentileBand, generateDeterministicTemplate } from '@/lib/engine/insightRules';
 
 import { getTournaments, getTeamRegistrations, getPlayerRegistrations } from '@/lib/firestore/tournaments';
@@ -136,7 +138,7 @@ function NarrativeCallout({ facts, entityName, cacheKey }) {
           fontWeight: 500,
           margin: 0
         }}>
-          "{narrative}"
+          &ldquo;{narrative}&rdquo;
         </p>
       )}
     </div>
@@ -454,6 +456,8 @@ export default function DeepAnalysisView({
                 activeMapConfig={activeMapConfig}
                 teamReg={teamRegMap[currentTeam?.teamId]}
                 globalForm={teamGlobalForm}
+                playerAnalyticsData={playerAnalyticsData}
+                playerMatchResults={playerMatchResults}
               />
             ) : (
               <TournamentPlayerView
@@ -508,6 +512,11 @@ function TournamentSummaryOverview({
     if (!playerAnalyticsData || playerAnalyticsData.length === 0) return null;
     return [...playerAnalyticsData].sort((a, b) => (a.analyticsRank || 999) - (b.analyticsRank || 999))[0];
   }, [playerAnalyticsData]);
+
+  // 2b. Tournament-Wide Player Records & Category Leaders
+  const playerRecords = useMemo(() => {
+    return computeTournamentPlayerRecords(playerAnalyticsData, playerMatchResults);
+  }, [playerAnalyticsData, playerMatchResults]);
 
   // 3. Map Performers (Per AVAILABLE_MAPS + any custom maps in results)
   const mapPerformers = useMemo(() => {
@@ -667,8 +676,8 @@ function TournamentSummaryOverview({
             </div>
             <div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tournament Kills</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-                🔥 {totalTournamentKills}
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--success)', fontFamily: 'var(--font-mono)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Crosshair size={16} style={{ color: 'var(--gold)' }} /> {totalTournamentKills}
               </div>
             </div>
             <div>
@@ -844,6 +853,247 @@ function TournamentSummaryOverview({
               );
             })}
           </div>
+
+          {/* 4. Tournament Player Honors & Category Records */}
+          {playerRecords && (playerRecords.topKills || playerRecords.bestAvgDamage || playerRecords.peakDamageMatch) && (
+            <div style={{ borderTop: '1px solid rgba(201, 168, 76, 0.2)', paddingTop: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Award size={18} style={{ color: 'var(--gold)' }} />
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                    Tournament Player Records & Leaders
+                  </h4>
+                </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Tournament-wide individual records & single-match peaks
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+                {/* Most Kills / Top Fragger */}
+                {playerRecords.topKills && (
+                  <div className="card" style={{
+                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(30, 41, 59, 0.8) 100%)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    padding: '14px 16px',
+                    margin: 0
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
+                        color: '#F87171', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 6px', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Crosshair size={11} /> MOST KILLS
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Top Fragger</span>
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {playerRecords.topKills.ign || playerRecords.topKills.playerName}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                      Team: <strong style={{ color: 'var(--text-primary)' }}>{playerRecords.topKills.teamName || '—'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(239, 68, 68, 0.15)', fontSize: '0.78rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Total Kills:</span>{' '}
+                        <strong style={{ color: '#F87171', fontFamily: 'var(--font-mono)' }}>{playerRecords.topKills.totalKills}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>KPM:</span>{' '}
+                        <strong style={{ fontFamily: 'var(--font-mono)' }}>{playerRecords.topKills.analytics?.KPM ?? playerRecords.topKills.killsPerMatch}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Best Average Damage */}
+                {playerRecords.bestAvgDamage && (
+                  <div className="card" style={{
+                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(30, 41, 59, 0.8) 100%)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    padding: '14px 16px',
+                    margin: 0
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
+                        color: 'var(--gold)', background: 'rgba(245, 158, 11, 0.15)', padding: '2px 6px', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Zap size={11} /> BEST AVG DAMAGE
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Damage Leader</span>
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {playerRecords.bestAvgDamage.ign || playerRecords.bestAvgDamage.playerName}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                      Team: <strong style={{ color: 'var(--text-primary)' }}>{playerRecords.bestAvgDamage.teamName || '—'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(245, 158, 11, 0.15)', fontSize: '0.78rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Avg Dmg:</span>{' '}
+                        <strong style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{playerRecords.bestAvgDamage.avgDamage}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Matches:</span>{' '}
+                        <strong style={{ fontFamily: 'var(--font-mono)' }}>{playerRecords.bestAvgDamage.totalMatches}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Best Average Accuracy */}
+                {playerRecords.bestAvgAccuracy && (
+                  <div className="card" style={{
+                    background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(30, 41, 59, 0.8) 100%)',
+                    border: '1px solid rgba(6, 182, 212, 0.35)',
+                    padding: '14px 16px',
+                    margin: 0
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
+                        color: 'var(--cyan)', background: 'rgba(6, 182, 212, 0.15)', padding: '2px 6px', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Target size={11} /> BEST AVG ACCURACY
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Sharpshooter</span>
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {playerRecords.bestAvgAccuracy.ign || playerRecords.bestAvgAccuracy.playerName}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                      Team: <strong style={{ color: 'var(--text-primary)' }}>{playerRecords.bestAvgAccuracy.teamName || '—'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(6, 182, 212, 0.15)', fontSize: '0.78rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Avg Acc:</span>{' '}
+                        <strong style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>{playerRecords.bestAvgAccuracy.avgAccuracy}%</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Matches:</span>{' '}
+                        <strong style={{ fontFamily: 'var(--font-mono)' }}>{playerRecords.bestAvgAccuracy.totalMatches}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Peak Single-Match Damage */}
+                {playerRecords.peakDamageMatch && (
+                  <div className="card" style={{
+                    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(30, 41, 59, 0.8) 100%)',
+                    border: '1px solid rgba(168, 85, 247, 0.35)',
+                    padding: '14px 16px',
+                    margin: 0
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
+                        color: '#C084FC', background: 'rgba(168, 85, 247, 0.15)', padding: '2px 6px', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Activity size={11} /> PEAK MATCH DAMAGE
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Match Record</span>
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {playerRecords.peakDamageMatch.playerName}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {playerRecords.peakDamageMatch.teamName ? `Team: ${playerRecords.peakDamageMatch.teamName}` : 'Individual Record'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(168, 85, 247, 0.15)', fontSize: '0.78rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Damage:</span>{' '}
+                        <strong style={{ color: '#C084FC', fontFamily: 'var(--font-mono)' }}>{playerRecords.peakDamageMatch.value.toLocaleString()}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Lobby:</span>{' '}
+                        <strong style={{ fontFamily: 'var(--font-mono)' }}>{playerRecords.peakDamageMatch.matchRef}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Peak Single-Match Accuracy */}
+                {playerRecords.peakAccuracyMatch && (
+                  <div className="card" style={{
+                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(30, 41, 59, 0.8) 100%)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    padding: '14px 16px',
+                    margin: 0
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
+                        color: 'var(--success)', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Percent size={11} /> PEAK MATCH ACCURACY
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Match Record</span>
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {playerRecords.peakAccuracyMatch.playerName}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {playerRecords.peakAccuracyMatch.teamName ? `Team: ${playerRecords.peakAccuracyMatch.teamName}` : 'Individual Record'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(16, 185, 129, 0.15)', fontSize: '0.78rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Accuracy:</span>{' '}
+                        <strong style={{ color: 'var(--success)', fontFamily: 'var(--font-mono)' }}>{playerRecords.peakAccuracyMatch.value}%</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Lobby:</span>{' '}
+                        <strong style={{ fontFamily: 'var(--font-mono)' }}>{playerRecords.peakAccuracyMatch.matchRef}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Peak Single-Match Kills */}
+                {playerRecords.peakKillsMatch && (
+                  <div className="card" style={{
+                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(30, 41, 59, 0.8) 100%)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    padding: '14px 16px',
+                    margin: 0
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em',
+                        color: '#F87171', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 6px', borderRadius: 4,
+                        display: 'inline-flex', alignItems: 'center', gap: 4
+                      }}>
+                        <Swords size={11} /> PEAK MATCH KILLS
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Match Record</span>
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {playerRecords.peakKillsMatch.playerName}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {playerRecords.peakKillsMatch.teamName ? `Team: ${playerRecords.peakKillsMatch.teamName}` : 'Individual Record'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(239, 68, 68, 0.15)', fontSize: '0.78rem' }}>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Kills:</span>{' '}
+                        <strong style={{ color: '#F87171', fontFamily: 'var(--font-mono)' }}>{playerRecords.peakKillsMatch.value} kills</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>Lobby:</span>{' '}
+                        <strong style={{ fontFamily: 'var(--font-mono)' }}>{playerRecords.peakKillsMatch.matchRef}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -851,20 +1101,35 @@ function TournamentSummaryOverview({
 }
 
 // ─── 1. TOURNAMENT SCOPED - TEAM VIEW ─────────────────────────────────────────
-function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMapConfig, teamReg, globalForm }) {
-  if (!team) {
-    return <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Select a team to view deep analysis.</div>;
-  }
-
+function TournamentTeamView({
+  team,
+  tournamentField,
+  teamMatchResults,
+  activeMapConfig,
+  teamReg,
+  globalForm,
+  playerAnalyticsData = [],
+  playerMatchResults = [],
+}) {
   // Detect layer 1 facts
-  const facts = useMemo(() => detectTeamInsights(team, tournamentField, []), [team, tournamentField]);
+  const facts = useMemo(() => {
+    if (!team) return [];
+    return detectTeamInsights(team, tournamentField, []);
+  }, [team, tournamentField]);
+
+  // Compute team roster analytics (squad leaders, per-player records, shares)
+  const rosterData = useMemo(() => {
+    if (!team?.teamId) return { squadLeaders: {}, roster: [], teamTotals: { kills: 0, damage: 0 } };
+    return computeTeamRosterAnalytics(team.teamId, team.teamName, playerAnalyticsData, playerMatchResults, teamMatchResults);
+  }, [team, playerAnalyticsData, playerMatchResults, teamMatchResults]);
 
   // Filter match log for this team
   const matches = useMemo(() => {
+    if (!team?.teamId) return [];
     return teamMatchResults
       .filter(r => r.teamId === team.teamId)
       .sort((a, b) => a.day !== b.day ? a.day - b.day : a.lobby - b.lobby);
-  }, [teamMatchResults, team.teamId]);
+  }, [teamMatchResults, team]);
 
   // Calculate best/worst match
   const { bestMatch, worstMatch } = useMemo(() => {
@@ -872,6 +1137,10 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
     const sorted = [...matches].sort((a, b) => (b.totalPts ?? (b.kills * 2 + (b.placementPts || 0))) - (a.totalPts ?? (a.kills * 2 + (a.placementPts || 0))));
     return { bestMatch: sorted[0], worstMatch: sorted[sorted.length - 1] };
   }, [matches]);
+
+  if (!team) {
+    return <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Select a team to view deep analysis.</div>;
+  }
 
   const logoUrl = cleanImageUrl(teamReg?.logo || teamReg?.logoUrl || team.logo);
 
@@ -1008,11 +1277,11 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
                 Day {bestMatch.day}, Lobby {bestMatch.lobby}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.85)' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
-                  🏆 Place #{bestMatch.placement}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  <Trophy size={12} style={{ color: '#34D399' }} /> Place #{bestMatch.placement}
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
-                  ⚡ {bestMatch.kills} kills
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  <Crosshair size={12} style={{ color: '#34D399' }} /> {bestMatch.kills} kills
                 </span>
               </div>
               <div style={{
@@ -1088,11 +1357,11 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
                 Day {worstMatch.day}, Lobby {worstMatch.lobby}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: '0.82rem', color: 'rgba(255, 255, 255, 0.85)' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
-                  📉 Place #{worstMatch.placement}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  <TrendingDown size={12} style={{ color: '#F87171' }} /> Place #{worstMatch.placement}
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
-                  ⚡ {worstMatch.kills} kills
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255, 255, 255, 0.08)', padding: '3px 9px', borderRadius: '6px' }}>
+                  <Crosshair size={12} style={{ color: '#F87171' }} /> {worstMatch.kills} kills
                 </span>
               </div>
               <div style={{
@@ -1144,6 +1413,172 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
           })()}
         </div>
       </div>
+
+      {/* 2f. Team Roster & Player Analytics */}
+      {rosterData.roster.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, padding: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <User size={18} style={{ color: 'var(--gold)' }} />
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                Squad Performance & Player Roster ({rosterData.roster.length} Players)
+              </h4>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              <span>Squad Kills: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{rosterData.teamTotals.kills}</strong></span>
+              <span>•</span>
+              <span>Squad Damage: <strong style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{rosterData.teamTotals.damage.toLocaleString()}</strong></span>
+            </div>
+          </div>
+
+          {/* Squad Leaders Strip */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 10,
+            marginBottom: 16
+          }}>
+            {/* Team MVP */}
+            <div style={{ background: 'var(--bg-header)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#38BDF8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Award size={12} /> SQUAD MVP
+              </div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {rosterData.squadLeaders.mvp ? (rosterData.squadLeaders.mvp.ign || rosterData.squadLeaders.mvp.playerName) : '—'}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                Rating: <strong style={{ color: '#38BDF8', fontFamily: 'var(--font-mono)' }}>{rosterData.squadLeaders.mvp?.rating ? rosterData.squadLeaders.mvp.rating.toFixed(1) : '—'}</strong>
+              </div>
+            </div>
+
+            {/* Kill Leader */}
+            <div style={{ background: 'var(--bg-header)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#F87171', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Crosshair size={12} /> TOP FRAGGER
+              </div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {rosterData.squadLeaders.topFragger ? (rosterData.squadLeaders.topFragger.ign || rosterData.squadLeaders.topFragger.playerName) : '—'}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                <strong style={{ color: '#F87171', fontFamily: 'var(--font-mono)' }}>{rosterData.squadLeaders.topFragger?.totalKills ?? 0}</strong> kills ({rosterData.squadLeaders.topFragger?.kpm ?? 0} KPM)
+              </div>
+            </div>
+
+            {/* Damage Leader */}
+            <div style={{ background: 'var(--bg-header)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Zap size={12} /> DAMAGE LEADER
+              </div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {rosterData.squadLeaders.damageLeader ? (rosterData.squadLeaders.damageLeader.ign || rosterData.squadLeaders.damageLeader.playerName) : '—'}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                <strong style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>{rosterData.squadLeaders.damageLeader?.avgDamage ?? 0}</strong> avg dmg/match
+              </div>
+            </div>
+
+            {/* Accuracy Leader */}
+            <div style={{ background: 'var(--bg-header)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--cyan)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Target size={12} /> ACCURACY MASTER
+              </div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {rosterData.squadLeaders.accuracyLeader ? (rosterData.squadLeaders.accuracyLeader.ign || rosterData.squadLeaders.accuracyLeader.playerName) : '—'}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                <strong style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>{rosterData.squadLeaders.accuracyLeader?.avgAccuracy ?? 0}%</strong> sustained
+              </div>
+            </div>
+
+            {/* Single Match Peak */}
+            <div style={{ background: 'var(--bg-header)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#C084FC', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Activity size={12} /> SQUAD MATCH RECORD
+              </div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {rosterData.squadLeaders.peakDamage ? `${rosterData.squadLeaders.peakDamage.value.toLocaleString()} Dmg` : (rosterData.squadLeaders.peakKills ? `${rosterData.squadLeaders.peakKills.value} Kills` : '—')}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                {rosterData.squadLeaders.peakDamage ? `${rosterData.squadLeaders.peakDamage.player} (${rosterData.squadLeaders.peakDamage.matchRef})` : '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* Roster Data Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 160 }}>Player</th>
+                  <th style={{ textAlign: 'center' }}>Matches</th>
+                  <th style={{ textAlign: 'center' }}>Kills</th>
+                  <th style={{ textAlign: 'center' }}>KPM</th>
+                  <th style={{ textAlign: 'center' }}>Peak Kills</th>
+                  <th style={{ textAlign: 'center' }}>Avg Dmg</th>
+                  <th style={{ textAlign: 'center' }}>Peak Dmg</th>
+                  <th style={{ textAlign: 'center' }}>Avg Acc</th>
+                  <th style={{ textAlign: 'center' }}>Peak Acc</th>
+                  <th style={{ textAlign: 'center' }}>Dmg Share</th>
+                  <th style={{ textAlign: 'center' }}>Kill Share</th>
+                  <th style={{ textAlign: 'center' }}>D/K Ratio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rosterData.roster.map((p, idx) => (
+                  <tr key={p.playerId || idx}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {p.slot > 0 && (
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4 }}>
+                            #{p.slot}
+                          </span>
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {p.ign}
+                          </div>
+                          {p.playerName && p.playerName !== p.ign && (
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                              {p.playerName}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>{p.matchesCount}</td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#F87171' }}>{p.totalKills}</td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>{p.kpm}</td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
+                      {p.peakKills > 0 ? `${p.peakKills} (${p.peakKillsMatch})` : '—'}
+                    </td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--gold)' }}>
+                      {p.avgDamage > 0 ? p.avgDamage.toLocaleString() : '—'}
+                    </td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
+                      {p.peakDamage > 0 ? `${p.peakDamage.toLocaleString()} (${p.peakDamageMatch})` : '—'}
+                    </td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--cyan)' }}>
+                      {p.avgAccuracy > 0 ? `${p.avgAccuracy}%` : '—'}
+                    </td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)' }}>
+                      {p.peakAccuracy > 0 ? `${p.peakAccuracy}% (${p.peakAccuracyMatch})` : '—'}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{p.damageShare}%</span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{p.killShare}%</span>
+                    </td>
+                    <td style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                      {p.damagePerKill != null ? `${p.damagePerKill}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* 2d. Per-Map Breakdown */}
       {matches?.length > 0 || activeMapConfig ? (
@@ -1252,7 +1687,11 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
                       </span>
                     </td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontWeight: m.placement === 1 ? 800 : 400, color: m.placement === 1 ? 'var(--gold)' : undefined }}>
-                      {m.placement === 1 ? '🏆 1st' : `#${m.placement}`}
+                      {m.placement === 1 ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <Trophy size={12} style={{ color: 'var(--gold)' }} /> 1st
+                        </span>
+                      ) : `#${m.placement}`}
                     </td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>{m.kills}</td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>{placePts}</td>
@@ -1271,12 +1710,11 @@ function TournamentTeamView({ team, tournamentField, teamMatchResults, activeMap
 
 // ─── 2. TOURNAMENT SCOPED - PLAYER VIEW ───────────────────────────────────────
 function TournamentPlayerView({ player, tournament, tournamentField, playerMatchResults, teamMatchResults, activeMapConfig, playerReg, globalForm }) {
-  if (!player) {
-    return <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Select a player to view deep analysis.</div>;
-  }
-
   // Detect player facts
-  const facts = useMemo(() => detectPlayerInsights(player, tournamentField, []), [player, tournamentField]);
+  const facts = useMemo(() => {
+    if (!player) return [];
+    return detectPlayerInsights(player, tournamentField, []);
+  }, [player, tournamentField]);
 
   // Tournament-scoped Player Influence calculation
   const tournamentInfluence = useMemo(() => {
@@ -1286,8 +1724,6 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
     const distinctTeammatesInTourney = new Set((playerMatchResults || []).filter(pr => pr.teamId === teamId).map(pr => pr.playerId)).size;
     const myTeamMatches = (teamMatchResults || []).filter(tm => tm.teamId === teamId);
     const myPlayerMatches = (playerMatchResults || []).filter(pr => pr.playerId === player.playerId);
-
-    if (!myTeamMatches.length && !myPlayerMatches.length) return null;
 
     const teamMatchHistory = [];
     const processedMatchKeys = new Set();
@@ -1300,88 +1736,92 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
         pr.teamId === teamId &&
         pr.day === tm.day &&
         pr.lobby === tm.lobby &&
-        (tm.groupId ? pr.groupId === tm.groupId : true)
+        (!tm.groupId || pr.groupId === tm.groupId)
       );
 
-      const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(pr => pr.playerId)).size;
-      const teamSize = isSoloTourney
-        ? 1
-        : (distinctPlayersThisMatch > 1
-            ? distinctPlayersThisMatch
-            : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (tournament?.playersPerTeam || 4)));
+      const playerResult = allPlayerResultsThisMatch.find(pr => pr.playerId === player.playerId);
+      const played = !!playerResult;
 
-      const myResult = allPlayerResultsThisMatch.find(pr => pr.playerId === player.playerId);
-      const present = Boolean(myResult);
+      const teammatesResults = allPlayerResultsThisMatch.filter(pr => pr.playerId !== player.playerId);
+      const teamKills = tm.kills ?? 0;
+      const killsWithoutPlayer = Math.max(0, teamKills - (playerResult?.kills || 0));
 
-      let teamTotalDamage = allPlayerResultsThisMatch.reduce((s, pr) => s + (pr.damage || 0), 0);
-      if (myResult?.damage && teamTotalDamage <= myResult.damage && (tm.kills || 0) > (myResult?.kills || 0)) {
-        teamTotalDamage = myResult.kills > 0
-          ? Math.round((myResult.damage / myResult.kills) * (tm.kills || 1))
-          : myResult.damage + ((tm.kills || 1) * 250);
-      }
+      const teamDamage = allPlayerResultsThisMatch.reduce((sum, pr) => sum + (pr.damage || 0), 0);
+      const damageWithoutPlayer = Math.max(0, teamDamage - (playerResult?.damage || 0));
+
+      const isWin = tm.placement === 1;
+      const isTop3 = tm.placement <= 3;
+      const isTop5 = tm.placement <= 5;
+      const pts = tm.totalPts ?? (tm.kills * 2 + (tm.placementPts || 0));
 
       teamMatchHistory.push({
-        matchId: `${tournament?.id || 't'}-${matchKey}`,
-        teamId,
-        present,
-        placement: tm.placement || 0,
-        teamTotalKills: tm.kills || myResult?.kills || 0,
-        playerKills: myResult?.kills || 0,
-        playerDamage: myResult?.damage || 0,
-        teamTotalDamage,
-        teamSize,
-        isSolo: isSoloTourney,
+        day: tm.day,
+        lobby: tm.lobby,
+        groupId: tm.groupId || null,
+        played,
+        playerKills: playerResult?.kills || 0,
+        playerDamage: playerResult?.damage || 0,
+        killsWithoutPlayer,
+        damageWithoutPlayer,
+        teamKills,
+        teamDamage,
+        placement: tm.placement,
+        points: pts,
+        isWin,
+        isTop3,
+        isTop5,
+        hadTeammates: isSoloTourney ? false : (teammatesResults.length > 0 || distinctTeammatesInTourney > 1),
       });
     });
 
-    // Handle player matches not in teamMatchResults
-    myPlayerMatches.forEach(pr => {
-      const matchKey = `${pr.day}-${pr.lobby}${pr.groupId ? '-' + pr.groupId : ''}`;
-      if (processedMatchKeys.has(matchKey)) return;
-      processedMatchKeys.add(matchKey);
+    myPlayerMatches.forEach(pm => {
+      const matchKey = `${pm.day}-${pm.lobby}${pm.groupId ? '-' + pm.groupId : ''}`;
+      if (!processedMatchKeys.has(matchKey)) {
+        processedMatchKeys.add(matchKey);
+        const played = true;
+        const playerKills = pm.kills || 0;
+        const playerDamage = pm.damage || 0;
+        const teamKills = playerKills;
+        const teamDamage = playerDamage;
+        const killsWithoutPlayer = 0;
+        const damageWithoutPlayer = 0;
+        const isWin = false;
+        const isTop3 = false;
+        const isTop5 = false;
+        const pts = playerKills * 2;
 
-      const allPlayerResultsThisMatch = (playerMatchResults || []).filter(r =>
-        r.teamId === teamId &&
-        r.day === pr.day &&
-        r.lobby === pr.lobby &&
-        (pr.groupId ? r.groupId === pr.groupId : true)
-      );
-
-      const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(r => r.playerId)).size;
-      const teamSize = isSoloTourney
-        ? 1
-        : (distinctPlayersThisMatch > 1
-            ? distinctPlayersThisMatch
-            : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (tournament?.playersPerTeam || 4)));
-
-      const teamTotalKills = allPlayerResultsThisMatch.reduce((s, r) => s + (r.kills || 0), 0);
-      const teamTotalDamage = allPlayerResultsThisMatch.reduce((s, r) => s + (r.damage || 0), 0);
-
-      teamMatchHistory.push({
-        matchId: `${tournament?.id || 't'}-${matchKey}`,
-        teamId,
-        present: true,
-        placement: pr.placement || 0,
-        teamTotalKills: teamTotalKills || pr.kills || 0,
-        playerKills: pr.kills || 0,
-        playerDamage: pr.damage || 0,
-        teamTotalDamage: teamTotalDamage || pr.damage || 0,
-        teamSize,
-        isSolo: isSoloTourney,
-      });
+        teamMatchHistory.push({
+          day: pm.day,
+          lobby: pm.lobby,
+          groupId: pm.groupId || null,
+          played,
+          playerKills,
+          playerDamage,
+          killsWithoutPlayer,
+          damageWithoutPlayer,
+          teamKills,
+          teamDamage,
+          placement: 99,
+          points: pts,
+          isWin,
+          isTop3,
+          isTop5,
+          hadTeammates: false,
+        });
+      }
     });
 
     return computePlayerInfluence(player.playerId, teamMatchHistory);
-  }, [player?.playerId, player?.teamId, teamMatchResults, playerMatchResults, tournament]);
+  }, [player, teamMatchResults, playerMatchResults, tournament]);
 
   // Tournament-scoped xG calculation
   const tournamentXG = useMemo(() => {
     if (!player?.playerId || !playerMatchResults?.length) return null;
     const eventDate = tournament?.eventStartDate
-      ? new Date(tournament.eventStartDate)
-      : (tournament?.createdAt?.seconds ? new Date(tournament.createdAt.seconds * 1000) : new Date(0));
+      ? (tournament.eventStartDate.toDate ? tournament.eventStartDate.toDate().toISOString() : new Date(tournament.eventStartDate).toISOString())
+      : new Date().toISOString();
 
-    const playerMatchesForXG = (playerMatchResults || [])
+    const playerMatchesForXG = playerMatchResults
       .filter(pr => pr.playerId === player.playerId)
       .map(pr => ({
         kills: pr.kills || 0,
@@ -1391,7 +1831,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
       }));
 
     return computePlayerXGSummary(playerMatchesForXG);
-  }, [player?.playerId, playerMatchResults, tournament]);
+  }, [player, playerMatchResults, tournament]);
 
   // Lookup placement for each match
   const placementMap = useMemo(() => {
@@ -1404,6 +1844,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
 
   // Filter matches played by this player
   const matches = useMemo(() => {
+    if (!player?.playerId) return [];
     return (playerMatchResults || [])
       .filter(r => r.playerId === player.playerId)
       .map(r => ({
@@ -1411,7 +1852,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
         teamPlacement: placementMap[`${r.day}_${r.lobby}_${r.teamId}`] || '—'
       }))
       .sort((a, b) => a.day !== b.day ? a.day - b.day : a.lobby - b.lobby);
-  }, [playerMatchResults, player.playerId, placementMap]);
+  }, [playerMatchResults, player, placementMap]);
 
   // Highlights sorted primarily by Kills
   const { bestMatch, worstMatch } = useMemo(() => {
@@ -1432,6 +1873,10 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
     });
     return Object.entries(buckets).map(([name, count]) => ({ name, count }));
   }, [matches]);
+
+  if (!player) {
+    return <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Select a player to view deep analysis.</div>;
+  }
 
   return (
     <div>
@@ -1791,7 +2236,11 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
                       </span>
                     </td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>
-                      {m.teamPlacement === 1 ? '🏆 1st' : `#${m.teamPlacement}`}
+                      {m.teamPlacement === 1 ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--gold)', fontWeight: 700 }}>
+                          <Trophy size={12} /> 1st
+                        </span>
+                      ) : `#${m.teamPlacement}`}
                     </td>
                     <td className="col-gold" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{m.kills || 0}</td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>{m.damage || 0}</td>
@@ -1831,12 +2280,6 @@ function CareerDeepAnalysisView({
   expandedRow,
   setExpandedRow
 }) {
-  if (loading) return <LoadingSpinner size="lg" />;
-
-  const entityName = entityType === 'team'
-    ? (currentTeam?.teamName || 'Team')
-    : (currentPlayer?.ign || currentPlayer?.playerName || 'Player');
-
   // Summary statistics
   const totalTournaments = careerHistory.length;
   const careerTotalKills = careerHistory.reduce((sum, h) => sum + (h.kills || h.totalKills || 0), 0);
@@ -1861,6 +2304,12 @@ function CareerDeepAnalysisView({
     }
     return [];
   }, [entityType, currentTeam, currentPlayer, careerHistory]);
+
+  if (loading) return <LoadingSpinner size="lg" />;
+
+  const entityName = entityType === 'team'
+    ? (currentTeam?.teamName || 'Team')
+    : (currentPlayer?.ign || currentPlayer?.playerName || 'Player');
 
   return (
     <div>
@@ -1996,7 +2445,7 @@ function ExpandedTournamentMiniDive({ row, entityType }) {
     <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
       {/* 1-sentence narrative callout */}
       <div style={{ fontSize: '0.85rem', fontStyle: 'italic', color: 'var(--gold)', marginBottom: 14 }}>
-        "{singleSentence}"
+        &ldquo;{singleSentence}&rdquo;
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
@@ -2016,7 +2465,7 @@ function ExpandedTournamentMiniDive({ row, entityType }) {
           </div>
           {bestMatch ? (
             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#FFFFFF' }}>
-              Day {bestMatch.day}, Lobby {bestMatch.lobby} — {entityType === 'team' ? `🏆 Place #${bestMatch.placement}` : `🔥 ${bestMatch.kills} kills`}
+              Day {bestMatch.day}, Lobby {bestMatch.lobby} — {entityType === 'team' ? `Place #${bestMatch.placement}` : `${bestMatch.kills} kills`}
             </div>
           ) : <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.5)' }}>—</div>}
         </div>
@@ -2037,7 +2486,7 @@ function ExpandedTournamentMiniDive({ row, entityType }) {
           </div>
           {worstMatch ? (
             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#FFFFFF' }}>
-              Day {worstMatch.day}, Lobby {worstMatch.lobby} — {entityType === 'team' ? `Place #${worstMatch.placement}` : `😐 ${worstMatch.kills} kills`}
+              Day {worstMatch.day}, Lobby {worstMatch.lobby} — {entityType === 'team' ? `Place #${worstMatch.placement}` : `${worstMatch.kills} kills`}
             </div>
           ) : <div style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.5)' }}>—</div>}
         </div>
