@@ -1,23 +1,29 @@
 import { REVIVE_TYPES, getReviveType } from '../constants/revives';
 
 export function getReviveTypeForMatch(reviveConfig, day, lobby, resultObj = null) {
-  // 1. Check direct reviveType property on match result object if present
+  // 1. Check reviveConfig object configuration first (lobby schedule or rigid mode)
+  if (reviveConfig && typeof reviveConfig === 'object') {
+    if (reviveConfig.mode === 'rigid' && reviveConfig.reviveType) {
+      return reviveConfig.reviveType;
+    }
+    if (reviveConfig.schedule) {
+      const scheduled = reviveConfig.schedule[`day${day}_lobby${lobby}`];
+      if (scheduled) return scheduled;
+    }
+  }
+
+  // 2. Check direct reviveType property on match result object if present
   if (resultObj && typeof resultObj === 'object') {
     const explicit = resultObj.reviveType || resultObj.revive_type;
     if (explicit && explicit !== '—') return explicit;
   }
 
-  // 2. Check reviveConfig object configuration
-  if (reviveConfig && typeof reviveConfig === 'object') {
-    if (reviveConfig.mode === 'rigid') return reviveConfig.reviveType || 'auto';
-    if (reviveConfig.schedule) {
-      const scheduled = reviveConfig.schedule[`day${day}_lobby${lobby}`];
-      if (scheduled) return scheduled;
-    }
-    if (reviveConfig.reviveType) return reviveConfig.reviveType;
+  // 3. Check general reviveType on reviveConfig
+  if (reviveConfig && typeof reviveConfig === 'object' && reviveConfig.reviveType) {
+    return reviveConfig.reviveType;
   }
 
-  // 3. Fallback default revive type
+  // 4. Fallback default revive type
   return 'auto';
 }
 

@@ -18,6 +18,8 @@ import toast from 'react-hot-toast';
 
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig, filterResultsByMap } from '@/lib/utils/mapConfig';
+import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
+import { getActiveReviveConfig, filterResultsByRevive } from '@/lib/utils/reviveConfig';
 import useSWR from 'swr';
 
 const BASE_TABS = [
@@ -29,6 +31,7 @@ const BASE_TABS = [
   { key: 'players',      label: 'Player Standings' },
   { key: 'details',      label: 'Details' },
   { key: 'byMap',        label: 'By Map' },
+  { key: 'byRevive',     label: 'By Revive' },
 ];
 
 function SortableTH({ label, field, sortKey, sortDir, onSort }) {
@@ -74,6 +77,7 @@ export default function StandingsPage() {
   const [dailyView, setDailyView] = useState('teams'); // 'teams' | 'players'
   const [selectedDay, setSelectedDay] = useState(1);
   const [selectedMapSubTab, setSelectedMapSubTab] = useState(AVAILABLE_MAPS[0]);
+  const [selectedReviveSubTab, setSelectedReviveSubTab] = useState(REVIVE_TYPES[0]?.id || 'auto');
   const [selectedPlayerClass, setSelectedPlayerClass] = useState('all');
 
   useEffect(() => {
@@ -311,6 +315,39 @@ export default function StandingsPage() {
     mapFilteredTeamResults.forEach(r => set.add(`d${r.day}-l${r.lobby}`));
     return set.size;
   }, [mapFilteredTeamResults]);
+
+  // Revive-filtered statistics using activeReviveConfig
+  const activeReviveConfig = useMemo(() => getActiveReviveConfig(tournament, selectedGroup), [tournament, selectedGroup]);
+
+  const reviveFilteredTeamResults = useMemo(() => {
+    return filterResultsByRevive(groupTeamResults, activeReviveConfig, selectedReviveSubTab);
+  }, [groupTeamResults, activeReviveConfig, selectedReviveSubTab]);
+
+  const reviveFilteredBonuses = useMemo(() => {
+    return filterResultsByRevive(groupBonuses, activeReviveConfig, selectedReviveSubTab);
+  }, [groupBonuses, activeReviveConfig, selectedReviveSubTab]);
+
+  const reviveFilteredPlayerResults = useMemo(() => {
+    return filterResultsByRevive(groupPlayerResults, activeReviveConfig, selectedReviveSubTab);
+  }, [groupPlayerResults, activeReviveConfig, selectedReviveSubTab]);
+
+  const reviveTeamRanking = useMemo(() => {
+    return computeTeamRanking(reviveFilteredTeamResults, reviveFilteredBonuses, scoring);
+  }, [reviveFilteredTeamResults, reviveFilteredBonuses, scoring]);
+
+  const revivePlayerStats = useMemo(() => {
+    return computePlayerStats(reviveFilteredPlayerResults, groupPlayerRegs, tournament);
+  }, [reviveFilteredPlayerResults, groupPlayerRegs, tournament]);
+
+  const reviveSortedPlayers = useMemo(() => {
+    return [...revivePlayerStats].sort((a, b) => b.totalKills - a.totalKills);
+  }, [revivePlayerStats]);
+
+  const reviveUniqueMatchesCount = useMemo(() => {
+    const set = new Set();
+    reviveFilteredTeamResults.forEach(r => set.add(`d${r.day}-l${r.lobby}`));
+    return set.size;
+  }, [reviveFilteredTeamResults]);
 
   // Unfiltered Shared Kill Table across ALL groups combined
   const allGroupPlayerStats = useMemo(() => {
@@ -907,6 +944,93 @@ export default function StandingsPage() {
             </div>
           </div>
         )
+      )}
+
+      {/* By Revive Standings */}
+      {tab === 'byRevive' && (
+        <div className="space-y-6">
+          {/* Revive Mechanism Sub-tabs */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {REVIVE_TYPES.map((rt) => {
+              const isSelected = selectedReviveSubTab === rt.id;
+              return (
+                <button
+                  key={rt.id}
+                  className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setSelectedReviveSubTab(rt.id)}
+                  style={{
+                    fontWeight: isSelected ? 700 : 500,
+                    borderColor: isSelected ? rt.border : undefined,
+                    color: isSelected ? '#FFFFFF' : rt.color,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <span style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    backgroundColor: rt.color,
+                    display: 'inline-block'
+                  }} />
+                  {rt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Summary Card */}
+          <div className="card-grid" style={{ marginBottom: 24 }}>
+            <div className="stat-card">
+              <div className="stat-card-icon gold"><Trophy size={20} /></div>
+              <div>
+                <div className="stat-card-value">{reviveUniqueMatchesCount}</div>
+                <div className="stat-card-label">Matches Played ({getReviveType(selectedReviveSubTab).label})</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-icon cyan"><Shield size={20} /></div>
+              <div>
+                <div className="stat-card-value" style={{ fontSize: '1rem' }}>{reviveTeamRanking[0]?.teamName || '—'}</div>
+                <div className="stat-card-label">Top Team ({reviveTeamRanking[0]?.totalPts || 0} Pts)</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-icon red"><Zap size={20} /></div>
+              <div>
+                <div className="stat-card-value" style={{ fontSize: '1rem' }}>{reviveSortedPlayers[0]?.ign || reviveSortedPlayers[0]?.playerName || '—'}</div>
+                <div className="stat-card-label">Top Player ({reviveSortedPlayers[0]?.totalKills || 0} Kills)</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Team Standings Section */}
+          <div className="card space-y-4">
+            <h3 className="card-title flex items-center gap-2">
+              <Shield size={18} style={{ color: getReviveType(selectedReviveSubTab).color }} />
+              Team Standings — {getReviveType(selectedReviveSubTab).label}
+            </h3>
+            {reviveTeamRanking.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No team matches played under {getReviveType(selectedReviveSubTab).label} rules yet.</p>
+            ) : (
+              <TeamTable data={reviveTeamRanking} scoring={scoring} showRank={true} teamMap={teamMap} />
+            )}
+          </div>
+
+          {/* Player Standings Section */}
+          <div className="card space-y-4">
+            <h3 className="card-title flex items-center gap-2">
+              <Zap size={18} style={{ color: getReviveType(selectedReviveSubTab).color }} />
+              Player Standings — {getReviveType(selectedReviveSubTab).label}
+            </h3>
+            {reviveSortedPlayers.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No player matches recorded under {getReviveType(selectedReviveSubTab).label} rules yet.</p>
+            ) : (
+              <PlayerTable data={reviveSortedPlayers} totalDays={totalDays} />
+            )}
+          </div>
+        </div>
       )}
 
       {/* PART 6: Shared Kill Table Across All Groups Combined */}

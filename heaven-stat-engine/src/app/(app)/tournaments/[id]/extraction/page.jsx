@@ -181,6 +181,7 @@ export default function ExtractionPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState('all');
   const [selectedMap, setSelectedMap] = useState('all');
+  const [selectedRevive, setSelectedRevive] = useState('all');
   const [groups, setGroups] = useState([]);
   const [selectedGroupId, setSelectedGroupId] = useState('all');
 
@@ -302,6 +303,16 @@ export default function ExtractionPage() {
       activeTeamResults = filterResultsByMap(activeTeamResults, activeMapConfig, selectedMap);
       activePlayerResults = filterResultsByMap(activePlayerResults, activeMapConfig, selectedMap);
       activeBonusPoints = filterResultsByMap(activeBonusPoints, activeMapConfig, selectedMap);
+    }
+
+    if (selectedRevive !== 'all' && activeReviveConfig) {
+      activeTeamResults = filterResultsByRevive(activeTeamResults, activeReviveConfig, selectedRevive);
+      activePlayerResults = filterResultsByRevive(activePlayerResults, activeReviveConfig, selectedRevive);
+      activeBonusPoints = activeBonusPoints.filter(b => {
+        if (!b.day || !b.lobby) return true;
+        const rev = getReviveTypeForMatch(activeReviveConfig, b.day, b.lobby, b);
+        return rev === selectedRevive;
+      });
     }
 
     switch (activePreset) {
@@ -1453,6 +1464,24 @@ export default function ExtractionPage() {
                     <option value="all">All Maps</option>
                     {AVAILABLE_MAPS.map(m => (
                       <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Revive Selector */}
+              {['top-teams-avg', 'top-teams-pts', 'top-players-combined', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Revive:</span>
+                  <select
+                    value={selectedRevive}
+                    onChange={e => setSelectedRevive(e.target.value)}
+                    className="form-select"
+                    style={{ fontSize: '0.78rem', padding: '4px 8px', minWidth: 120 }}
+                  >
+                    <option value="all">All Revives</option>
+                    {REVIVE_TYPES.map(rt => (
+                      <option key={rt.id} value={rt.id}>{rt.label}</option>
                     ))}
                   </select>
                 </div>

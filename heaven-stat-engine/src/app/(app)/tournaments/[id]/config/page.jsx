@@ -10,6 +10,7 @@ import Modal from '@/components/ui/Modal';
 import { Plus, Trash2, Check, Zap, ChevronLeft, Medal } from 'lucide-react';
 
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
+import { REVIVE_TYPES } from '@/lib/constants/revives';
 
 const DEFAULT_PLACEMENT = [
   { position: 1, points: 25 }, { position: 2, points: 20 },
@@ -125,6 +126,7 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
   const [placementPoints, setPlacementPoints] = useState(tournament.scoring?.placementPoints || DEFAULT_PLACEMENT);
   const [bonusTypes, setBonusTypes] = useState(tournament.scoring?.bonusTypes || []);
   const [mapConfig, setMapConfig] = useState(tournament.mapConfig || { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} });
+  const [reviveConfig, setReviveConfig] = useState(tournament.reviveConfig || { mode: 'flexible', reviveType: 'auto', schedule: {} });
 
   // Banner options
   const [bannerSource, setBannerSource] = useState(tournament.banner ? 'upload' : tournament.bannerUrl ? 'url' : 'upload'); // 'upload' | 'url'
@@ -333,6 +335,11 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
           map: mapConfig?.map || AVAILABLE_MAPS[0],
           schedule: mapConfig?.schedule || {},
         },
+        reviveConfig: {
+          mode: reviveConfig?.mode || 'flexible',
+          reviveType: reviveConfig?.reviveType || 'auto',
+          schedule: reviveConfig?.schedule || {},
+        },
       };
 
       if (!isLocked) {
@@ -358,6 +365,11 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
               mode: mapConfig?.mode || 'rigid',
               map: mapConfig?.map || AVAILABLE_MAPS[0],
               schedule: g.mapConfig?.schedule || mapConfig?.schedule || {},
+            },
+            reviveConfig: {
+              mode: reviveConfig?.mode || 'flexible',
+              reviveType: reviveConfig?.reviveType || 'auto',
+              schedule: g.reviveConfig?.schedule || reviveConfig?.schedule || {},
             }
           });
         }
@@ -534,6 +546,57 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
             {mapConfig?.mode === 'flexible' && (
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
                 Flexible mode selected. Map assignments per lobby column are set at Team Entry.
+              </p>
+            )}
+          </div>
+
+          {/* Revives Section */}
+          <div style={{ background: 'var(--bg-alt-row)', borderRadius: 8, padding: 14, marginTop: 12, marginBottom: 16 }}>
+            <label className="form-label" style={{ marginBottom: 10, display: 'block', fontWeight: 600 }}>Revive Configuration</label>
+            <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.875rem' }}>
+                <input
+                  type="radio"
+                  name="reviveMode"
+                  value="flexible"
+                  checked={(reviveConfig?.mode || 'flexible') === 'flexible'}
+                  onChange={() => setReviveConfig(r => ({ ...r, mode: 'flexible' }))}
+                  disabled={isLocked}
+                />
+                Flexible Mode (Per-Lobby Schedule)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.875rem' }}>
+                <input
+                  type="radio"
+                  name="reviveMode"
+                  value="rigid"
+                  checked={reviveConfig?.mode === 'rigid'}
+                  onChange={() => setReviveConfig(r => ({ ...r, mode: 'rigid' }))}
+                  disabled={isLocked}
+                />
+                Rigid Mode (Single Revive Type)
+              </label>
+            </div>
+
+            {reviveConfig?.mode === 'rigid' && (
+              <div className="form-field" style={{ maxWidth: 320, marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Revive Type</label>
+                <select
+                  className="form-select"
+                  value={reviveConfig?.reviveType || 'auto'}
+                  onChange={e => setReviveConfig(r => ({ ...r, reviveType: e.target.value }))}
+                  disabled={isLocked}
+                >
+                  {REVIVE_TYPES.map(rt => (
+                    <option key={rt.id} value={rt.id}>{rt.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {(reviveConfig?.mode || 'flexible') === 'flexible' && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Flexible mode selected. Revive type assignments (Auto-revive, Dog Tags, No revive) per lobby column are set at Team Entry / Player Entry.
               </p>
             )}
           </div>

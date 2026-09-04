@@ -224,6 +224,7 @@ export default function TournamentOverviewPage() {
     groupName: '',
     structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
     mapConfig: { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} },
+    reviveConfig: tournament?.reviveConfig || { mode: 'flexible', reviveType: 'auto', schedule: {} },
     advancementCount: 2,
     status: 'setup',
   });
@@ -280,6 +281,7 @@ export default function TournamentOverviewPage() {
         groupName: '',
         structure: { totalDays: 6, lobbiesPerDay: 4, playerClasses: [] },
         mapConfig: { mode: 'rigid', map: AVAILABLE_MAPS[0], schedule: {} },
+        reviveConfig: tournament?.reviveConfig || { mode: 'flexible', reviveType: 'auto', schedule: {} },
         advancementCount: 2,
         status: 'setup',
       });

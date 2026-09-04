@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo, Fragment, useRef } from 'rea
 import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, deleteTeamMatchResult, getBonusPoints, addBonusPoint, updateBonusPoint, deleteBonusPoint } from '@/lib/firestore/matchData';
+import { getTeamMatchResults, saveTeamMatchResult, updateTeamMatchResult, deleteTeamMatchResult, getBonusPoints, addBonusPoint, updateBonusPoint, deleteBonusPoint, updateLobbyReviveType } from '@/lib/firestore/matchData';
 import { getTeamRegistrations, updateTournament } from '@/lib/firestore/tournaments';
 import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import { computeDailyStandings } from '@/lib/engine/standings';
@@ -806,6 +806,7 @@ export default function TeamEntryPage() {
             await updateTeamMatchResult(id, existing.id, {
               placement: placement !== null ? placement : existing.placement,
               kills: kills !== null ? kills : existing.kills,
+              reviveType: getReviveTypeForMatch(activeReviveConfig, smartImportTargetDay, lobbyNum),
             });
             updatedCount++;
           } else {
@@ -896,9 +897,23 @@ export default function TeamEntryPage() {
       } else {
         await updateTournament(id, { reviveConfig: updatedReviveConfig });
       }
-      toast.success(`Day ${day} Lobby ${lobbyNum} Revive Type set to ${getReviveType(newRevive).label}`);
+
+      // Propagate revive type to all existing team and player match records in database
+      await updateLobbyReviveType(id, day, lobbyNum, newRevive, isQualifier && selectedGroupId ? selectedGroupId : null);
+
+      // Optimistically update local results
+      setAllResults(prev => prev.map(r => {
+        if (Number(r.day) === Number(day) && Number(r.lobby) === Number(lobbyNum) && (!selectedGroupId || r.groupId === selectedGroupId)) {
+          return { ...r, reviveType: newRevive };
+        }
+        return r;
+      }));
+
+      const reviveMeta = getReviveType(newRevive);
+      toast.success(`Day ${day} Lobby ${lobbyNum} Revive Type set to ${reviveMeta.label} (synchronized across system)`);
       await refresh();
     } catch (err) {
+      console.error('Failed to update revive schedule:', err);
       toast.error('Failed to update revive schedule: ' + err.message);
     }
   };
@@ -1249,6 +1264,7 @@ export default function TeamEntryPage() {
           lobby: lobbyNum,
           placement: row.placement,
           kills: row.kills === null ? 0 : row.kills,
+          reviveType: getReviveTypeForMatch(activeReviveConfig, day, lobbyNum),
           inputMethod: 'ocr',
           ...(selectedGroupId ? { groupId: selectedGroupId } : {})
         };

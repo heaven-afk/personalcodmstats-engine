@@ -8,6 +8,7 @@ import { getPlayerRegistrations } from '@/lib/firestore/tournaments';
 import { computeTeamAnalytics } from '@/lib/engine/analytics';
 import { computePlayerStats, computePlayerAnalytics } from '@/lib/engine/playerStats';
 import { getActiveMapConfig } from '@/lib/utils/mapConfig';
+import { getActiveReviveConfig } from '@/lib/utils/reviveConfig';
 import DeepAnalysisView from '@/components/analytics/DeepAnalysisView';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
@@ -122,6 +123,7 @@ export default function AnalyticsPage() {
   }, [teams]);
 
   const activeMapConfig = useMemo(() => getActiveMapConfig(tournament, null), [tournament]);
+  const activeReviveConfig = useMemo(() => getActiveReviveConfig(tournament, null), [tournament]);
 
   if (loading) return <LoadingSpinner size="lg" />;
 
@@ -173,6 +175,7 @@ export default function AnalyticsPage() {
           teamsRegistry={teams}
           playersRegistry={playersRegistry}
           activeMapConfig={activeMapConfig}
+          activeReviveConfig={activeReviveConfig}
         />
       ) : (
         analyticsData.length === 0 ? (

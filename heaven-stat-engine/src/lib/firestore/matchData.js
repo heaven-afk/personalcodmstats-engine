@@ -1,6 +1,6 @@
 import {
   collection, collectionGroup, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy,
+  query, where, orderBy, writeBatch,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase';
 import * as localDb from './localStorageDb';
@@ -249,4 +249,60 @@ export async function deleteBonusPoint(tournamentId, bonusId) {
     return localDb.localDeleteBonusPoint(tournamentId, bonusId);
   }
   await deleteDoc(doc(db, 'tournaments', tournamentId, 'bonusPoints', bonusId));
+}
+
+// ─── Batch Revive Type Synchronization ─────────────────────────────────────────
+export async function updateLobbyReviveType(tournamentId, day, lobby, reviveType, groupId = null) {
+  if (!isFirebaseConfigured) {
+    return localDb.localUpdateLobbyReviveType(tournamentId, day, lobby, reviveType, groupId);
+  }
+
+  // Also keep local storage synchronized if present
+  try {
+    localDb.localUpdateLobbyReviveType(tournamentId, day, lobby, reviveType, groupId);
+  } catch {}
+
+  try {
+    const batch = writeBatch(db);
+    let opCount = 0;
+
+    // 1. Team results for this day & lobby
+    const teamConstraints = [
+      where('day', '==', Number(day)),
+      where('lobby', '==', Number(lobby)),
+    ];
+    if (groupId) teamConstraints.push(where('groupId', '==', groupId));
+
+    const teamSnap = await getDocs(
+      query(collection(db, 'tournaments', tournamentId, 'teamMatchResults'), ...teamConstraints)
+    );
+
+    teamSnap.docs.forEach((d) => {
+      batch.update(d.ref, { reviveType });
+      opCount++;
+    });
+
+    // 2. Player results for this day & lobby
+    const playerConstraints = [
+      where('day', '==', Number(day)),
+      where('lobby', '==', Number(lobby)),
+    ];
+    if (groupId) playerConstraints.push(where('groupId', '==', groupId));
+
+    const playerSnap = await getDocs(
+      query(collection(db, 'tournaments', tournamentId, 'playerMatchResults'), ...playerConstraints)
+    );
+
+    playerSnap.docs.forEach((d) => {
+      batch.update(d.ref, { reviveType });
+      opCount++;
+    });
+
+    if (opCount > 0) {
+      await batch.commit();
+    }
+  } catch (err) {
+    console.error('[updateLobbyReviveType] Failed to batch update revive types:', err);
+    throw err;
+  }
 }

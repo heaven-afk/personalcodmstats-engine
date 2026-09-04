@@ -22,7 +22,7 @@ import { cleanImageUrl } from '@/lib/utils/image';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getMapForMatch, filterResultsByMap } from '@/lib/utils/mapConfig';
 import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
-import { getReviveTypeForMatch, getActiveReviveConfig } from '@/lib/utils/reviveConfig';
+import { getReviveTypeForMatch, getActiveReviveConfig, filterResultsByRevive, countMatchesByRevive } from '@/lib/utils/reviveConfig';
 
 import { computeTeamAnalytics, getTeamRatingRankLabel } from '@/lib/engine/analytics';
 import { computePlayerAnalytics, computePlayerStats } from '@/lib/engine/playerStats';
@@ -157,7 +157,10 @@ export default function DeepAnalysisView({
   teamsRegistry = [],
   playersRegistry = [],
   activeMapConfig = null,
+  activeReviveConfig = null,
 }) {
+  const effectiveReviveConfig = useMemo(() => activeReviveConfig || getActiveReviveConfig(tournament, null), [activeReviveConfig, tournament]);
+
   // Navigation & Selection state
   const [entityType, setEntityType] = useState('team'); // 'team' | 'player'
   const [selectedEntityId, setSelectedEntityId] = useState('');
@@ -321,6 +324,7 @@ export default function DeepAnalysisView({
             analyticsItem: item,
             matchResults: tRes.filter(r => r.teamId === selectedEntityId),
             mapConfig: mapCfg,
+            reviveConfig: tourney.reviveConfig || null,
             scoring,
           });
         }
@@ -347,6 +351,7 @@ export default function DeepAnalysisView({
               playerMatchResults: pMatches,
               teamMatchResults: tRes,
               mapConfig: mapCfg,
+              reviveConfig: tourney.reviveConfig || null,
               scoring,
             });
           }
@@ -478,6 +483,7 @@ export default function DeepAnalysisView({
                 tournamentField={teamAnalyticsData}
                 teamMatchResults={teamMatchResults}
                 activeMapConfig={activeMapConfig}
+                activeReviveConfig={effectiveReviveConfig}
                 teamReg={teamRegMap[(currentTeam || teamAnalyticsData[0])?.teamId]}
                 globalForm={teamGlobalForm}
                 playerAnalyticsData={playerAnalyticsData}
@@ -511,6 +517,7 @@ export default function DeepAnalysisView({
                   playerMatchResults={playerMatchResults}
                   teamMatchResults={teamMatchResults}
                   activeMapConfig={activeMapConfig}
+                  activeReviveConfig={effectiveReviveConfig}
                   playerReg={playerRegMap[(currentPlayer || playerAnalyticsData[0])?.playerId]}
                   globalForm={playerGlobalForm}
                 />
@@ -1151,6 +1158,7 @@ function TournamentTeamView({
   tournamentField,
   teamMatchResults,
   activeMapConfig,
+  activeReviveConfig,
   teamReg,
   globalForm,
   playerAnalyticsData = [],
@@ -1682,6 +1690,81 @@ function TournamentTeamView({
         </div>
       )}
 
+      {/* Per-Revive Breakdown */}
+      <div className="card" style={{ marginBottom: 20, padding: 18 }}>
+        <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Sparkles size={16} className="text-gold" /> Per-Revive Breakdown
+        </h4>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Revive Mechanism</th>
+                <th>Matches</th>
+                <th>Avg Placement</th>
+                <th>KPM</th>
+                <th>Win Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {REVIVE_TYPES.map(revType => {
+                const revFiltered = filterResultsByRevive(matches, activeReviveConfig, revType.id);
+                if (revFiltered.length === 0) {
+                  return (
+                    <tr key={revType.id}>
+                      <td>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          color: revType.color,
+                          background: revType.bg,
+                          border: `1px solid ${revType.border}`,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontWeight: 700
+                        }}>
+                          {revType.label}
+                        </span>
+                      </td>
+                      <td>0</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>—</td>
+                    </tr>
+                  );
+                }
+                const avgPl = (revFiltered.reduce((s, r) => s + (r.placement || 0), 0) / revFiltered.length).toFixed(1);
+                const totalKills = revFiltered.reduce((s, r) => s + (r.kills || 0), 0);
+                const kpm = (totalKills / revFiltered.length).toFixed(2);
+                const wins = revFiltered.filter(r => r.placement === 1).length;
+                const winRate = ((wins / revFiltered.length) * 100).toFixed(1);
+
+                return (
+                  <tr key={revType.id}>
+                    <td>
+                      <span style={{
+                        fontSize: '0.75rem',
+                        color: revType.color,
+                        background: revType.bg,
+                        border: `1px solid ${revType.border}`,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontWeight: 700
+                      }}>
+                        {revType.label}
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{revFiltered.length}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{avgPl}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{kpm}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--success)' }}>{winRate}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* 2b. Match-by-Match Log */}
       <div className="card" style={{ padding: 18 }}>
         <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
@@ -1707,7 +1790,7 @@ function TournamentTeamView({
                 <tr><td colSpan={9} className="empty-row">No matches recorded for this team yet.</td></tr>
               ) : matches.map((m, idx) => {
                 const mapName = getMapForMatch(activeMapConfig, m.day, m.lobby, m) || '—';
-                const revId = getReviveTypeForMatch(tournamentField?.reviveConfig, m.day, m.lobby, m);
+                const revId = getReviveTypeForMatch(activeReviveConfig, m.day, m.lobby, m);
                 const revMeta = getReviveType(revId);
                 const placePts = m.placementPts ?? 0;
                 const killPts = (m.kills || 0) * 2;
@@ -1754,7 +1837,7 @@ function TournamentTeamView({
 }
 
 // ─── 2. TOURNAMENT SCOPED - PLAYER VIEW ───────────────────────────────────────
-function TournamentPlayerView({ player, tournament, tournamentField, playerMatchResults, teamMatchResults, activeMapConfig, playerReg, globalForm }) {
+function TournamentPlayerView({ player, tournament, tournamentField, playerMatchResults, teamMatchResults, activeMapConfig, activeReviveConfig, playerReg, globalForm }) {
   // Detect player facts
   const facts = useMemo(() => {
     if (!player) return [];
@@ -2264,6 +2347,80 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
         </div>
       ) : null}
 
+      {/* Per-Revive Breakdown */}
+      <div className="card" style={{ marginBottom: 20, padding: 18 }}>
+        <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Sparkles size={16} className="text-gold" /> Per-Revive Breakdown
+        </h4>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Revive Mechanism</th>
+                <th>Matches</th>
+                <th>Avg Kills</th>
+                <th>Avg Damage</th>
+                <th>Accuracy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {REVIVE_TYPES.map(revType => {
+                const revFiltered = filterResultsByRevive(matches, activeReviveConfig, revType.id);
+                if (revFiltered.length === 0) {
+                  return (
+                    <tr key={revType.id}>
+                      <td>
+                        <span style={{
+                          fontSize: '0.75rem',
+                          color: revType.color,
+                          background: revType.bg,
+                          border: `1px solid ${revType.border}`,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontWeight: 700
+                        }}>
+                          {revType.label}
+                        </span>
+                      </td>
+                      <td>0</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>—</td>
+                    </tr>
+                  );
+                }
+                const avgKills = (revFiltered.reduce((s, r) => s + (r.kills || 0), 0) / revFiltered.length).toFixed(2);
+                const avgDmg = Math.round(revFiltered.reduce((s, r) => s + (r.damage || 0), 0) / revFiltered.length);
+                const accCount = revFiltered.filter(r => r.accuracy != null && r.accuracy > 0);
+                const avgAcc = accCount.length > 0 ? (accCount.reduce((s, r) => s + r.accuracy, 0) / accCount.length).toFixed(1) + '%' : '—';
+
+                return (
+                  <tr key={revType.id}>
+                    <td>
+                      <span style={{
+                        fontSize: '0.75rem',
+                        color: revType.color,
+                        background: revType.bg,
+                        border: `1px solid ${revType.border}`,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontWeight: 700
+                      }}>
+                        {revType.label}
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{revFiltered.length}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{avgKills}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{avgDmg}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{avgAcc}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* 3b. Match-by-Match Log */}
       <div className="card" style={{ padding: 18 }}>
         <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
@@ -2288,7 +2445,7 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
                 <tr><td colSpan={8} className="empty-row">No match results recorded for this player yet.</td></tr>
               ) : matches.map((m, idx) => {
                 const mapName = getMapForMatch(activeMapConfig, m.day, m.lobby, m) || '—';
-                const revId = getReviveTypeForMatch(tournament?.reviveConfig, m.day, m.lobby, m);
+                const revId = getReviveTypeForMatch(activeReviveConfig, m.day, m.lobby, m);
                 const revMeta = getReviveType(revId);
                 return (
                   <tr key={`p-match-${m.id || idx}`}>
@@ -2575,6 +2732,19 @@ function ExpandedTournamentMiniDive({ row, entityType }) {
               }).filter(Boolean).join(' | ') || 'No map data'}
             </div>
           ) : <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No map config set</div>}
+        </div>
+
+        {/* Revive Breakdown Mini */}
+        <div style={{ padding: '10px 14px', background: 'var(--bg-card)', borderRadius: 8 }}>
+          <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--cyan)', textTransform: 'uppercase', marginBottom: 4 }}>REVIVE BREAKDOWN</div>
+          {rawMatches?.length > 0 ? (
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              {REVIVE_TYPES.map(rt => {
+                const count = filterResultsByRevive(rawMatches, row.reviveConfig || null, rt.id).length;
+                return count > 0 ? `${rt.label}: ${count} match(es)  ` : null;
+              }).filter(Boolean).join(' | ') || 'No revive data'}
+            </div>
+          ) : <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No match data</div>}
         </div>
       </div>
     </div>

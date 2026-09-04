@@ -4,10 +4,10 @@ import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getPlayerMatchResults, getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult,
+  getPlayerMatchResults, getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult, updateLobbyReviveType,
 } from '@/lib/firestore/matchData';
-import { getPlayerRegistrations, getTeamRegistrations } from '@/lib/firestore/tournaments';
-import { getGroups } from '@/lib/firestore/groups';
+import { getPlayerRegistrations, getTeamRegistrations, updateTournament } from '@/lib/firestore/tournaments';
+import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -617,7 +617,7 @@ function parsePlayerEntryPaste(text, playerRegs) {
 
 export default function PlayerEntryPage() {
   const { id } = useParams();
-  const { tournament } = useTournament();
+  const { tournament, refresh } = useTournament();
   const { user, isOwner, isOperator } = useAuth();
   const [day, setDay] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -906,7 +906,9 @@ export default function PlayerEntryPage() {
             kills: stats.kills === null ? 0 : stats.kills,
             damage: stats.damage === null ? 0 : stats.damage,
             accuracy: stats.accuracy === null ? 0 : stats.accuracy,
-            inputMethod: 'smart_import'
+            reviveType: getReviveTypeForMatch(activeReviveConfig, day, lobbyNum),
+            inputMethod: 'smart_import',
+            ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {})
           };
 
           if (existingResults.length > 0) {
@@ -946,8 +948,50 @@ export default function PlayerEntryPage() {
   const [ocrConcurrency, setOcrConcurrency] = useState(4);
   const ocrFileRef = useRef(null);
 
-  // Active revive configuration from tournament / group (configured in Team Entry)
+  // Active revive configuration from tournament / group (configured in Team Entry / Player Entry)
   const activeReviveConfig = getActiveReviveConfig(tournament, selectedGroup);
+
+  const handleFlexibleReviveChange = async (lobbyNum, newRevive) => {
+    if (!canEdit) return;
+    const currentConfig = activeReviveConfig || { mode: 'flexible', reviveType: REVIVE_TYPES[0]?.id || 'auto', schedule: {} };
+    const currentSchedule = currentConfig.schedule || {};
+    const key = `day${day}_lobby${lobbyNum}`;
+    const updatedSchedule = {
+      ...currentSchedule,
+      [key]: newRevive,
+    };
+    const updatedReviveConfig = {
+      ...currentConfig,
+      mode: currentConfig.mode || 'flexible',
+      reviveType: currentConfig.reviveType || 'auto',
+      schedule: updatedSchedule,
+    };
+    delete updatedReviveConfig.defaultType;
+    Object.keys(updatedReviveConfig).forEach(k => {
+      if (updatedReviveConfig[k] === undefined) {
+        delete updatedReviveConfig[k];
+      }
+    });
+
+    try {
+      if (isQualifier && selectedGroupId) {
+        await updateGroup(tournament.id, selectedGroupId, { reviveConfig: updatedReviveConfig });
+      } else {
+        await updateTournament(tournament.id, { reviveConfig: updatedReviveConfig });
+      }
+
+      // Propagate revive type to all existing team and player match records in database
+      await updateLobbyReviveType(tournament.id, day, lobbyNum, newRevive, isQualifier && selectedGroupId ? selectedGroupId : null);
+
+      const reviveMeta = getReviveType(newRevive);
+      toast.success(`Day ${day} Lobby ${lobbyNum} Revive Type set to ${reviveMeta.label} (synchronized across system)`);
+      if (refresh) await refresh();
+      await loadData();
+    } catch (err) {
+      console.error('Failed to update revive schedule:', err);
+      toast.error('Failed to update revive schedule: ' + err.message);
+    }
+  };
 
   // Live preview parse effect
   useEffect(() => {
@@ -1199,7 +1243,9 @@ export default function PlayerEntryPage() {
           lobby: targetLobby,
           kills: item.kills,
           damage: item.damage,
-          accuracy: item.accuracy
+          accuracy: item.accuracy,
+          reviveType: getReviveTypeForMatch(activeReviveConfig, day, targetLobby),
+          ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {})
         };
 
         if (existing) {
@@ -1537,7 +1583,9 @@ export default function PlayerEntryPage() {
           kills: row.kills === null ? 0 : row.kills,
           damage: existingIdxs.length > 0 ? tempResults[existingIdxs[0]].damage || 0 : 0,
           accuracy: existingIdxs.length > 0 ? tempResults[existingIdxs[0]].accuracy || 0 : 0,
-          inputMethod: 'ocr'
+          reviveType: getReviveTypeForMatch(activeReviveConfig, day, lobbyNum),
+          inputMethod: 'ocr',
+          ...(isQualifier && selectedGroupId ? { groupId: selectedGroupId } : {})
         };
 
         if (existingIdxs.length > 0) {
@@ -1885,6 +1933,55 @@ export default function PlayerEntryPage() {
               <Lock size={13} /> {saving ? 'Saving...' : 'Save & Lock'}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Revive Type schedule bar */}
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-gold)',
+        borderRadius: 'var(--r-md)',
+        padding: '12px 16px',
+        marginBottom: 16,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        flexWrap: 'wrap'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--gold)' }}>
+            Revive Type for Day {day}:
+          </span>
+          {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => {
+            const currentRevive = getReviveTypeForMatch(activeReviveConfig, day, l);
+            const revMeta = getReviveType(currentRevive);
+            return (
+              <div key={`lobby-revive-${l}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
+                <span style={{ fontWeight: 700, color: getLobbyColor(l).text }}>L{l}:</span>
+                <select
+                  className="form-select"
+                  style={{
+                    fontSize: '0.78rem',
+                    padding: '3px 8px',
+                    color: revMeta.color,
+                    borderColor: revMeta.border,
+                    backgroundColor: 'var(--bg-app)',
+                    fontWeight: 600,
+                  }}
+                  value={currentRevive}
+                  onChange={e => handleFlexibleReviveChange(l, e.target.value)}
+                  disabled={isLocked || !canEdit}
+                >
+                  {REVIVE_TYPES.map(rt => (
+                    <option key={rt.id} value={rt.id} style={{ color: '#E2E8F0', backgroundColor: '#121824' }}>
+                      {rt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
       </div>
 

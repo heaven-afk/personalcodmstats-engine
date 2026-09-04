@@ -605,6 +605,34 @@ export function localUpdatePlayerMatchResult(tId, resId, data) {
   }
 }
 
+export function localUpdateLobbyReviveType(tId, day, lobby, reviveType, groupId = null) {
+  // Update team results
+  const teamList = localGetTeamMatchResults(tId);
+  let teamChanged = false;
+  teamList.forEach(r => {
+    if (r.day === day && r.lobby === lobby && (!groupId || r.groupId === groupId)) {
+      r.reviveType = reviveType;
+      teamChanged = true;
+    }
+  });
+  if (teamChanged) {
+    setStorageItem(`heaven_results_teams_${tId}`, teamList);
+  }
+
+  // Update player results
+  const playerList = localGetPlayerMatchResults(tId);
+  let playerChanged = false;
+  playerList.forEach(r => {
+    if (r.day === day && r.lobby === lobby && (!groupId || r.groupId === groupId)) {
+      r.reviveType = reviveType;
+      playerChanged = true;
+    }
+  });
+  if (playerChanged) {
+    setStorageItem(`heaven_results_players_${tId}`, playerList);
+  }
+}
+
 // Bonus Points
 export function localGetBonusPoints(tId) {
   return getStorageItem(`heaven_bonus_${tId}`);
