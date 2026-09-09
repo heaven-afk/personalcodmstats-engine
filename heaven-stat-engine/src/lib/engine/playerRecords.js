@@ -5,6 +5,15 @@
  * 2. Team-level squad leaders & detailed roster performance breakdown
  */
 
+import { computeTournamentPlayerInfluence } from '@/lib/engine/playerInfluence';
+
+// ─── MVP Blend Weights ────────────────────────────────────────────────────────
+// RATING contributes 75%, tournament-scoped Influence contributes 25%.
+// Influence (0–10) is multiplied by 10 to match the 0–100 RATING scale before
+// blending. Tune these constants after reviewing real tournament results.
+const MVP_RATING_WEIGHT    = 0.75;
+const MVP_INFLUENCE_WEIGHT = 0.25;
+
 /**
  * Format a match reference string: e.g. "D1 L2"
  */
@@ -15,10 +24,17 @@ export function formatMatchRef(day, lobby) {
 
 /**
  * Compute tournament-wide player leaders and peak single-match records
- * @param {Array} playerAnalyticsData - Enriched player analytics objects
- * @param {Array} playerMatchResults - Raw player match results rows
+ * @param {Array}  playerAnalyticsData - Enriched player analytics objects
+ * @param {Array}  playerMatchResults  - Raw player match results rows
+ * @param {Array}  teamMatchResults    - Raw team match results rows (for Influence scoring)
+ * @param {object} tournament          - Tournament document (for Influence scoring)
  */
-export function computeTournamentPlayerRecords(playerAnalyticsData = [], playerMatchResults = []) {
+export function computeTournamentPlayerRecords(
+  playerAnalyticsData = [],
+  playerMatchResults = [],
+  teamMatchResults = [],
+  tournament = null,
+) {
   if (!playerAnalyticsData || playerAnalyticsData.length === 0) {
     return {
       mvp: null,
@@ -32,14 +48,30 @@ export function computeTournamentPlayerRecords(playerAnalyticsData = [], playerM
     };
   }
 
-  // 1. Tournament MVP: best player based on analyticsRank (or FINAL_RATING)
-  const sortedByRank = [...playerAnalyticsData].sort((a, b) => {
-    const rankA = a.analyticsRank ?? 9999;
-    const rankB = b.analyticsRank ?? 9999;
-    if (rankA !== rankB) return rankA - rankB;
+  // 1. Tournament MVP: blended mvpScore (RATING × 0.75 + Influence × 0.25)
+  //    analyticsRank and RATING are NOT modified — only this MVP selection uses mvpScore.
+  //    Players with no computable Influence fall back to influenceScore = 0 (not excluded).
+  const round2 = n => Math.round(n * 100) / 100;
+  const playersWithMVPScore = playerAnalyticsData.map(p => {
+    const influenceResult = computeTournamentPlayerInfluence(
+      p.playerId, tournament, teamMatchResults, playerMatchResults
+    );
+    const influenceScore = influenceResult?.influenceScore ?? null;
+    const mvpScore = round2(
+      (p.scores?.RATING || 0) * MVP_RATING_WEIGHT +
+      (influenceScore ?? 0) * 10 * MVP_INFLUENCE_WEIGHT
+      // influenceScore 0–10 → ×10 → 0–100 scale, matching RATING
+    );
+    return { ...p, mvpScore };
+  });
+
+  const sortedByMVP = [...playersWithMVPScore].sort((a, b) => {
+    if (b.mvpScore !== a.mvpScore) return b.mvpScore - a.mvpScore;
+    if ((b.scores?.RATING || 0) !== (a.scores?.RATING || 0))
+      return (b.scores?.RATING || 0) - (a.scores?.RATING || 0);
     return (b.scores?.FINAL_RATING || 0) - (a.scores?.FINAL_RATING || 0);
   });
-  const mvp = sortedByRank[0] || null;
+  const mvp = sortedByMVP[0] || null;
 
   // 2. Top Fragger / Most Total Kills
   const sortedByKills = [...playerAnalyticsData].sort((a, b) => {
@@ -155,18 +187,20 @@ export function computeTournamentPlayerRecords(playerAnalyticsData = [], playerM
 /**
  * Compute team roster analytics including squad leaders, single match peaks,
  * damage share %, kill share %, and lethal execution efficiency.
- * @param {string} teamId - The selected team's ID
- * @param {string} teamName - The selected team's name
- * @param {Array} playerAnalyticsData - Enriched player analytics objects
- * @param {Array} playerMatchResults - Raw player match results rows
- * @param {Array} teamMatchResults - Raw team match results rows
+ * @param {string} teamId              - The selected team's ID
+ * @param {string} teamName            - The selected team's name
+ * @param {Array}  playerAnalyticsData - Enriched player analytics objects
+ * @param {Array}  playerMatchResults  - Raw player match results rows
+ * @param {Array}  teamMatchResults    - Raw team match results rows
+ * @param {object} tournament          - Tournament document (for squad MVP Influence scoring)
  */
 export function computeTeamRosterAnalytics(
   teamId,
   teamName = '',
   playerAnalyticsData = [],
   playerMatchResults = [],
-  teamMatchResults = []
+  teamMatchResults = [],
+  tournament = null,
 ) {
   if (!teamId && !teamName) {
     return {
@@ -297,7 +331,29 @@ export function computeTeamRosterAnalytics(
   });
 
   // Squad Leaders
-  const squadMVP = [...roster].sort((a, b) => (b.rating || 0) - (a.rating || 0))[0] || null;
+  // mvpScore blends RATING (75%) with tournament-scoped Influence (25%) — same
+  // formula as tournament MVP selection. Mirrors "who mattered most" for this squad.
+  // NOTE: flagged in plan as an assumption. If squad MVP should stay RATING-only,
+  // revert this sort to: (b.rating || 0) - (a.rating || 0)
+  const round2sq = n => Math.round(n * 100) / 100;
+  const rosterWithMVPScore = roster.map(r => {
+    const playerAnalytic = teamPlayers.find(p => p.playerId === r.playerId);
+    const influenceResult = computeTournamentPlayerInfluence(
+      r.playerId, tournament, teamMatchResults, playerMatchResults
+    );
+    const influenceScore = influenceResult?.influenceScore ?? null;
+    const rating0to100 = playerAnalytic?.scores?.RATING || 0;
+    const mvpScore = round2sq(
+      rating0to100 * MVP_RATING_WEIGHT +
+      (influenceScore ?? 0) * 10 * MVP_INFLUENCE_WEIGHT
+    );
+    return { ...r, mvpScore };
+  });
+
+  const squadMVP = [...rosterWithMVPScore].sort((a, b) => {
+    if (b.mvpScore !== a.mvpScore) return b.mvpScore - a.mvpScore;
+    return (b.rating || 0) - (a.rating || 0);
+  })[0] || null;
   const squadTopFragger = [...roster].sort((a, b) => b.totalKills - a.totalKills)[0] || null;
   const squadDamageLeader = [...roster].filter(r => r.matchesCount > 0).sort((a, b) => b.avgDamage - a.avgDamage)[0] || null;
   const squadAccuracyLeader = [...roster].filter(r => r.avgAccuracy > 0).sort((a, b) => b.avgAccuracy - a.avgAccuracy)[0] || null;

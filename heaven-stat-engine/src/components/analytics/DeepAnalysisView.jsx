@@ -480,6 +480,7 @@ export default function DeepAnalysisView({
             {entityType === 'team' ? (
               <TournamentTeamView
                 team={currentTeam || teamAnalyticsData[0]}
+                tournament={tournament}
                 tournamentField={teamAnalyticsData}
                 teamMatchResults={teamMatchResults}
                 activeMapConfig={activeMapConfig}
@@ -567,8 +568,13 @@ function TournamentSummaryOverview({
 
   // 2b. Tournament-Wide Player Records & Category Leaders
   const playerRecords = useMemo(() => {
-    return computeTournamentPlayerRecords(playerAnalyticsData, playerMatchResults);
-  }, [playerAnalyticsData, playerMatchResults]);
+    return computeTournamentPlayerRecords(
+      playerAnalyticsData,
+      playerMatchResults,
+      teamMatchResults,
+      tournament,
+    );
+  }, [playerAnalyticsData, playerMatchResults, teamMatchResults, tournament]);
 
   // 3. Map Performers (Per AVAILABLE_MAPS + any custom maps in results)
   const mapPerformers = useMemo(() => {
@@ -1155,6 +1161,7 @@ function TournamentSummaryOverview({
 // ─── 1. TOURNAMENT SCOPED - TEAM VIEW ─────────────────────────────────────────
 function TournamentTeamView({
   team,
+  tournament = null,
   tournamentField,
   teamMatchResults,
   activeMapConfig,
@@ -1173,8 +1180,13 @@ function TournamentTeamView({
   // Compute team roster analytics (squad leaders, per-player records, shares)
   const rosterData = useMemo(() => {
     if (!team?.teamId) return { squadLeaders: {}, roster: [], teamTotals: { kills: 0, damage: 0 } };
-    return computeTeamRosterAnalytics(team.teamId, team.teamName, playerAnalyticsData, playerMatchResults, teamMatchResults);
-  }, [team, playerAnalyticsData, playerMatchResults, teamMatchResults]);
+    return computeTeamRosterAnalytics(
+      team.teamId, team.teamName,
+      playerAnalyticsData, playerMatchResults, teamMatchResults,
+      tournament,
+    );
+  }, [team, playerAnalyticsData, playerMatchResults, teamMatchResults, tournament]);
+
 
   // Filter match log for this team
   const matches = useMemo(() => {

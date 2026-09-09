@@ -5,7 +5,7 @@ import { usePlayer } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTournament, getAllRegistrationsForPlayer } from '@/lib/firestore/tournaments';
 import { getPlayerMatchResults, getTeamMatchResults, getAllMatchResultsForPlayer } from '@/lib/firestore/matchData';
-import { computePlayerInfluence } from '@/lib/engine/playerInfluence';
+import { computePlayerInfluence, buildTeamMatchHistoryEntries } from '@/lib/engine/playerInfluence';
 import { computePlayerXGSummary } from '@/lib/engine/globalForm';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import PlayerInfluenceCard from '@/components/analytics/PlayerInfluenceCard';
@@ -79,93 +79,10 @@ export default function PlayerAnalysisPage() {
             });
           });
 
-          // Find all team matches this player's team played in this tournament
-          const isSoloTourney = t.format === 'solo' || t.isSolo === true;
-          const distinctTeammatesInTourney = new Set(playerResults.filter(pr => pr.teamId === myTeamId).map(pr => pr.playerId)).size;
-          const teamMatchesForMyTeam = teamResults.filter(tr => tr.teamId === myTeamId);
-          const processedMatchKeys = new Set();
-
-          teamMatchesForMyTeam.forEach(tm => {
-            const matchKey = `${tm.day}-${tm.lobby}${tm.groupId ? '-' + tm.groupId : ''}`;
-            processedMatchKeys.add(matchKey);
-
-            // All player results in the same match for this team
-            const allPlayerResultsThisMatch = playerResults.filter(pr =>
-              pr.teamId === myTeamId &&
-              pr.day === tm.day &&
-              pr.lobby === tm.lobby &&
-              (tm.groupId ? pr.groupId === tm.groupId : true)
-            );
-
-            const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(pr => pr.playerId)).size;
-            const teamSize = isSoloTourney
-              ? 1
-              : (distinctPlayersThisMatch > 1
-                  ? distinctPlayersThisMatch
-                  : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (t.playersPerTeam || 4)));
-
-            // My own result for this match
-            const myResult = allPlayerResultsThisMatch.find(pr => pr.playerId === id);
-            const present = Boolean(myResult);
-
-            // Team total damage: sum of all player damages in this match, or estimated from team kills
-            let teamTotalDamage = allPlayerResultsThisMatch.reduce((s, pr) => s + (pr.damage || 0), 0);
-            if (myResult?.damage && teamTotalDamage <= myResult.damage && (tm.kills || 0) > (myResult?.kills || 0)) {
-              teamTotalDamage = myResult.kills > 0
-                ? Math.round((myResult.damage / myResult.kills) * (tm.kills || 1))
-                : myResult.damage + ((tm.kills || 1) * 250);
-            }
-
-            teamMatchHistory.push({
-              matchId: `${t.id}-${matchKey}`,
-              teamId: myTeamId,
-              present,
-              placement: tm.placement || 0,
-              teamTotalKills: tm.kills || myResult?.kills || 0,
-              playerKills: myResult?.kills || 0,
-              playerDamage: myResult?.damage || 0,
-              teamTotalDamage,
-              teamSize,
-              isSolo: isSoloTourney,
-            });
-          });
-
-          // Handle player matches that might not be in teamResults
-          myPlayerResults.forEach(pr => {
-            const matchKey = `${pr.day}-${pr.lobby}${pr.groupId ? '-' + pr.groupId : ''}`;
-            if (processedMatchKeys.has(matchKey)) return;
-            processedMatchKeys.add(matchKey);
-
-            const allPlayerResultsThisMatch = playerResults.filter(r =>
-              r.teamId === myTeamId &&
-              r.day === pr.day &&
-              r.lobby === pr.lobby &&
-              (pr.groupId ? r.groupId === pr.groupId : true)
-            );
-
-            const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(r => r.playerId)).size;
-            const teamSize = isSoloTourney
-              ? 1
-              : (distinctPlayersThisMatch > 1
-                  ? distinctPlayersThisMatch
-                  : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (t.playersPerTeam || 4)));
-
-            const teamTotalKills = allPlayerResultsThisMatch.reduce((s, r) => s + (r.kills || 0), 0);
-            const teamTotalDamage = allPlayerResultsThisMatch.reduce((s, r) => s + (r.damage || 0), 0);
-
-            teamMatchHistory.push({
-              matchId: `${t.id}-${matchKey}`,
-              teamId: myTeamId,
-              present: true,
-              placement: pr.placement || 0,
-              teamTotalKills: teamTotalKills || pr.kills || 0,
-              playerKills: pr.kills || 0,
-              playerDamage: pr.damage || 0,
-              teamTotalDamage: teamTotalDamage || pr.damage || 0,
-              teamSize,
-              isSolo: isSoloTourney,
-            });
-          });
+          // Build this tournament's match history entries via the shared helper
+          // (same logic as computeTournamentPlayerInfluence — one source of truth)
+          const tournamentEntries = buildTeamMatchHistoryEntries(t, id, teamResults, playerResults);
+          teamMatchHistory.push(...tournamentEntries);
         });
 
         const result = computePlayerInfluence(id, teamMatchHistory);

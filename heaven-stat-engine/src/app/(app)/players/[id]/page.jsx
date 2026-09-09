@@ -14,7 +14,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import DataTable from '@/components/ui/DataTable';
 import { ClassBadge, TierBadge } from '@/components/ui/Badge';
 import MetricTooltip from '@/components/ui/MetricTooltip';
-import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame, Camera, Upload, X, Trash2, Image as ImageIcon, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { ChevronLeft, User, Trophy, Calendar, Cpu, Award, Star, Flame, Camera, Upload, X, Trash2, Image as ImageIcon, TrendingUp, TrendingDown, Minus, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { computePlayerGlobalForm, computePlayerCategoryForms, GLOBAL_FORM_CATEGORIES } from '@/lib/engine/globalForm';
 
@@ -276,9 +276,22 @@ export default function PlayerProfilePage() {
       header: 'Tournament',
       accessor: 'name',
       render: (row) => (
-        <Link href={`/tournaments/${row.id}`} className="font-semibold text-text-primary hover:text-gold transition">
-          {row.name}
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Link
+            href={`/players/${id}/tournaments/${row.id}`}
+            className="font-semibold text-text-primary hover:text-gold transition"
+          >
+            {row.name}
+          </Link>
+          <Link
+            href={`/tournaments/${row.id}`}
+            title="View general tournament page"
+            style={{ color: 'var(--text-muted)', flexShrink: 0, lineHeight: 1 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <ExternalLink size={11} />
+          </Link>
+        </div>
       ),
     },
     { header: 'Season', accessor: 'season' },

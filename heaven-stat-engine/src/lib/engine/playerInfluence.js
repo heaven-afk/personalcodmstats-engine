@@ -52,17 +52,178 @@ function influenceLabel(score) {
 }
 
 /**
+ * buildTeamMatchHistoryEntries
+ *
+ * Shared helper that assembles the teamMatchHistory array for a single player
+ * within a single tournament. Used by both the career-wide analysis page
+ * (called once per tournament, accumulated) and computeTournamentPlayerInfluence
+ * (called once, scoped to the one tournament).
+ *
+ * Mirrors the two-block assembly logic from players/[id]/analysis/page.jsx:
+ *   Block A — team-driven matches (teamMatchResults filtered to myTeamId)
+ *   Block B — player-only fallback matches missing from teamResults
+ *
+ * @param {object}  tournament         - Tournament document (format, isSolo, playersPerTeam, id)
+ * @param {string}  playerId           - The player whose influence we're computing
+ * @param {Array}   teamMatchResults   - Raw team match result rows for this tournament
+ * @param {Array}   playerMatchResults - Raw player match result rows for this tournament
+ * @returns {Array} teamMatchHistory entries
+ */
+export function buildTeamMatchHistoryEntries(tournament, playerId, teamMatchResults, playerMatchResults) {
+  if (!tournament || !playerId) return [];
+
+  const t = tournament;
+  const playerResults = playerMatchResults || [];
+  const teamResults   = teamMatchResults   || [];
+
+  // Resolve this player's teamId
+  const myTeamId = playerResults.find(pr => pr.playerId === playerId)?.teamId;
+  if (!myTeamId) return [];
+
+  const isSoloTourney = t.format === 'solo' || t.isSolo === true;
+
+  // Distinct teammates across the whole tournament (used as teamSize fallback)
+  const distinctTeammatesInTourney = new Set(
+    playerResults.filter(pr => pr.teamId === myTeamId).map(pr => pr.playerId)
+  ).size;
+
+  const teamMatchesForMyTeam = teamResults.filter(tr => tr.teamId === myTeamId);
+  const processedMatchKeys = new Set();
+  const entries = [];
+
+  // ── Block A: team-driven matches ─────────────────────────────────────────────
+  teamMatchesForMyTeam.forEach(tm => {
+    const matchKey = `${tm.day}-${tm.lobby}${tm.groupId ? '-' + tm.groupId : ''}`;
+    processedMatchKeys.add(matchKey);
+
+    // All player results in the same match for this team
+    const allPlayerResultsThisMatch = playerResults.filter(pr =>
+      pr.teamId === myTeamId &&
+      pr.day === tm.day &&
+      pr.lobby === tm.lobby &&
+      (tm.groupId ? pr.groupId === tm.groupId : true)
+    );
+
+    const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(pr => pr.playerId)).size;
+    const teamSize = isSoloTourney
+      ? 1
+      : (distinctPlayersThisMatch > 1
+          ? distinctPlayersThisMatch
+          : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (t.playersPerTeam || 4)));
+
+    const myResult = allPlayerResultsThisMatch.find(pr => pr.playerId === playerId);
+    const present = Boolean(myResult);
+
+    // Team total damage: sum of all player damages, or estimated from team kills
+    let teamTotalDamage = allPlayerResultsThisMatch.reduce((s, pr) => s + (pr.damage || 0), 0);
+    if (myResult?.damage && teamTotalDamage <= myResult.damage && (tm.kills || 0) > (myResult?.kills || 0)) {
+      teamTotalDamage = myResult.kills > 0
+        ? Math.round((myResult.damage / myResult.kills) * (tm.kills || 1))
+        : myResult.damage + ((tm.kills || 1) * 250);
+    }
+
+    entries.push({
+      matchId: `${t.id}-${matchKey}`,
+      teamId: myTeamId,
+      present,
+      placement: tm.placement || 0,
+      teamTotalKills: tm.kills || myResult?.kills || 0,
+      playerKills: myResult?.kills || 0,
+      playerDamage: myResult?.damage || 0,
+      teamTotalDamage,
+      teamSize,
+      isSolo: isSoloTourney,
+    });
+  });
+
+  // ── Block B: player-only fallback (matches missing from teamResults) ──────────
+  const myPlayerResults = playerResults.filter(pr => pr.playerId === playerId);
+  myPlayerResults.forEach(pr => {
+    const matchKey = `${pr.day}-${pr.lobby}${pr.groupId ? '-' + pr.groupId : ''}`;
+    if (processedMatchKeys.has(matchKey)) return;
+    processedMatchKeys.add(matchKey);
+
+    const allPlayerResultsThisMatch = playerResults.filter(r =>
+      r.teamId === myTeamId &&
+      r.day === pr.day &&
+      r.lobby === pr.lobby &&
+      (pr.groupId ? r.groupId === pr.groupId : true)
+    );
+
+    const distinctPlayersThisMatch = new Set(allPlayerResultsThisMatch.map(r => r.playerId)).size;
+    const teamSize = isSoloTourney
+      ? 1
+      : (distinctPlayersThisMatch > 1
+          ? distinctPlayersThisMatch
+          : (distinctTeammatesInTourney > 1 ? distinctTeammatesInTourney : (t.playersPerTeam || 4)));
+
+    const teamTotalKills  = allPlayerResultsThisMatch.reduce((s, r) => s + (r.kills || 0), 0);
+    const teamTotalDamage = allPlayerResultsThisMatch.reduce((s, r) => s + (r.damage || 0), 0);
+
+    entries.push({
+      matchId: `${t.id}-${matchKey}`,
+      teamId: myTeamId,
+      present: true,
+      placement: pr.placement || 0,
+      teamTotalKills: teamTotalKills || pr.kills || 0,
+      playerKills: pr.kills || 0,
+      playerDamage: pr.damage || 0,
+      teamTotalDamage: teamTotalDamage || pr.damage || 0,
+      teamSize,
+      isSolo: isSoloTourney,
+    });
+  });
+
+  return entries;
+}
+
+/**
+ * computeTournamentPlayerInfluence
+ *
+ * Computes a tournament-scoped Player Influence score (0–10) for MVP blending.
+ * Only looks at matches within the given tournament — independent of the player's
+ * career-wide influence score used on the /players/[id]/analysis page.
+ *
+ * Falls back gracefully: returns { influenceScore: null } when there is
+ * insufficient match data (e.g. solo-only tournament, player with no results).
+ *
+ * @param {string} playerId
+ * @param {object} tournament          - Tournament document
+ * @param {Array}  teamMatchResults    - Raw team match result rows (this tournament only)
+ * @param {Array}  playerMatchResults  - Raw player match result rows (this tournament only)
+ * @returns {{ influenceScore: number|null }}
+ */
+export function computeTournamentPlayerInfluence(playerId, tournament, teamMatchResults, playerMatchResults) {
+  if (!playerId || !tournament) return { influenceScore: null };
+
+  const teamMatchHistory = buildTeamMatchHistoryEntries(
+    tournament, playerId, teamMatchResults, playerMatchResults
+  );
+
+  if (!teamMatchHistory.length) return { influenceScore: null };
+
+  // Only "present" non-solo matches contribute to the kill-share contribution score
+  const presentMatches = teamMatchHistory.filter(m => m.present && !m.isSolo);
+  const contribution = computeContribution(presentMatches, 'playerKills', 'teamTotalKills');
+
+  return {
+    influenceScore: contribution?.score ?? null,
+    killsContribution: contribution ?? null, // { percent, baselinePercent, score }
+  };
+}
+
+/**
  * computePlayerInfluence
  *
  * @param {string} playerId
  * @param {Array} teamMatchHistory
- * @returns {{
+ * @returns {{\
  *   influenceScore: number|null,
  *   label: string|null,
  *   eligible: boolean,
  *   isProvisional: boolean,
  *   sampleSize: { with: number, without: number },
- *   breakdown: {
+ *   breakdown: {\
  *     positionalScore: number|null,
  *     teamKillsScore: number|null,
  *     killsContribution: { percent, baselinePercent, score }|null,
