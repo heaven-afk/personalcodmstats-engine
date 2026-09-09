@@ -76,6 +76,12 @@ const PRESET_CATEGORIES = [
         desc: 'All registered players ranked by total kills, matches, damage, and accuracy.',
       },
       {
+        id: 'player-kills-by-team',
+        name: 'Player Kills Grouped by Team',
+        badge: 'By Team',
+        desc: 'Player kill breakdown grouped by team, ranked by highest kills per team, with daily breakdown (D1-D6), matches, events, and kills per event.',
+      },
+      {
         id: 'top-players-set1',
         name: 'Top Players (Class 1 / Set 1)',
         badge: 'Class 1',
@@ -570,6 +576,259 @@ export default function ExtractionPage() {
             { header: 'Accuracy %', accessor: 'Avg Accuracy %' },
           ],
         };
+      }
+
+      // 5b. Player Kills Grouped by Team
+      case 'player-kills-by-team': {
+        const stats = computePlayerStats(activePlayerResults, activePlayerRegs, tournament);
+        const days = Array.from({ length: activeTotalDays }, (_, i) => i + 1);
+
+        // Build registration lookup for maximum name and roster accuracy
+        const regMap = {};
+        activePlayerRegs.forEach(r => {
+          if (r.playerId) regMap[String(r.playerId).trim()] = r;
+          if (r.id) regMap[String(r.id).trim()] = r;
+          if (r.ign) regMap[String(r.ign).trim().toLowerCase()] = r;
+        });
+
+        // Also incorporate any registered players who might not have recorded matches yet
+        const playedKeys = new Set(stats.map(p => String(p.playerId || p.ign || '').toLowerCase().trim()));
+        for (const reg of activePlayerRegs) {
+          const key = String(reg.playerId || reg.ign || '').toLowerCase().trim();
+          if (key && !playedKeys.has(key)) {
+            stats.push({
+              playerId: reg.playerId || reg.id || key,
+              playerName: reg.professionalName || reg.playerName || reg.ign || '',
+              ign: reg.ign || '',
+              teamId: reg.teamId || '',
+              teamName: reg.teamName || '',
+              clanName: reg.clanName || '',
+              class: reg.class || '',
+              slot: reg.slot || 0,
+              totalKills: 0,
+              totalMatches: 0,
+              events: 0,
+              killsPerEvent: 0,
+              perDay: {},
+              activeDays: new Set(),
+            });
+          }
+        }
+
+        // Group players by Team Name
+        const teamGroups = {};
+        stats.forEach(player => {
+          const reg = (player.playerId && regMap[String(player.playerId).trim()]) ||
+            (player.ign && regMap[String(player.ign).trim().toLowerCase()]);
+          const tName = (reg?.teamName || player.teamName || 'Independent / Unassigned').trim();
+          if (!teamGroups[tName]) {
+            teamGroups[tName] = [];
+          }
+          teamGroups[tName].push({
+            ...player,
+            resolvedProName: reg?.professionalName || reg?.playerName || player.playerName || player.ign || '—',
+            resolvedIgn: reg?.ign || player.ign || '—',
+            resolvedTeamName: tName,
+          });
+        });
+
+        // Sort team names alphabetically, keeping Unassigned at the end
+        const sortedTeamNames = Object.keys(teamGroups).sort((a, b) => {
+          if (a.toLowerCase().includes('unassigned')) return 1;
+          if (b.toLowerCase().includes('unassigned')) return -1;
+          return a.localeCompare(b, undefined, { sensitivity: 'base' });
+        });
+
+        // Define column headers with live preview styling
+        const columns = [
+          {
+            header: 'Team Name',
+            accessor: 'Team Name',
+            render: (row) => {
+              if (row._isSpacer) return '';
+              return <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{row['Team Name']}</span>;
+            },
+          },
+          {
+            header: '#',
+            accessor: '#',
+            width: 45,
+            render: (row) => {
+              if (row._isSpacer) return '';
+              const r = row['#'];
+              return (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  background: r === 1 ? 'rgba(201,168,76,0.2)' : 'rgba(255,255,255,0.06)',
+                  color: r === 1 ? 'var(--gold)' : 'var(--text-muted)',
+                  border: r === 1 ? '1px solid rgba(201,168,76,0.4)' : '1px solid transparent',
+                  fontFamily: 'var(--font-mono)',
+                }}>
+                  {r}
+                </span>
+              );
+            },
+          },
+          {
+            header: 'Professional Name',
+            accessor: 'Professional Name',
+            render: (row) => {
+              if (row._isSpacer) return '';
+              return <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row['Professional Name']}</span>;
+            },
+          },
+          {
+            header: 'IGN',
+            accessor: 'IGN',
+            render: (row) => {
+              if (row._isSpacer) return '';
+              return <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{row['IGN']}</span>;
+            },
+          },
+          ...days.map(d => ({
+            header: `D${d}`,
+            accessor: `D${d}`,
+            width: 55,
+            render: (row) => {
+              if (row._isSpacer) return '';
+              const val = row[`D${d}`];
+              return (
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.82rem',
+                  color: val === '—' ? 'var(--text-muted)' : 'var(--text-primary)',
+                  fontWeight: val === '—' ? 400 : 600,
+                  textAlign: 'center',
+                  display: 'block',
+                }}>
+                  {val ?? '—'}
+                </span>
+              );
+            },
+          })),
+          {
+            header: 'Matches',
+            accessor: 'Matches',
+            width: 75,
+            render: (row) => {
+              if (row._isSpacer) return '';
+              return <span style={{ fontFamily: 'var(--font-mono)' }}>{row['Matches']}</span>;
+            },
+          },
+          {
+            header: 'Events',
+            accessor: 'Events',
+            width: 70,
+            render: (row) => {
+              if (row._isSpacer) return '';
+              return <span style={{ fontFamily: 'var(--font-mono)' }}>{row['Events']}</span>;
+            },
+          },
+          {
+            header: 'Kills / Event',
+            accessor: 'Kills / Event',
+            width: 95,
+            render: (row) => {
+              if (row._isSpacer) return '';
+              return <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--gold)', fontWeight: 600 }}>{row['Kills / Event']}</span>;
+            },
+          },
+          {
+            header: 'Total Kills',
+            accessor: 'Total Kills',
+            width: 100,
+            render: (row) => {
+              if (row._isSpacer) return '';
+              return (
+                <span style={{
+                  display: 'inline-block',
+                  padding: '3px 10px',
+                  borderRadius: 4,
+                  background: 'var(--kill-red)',
+                  color: 'var(--yellow-kills)',
+                  fontWeight: 800,
+                  fontFamily: 'var(--font-mono)',
+                  textAlign: 'center',
+                  minWidth: 36,
+                }}>
+                  {row['Total Kills']}
+                </span>
+              );
+            },
+          },
+        ];
+
+        const columnAccessors = columns.map(c => c.accessor);
+        const rows = [];
+
+        sortedTeamNames.forEach((tName, teamIdx) => {
+          const players = teamGroups[tName];
+          // Rank players within each team descending by highest kills, tiebreak by matches then IGN
+          players.sort((a, b) => {
+            if ((b.totalKills || 0) !== (a.totalKills || 0)) {
+              return (b.totalKills || 0) - (a.totalKills || 0);
+            }
+            if ((b.totalMatches || 0) !== (a.totalMatches || 0)) {
+              return (b.totalMatches || 0) - (a.totalMatches || 0);
+            }
+            return (a.resolvedIgn || '').localeCompare(b.resolvedIgn || '');
+          });
+
+          players.forEach((p, pIdx) => {
+            const row = {
+              'Team Name': tName,
+              '#': pIdx + 1,
+              'Professional Name': p.resolvedProName,
+              'IGN': p.resolvedIgn,
+            };
+
+            days.forEach(d => {
+              const dStat = p.perDay?.[d];
+              if (dStat && dStat.matches > 0) {
+                row[`D${d}`] = dStat.kills ?? 0;
+              } else {
+                row[`D${d}`] = '—';
+              }
+            });
+
+            const evCount = p.events || (p.activeDays instanceof Set ? p.activeDays.size : p.activeDays?.length) || 0;
+            const totKills = p.totalKills || 0;
+            const kpe = p.killsPerEvent != null
+              ? p.killsPerEvent
+              : (evCount > 0 ? Number((totKills / evCount).toFixed(2)) : 0);
+
+            row['Matches'] = p.totalMatches || 0;
+            row['Events'] = evCount;
+            row['Kills / Event'] = kpe;
+            row['Total Kills'] = totKills;
+
+            rows.push(row);
+          });
+
+          // Insert a clean blank spacer row between teams (after the last player of each team)
+          if (teamIdx < sortedTeamNames.length - 1) {
+            const spacerRow = {};
+            columnAccessors.forEach(k => {
+              spacerRow[k] = '';
+            });
+            Object.defineProperty(spacerRow, '_isSpacer', {
+              value: true,
+              enumerable: false,
+              writable: true,
+              configurable: true,
+            });
+            rows.push(spacerRow);
+          }
+        });
+
+        return { rows, columns };
       }
 
       // 6. Top Players Set 1
@@ -1279,7 +1538,7 @@ export default function ExtractionPage() {
                             key={preset.id}
                             onClick={() => {
                               setActivePreset(preset.id);
-                              if (['player-roster', 'team-registry', 'daily-pts-matrix', 'group-standings'].includes(preset.id)) {
+                              if (['player-roster', 'team-registry', 'daily-pts-matrix', 'group-standings', 'player-kills-by-team'].includes(preset.id)) {
                                 setLimit(0);
                               } else {
                                 setLimit(10);
@@ -1452,7 +1711,7 @@ export default function ExtractionPage() {
               )}
 
               {/* Map Selector */}
-              {['top-teams-avg', 'top-teams-pts', 'top-players-combined', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
+              {['top-teams-avg', 'top-teams-pts', 'top-players-combined', 'player-kills-by-team', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                   <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Map:</span>
                   <select
@@ -1470,7 +1729,7 @@ export default function ExtractionPage() {
               )}
 
               {/* Revive Selector */}
-              {['top-teams-avg', 'top-teams-pts', 'top-players-combined', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
+              {['top-teams-avg', 'top-teams-pts', 'top-players-combined', 'player-kills-by-team', 'top-players-set1', 'top-players-set2', 'player-damage-leaders', 'clan-rankings', 'team-analytics', 'daily-pts-matrix'].includes(activePreset) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                   <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Revive:</span>
                   <select
@@ -1488,7 +1747,7 @@ export default function ExtractionPage() {
               )}
 
               {/* Row Limit Selector */}
-              {!['player-roster', 'team-registry', 'daily-pts-matrix', 'group-standings'].includes(activePreset) && (
+              {!['player-roster', 'team-registry', 'daily-pts-matrix', 'group-standings', 'player-kills-by-team'].includes(activePreset) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                   <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Rows Limit:</span>
                   <select
@@ -1537,7 +1796,9 @@ export default function ExtractionPage() {
                 searchable={true}
                 searchPlaceholder="Search within preview records..."
                 emptyMessage="No data records match this extraction filter setup."
-                pageSize={15}
+                pageSize={['player-kills-by-team', 'player-roster', 'team-registry', 'daily-pts-matrix'].includes(activePreset) ? 50 : 15}
+                sortable={activePreset !== 'player-kills-by-team'}
+                rowClassName={(row) => row._isSpacer ? 'extraction-spacer-row' : ''}
               />
             </div>
           </div>

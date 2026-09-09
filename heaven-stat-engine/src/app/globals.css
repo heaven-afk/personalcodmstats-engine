@@ -1466,4 +1466,20 @@ input, select, textarea { font-family: var(--font); }
   }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   DATA EXTRACTION SPACER ROW (TEAM SEPARATOR)
+═══════════════════════════════════════════════════════════ */
+.extraction-spacer-row {
+  height: 18px !important;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.35) !important;
+}
+
+.extraction-spacer-row td {
+  padding: 4px 8px !important;
+  height: 18px !important;
+  background: rgba(0, 0, 0, 0.35) !important;
+  border-top: 1px dashed rgba(201, 168, 76, 0.25) !important;
+  border-bottom: 1px dashed rgba(201, 168, 76, 0.25) !important;
+}
 

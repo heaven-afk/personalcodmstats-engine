@@ -17,6 +17,7 @@ export default function DataTable({
   pageSize = 50,
   rowClassName,
   stickyHeader = true,
+  sortable = true,
 }) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState(null);
@@ -35,20 +36,20 @@ export default function DataTable({
   }, [data, search, columns]);
 
   const sorted = useMemo(() => {
-    if (!sortKey) return filtered;
+    if (!sortable || !sortKey) return filtered;
     return [...filtered].sort((a, b) => {
       const av = a[sortKey] ?? '';
       const bv = b[sortKey] ?? '';
       const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir, sortable]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const paged = sorted.slice((page - 1) * pageSize, page * pageSize);
 
   const handleSort = (accessor) => {
-    if (!accessor) return;
+    if (!accessor || !sortable) return;
     if (sortKey === accessor) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -85,20 +86,23 @@ export default function DataTable({
         <table className={`data-table ${stickyHeader ? 'sticky-header' : ''}`}>
           <thead>
             <tr>
-              {columns.map((col, i) => (
-                <th
-                  key={col.accessor || col.key || i}
-                  style={{ width: col.width }}
-                  className={col.accessor ? 'sortable-th' : ''}
-                  onClick={() => col.accessor && handleSort(col.accessor)}
-                >
-                  <span className="th-content" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    {col.header}
-                    {col.accessor && <SortIcon accessor={col.accessor} />}
-                    {typeof col.header === 'string' && <MetricTooltip metricKey={col.header} />}
-                  </span>
-                </th>
-              ))}
+              {columns.map((col, i) => {
+                const canSort = sortable && col.accessor && col.sortable !== false;
+                return (
+                  <th
+                    key={col.accessor || col.key || i}
+                    style={{ width: col.width, cursor: canSort ? 'pointer' : 'default' }}
+                    className={canSort ? 'sortable-th' : ''}
+                    onClick={() => canSort && handleSort(col.accessor)}
+                  >
+                    <span className="th-content" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      {col.header}
+                      {canSort && <SortIcon accessor={col.accessor} />}
+                      {typeof col.header === 'string' && <MetricTooltip metricKey={col.header} />}
+                    </span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
