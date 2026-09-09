@@ -33,7 +33,7 @@ import { getTournaments, getTeamRegistrations, getPlayerRegistrations } from '@/
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTeams, getPlayers } from '@/lib/firestore/registry';
 import { computeTeamGlobalForm, computePlayerGlobalForm, globalFormLabel, computePlayerXGSummary } from '@/lib/engine/globalForm';
-import { computePlayerInfluence } from '@/lib/engine/playerInfluence';
+import { computePlayerInfluence, buildTeamMatchHistoryEntries } from '@/lib/engine/playerInfluence';
 import PlayerInfluenceCard from '@/components/analytics/PlayerInfluenceCard';
 
 // ─── Local Narrative Cache Helper ─────────────────────────────────────────────
@@ -1859,114 +1859,15 @@ function TournamentPlayerView({ player, tournament, tournamentField, playerMatch
   // Tournament-scoped Player Influence calculation
   const tournamentInfluence = useMemo(() => {
     if (!player?.playerId) return null;
-    const teamId = player.teamId;
-    const isSoloTourney = tournament?.format === 'solo' || tournament?.isSolo === true;
-    const distinctTeammatesInTourney = new Set((playerMatchResults || []).filter(pr => pr.teamId === teamId).map(pr => pr.playerId)).size;
-    const myTeamMatches = (teamMatchResults || []).filter(tm => tm.teamId === teamId);
-    const myPlayerMatches = (playerMatchResults || []).filter(pr => String(pr.playerId) === String(player.playerId));
-
-    const teamMatchHistory = [];
-    const processedMatchKeys = new Set();
-
-    myTeamMatches.forEach(tm => {
-      const matchKey = `${tm.day}-${tm.lobby}${tm.groupId ? '-' + tm.groupId : ''}`;
-      processedMatchKeys.add(matchKey);
-
-      const allPlayerResultsThisMatch = (playerMatchResults || []).filter(pr =>
-        pr.teamId === teamId &&
-        pr.day === tm.day &&
-        pr.lobby === tm.lobby &&
-        (!tm.groupId || pr.groupId === tm.groupId)
-      );
-
-      const playerResult = allPlayerResultsThisMatch.find(pr => String(pr.playerId) === String(player.playerId));
-      const played = !!playerResult;
-
-      const teammatesResults = allPlayerResultsThisMatch.filter(pr => String(pr.playerId) !== String(player.playerId));
-      const teamKills = tm.kills ?? 0;
-      const killsWithoutPlayer = Math.max(0, teamKills - (playerResult?.kills || 0));
-
-      const teamDamage = allPlayerResultsThisMatch.reduce((sum, pr) => sum + (pr.damage || 0), 0);
-      const damageWithoutPlayer = Math.max(0, teamDamage - (playerResult?.damage || 0));
-
-      const isWin = tm.placement === 1;
-      const isTop3 = tm.placement <= 3;
-      const isTop5 = tm.placement <= 5;
-      const pts = tm.totalPts ?? (tm.kills * 2 + (tm.placementPts || 0));
-
-      teamMatchHistory.push({
-        matchId: `${tournament?.id || 't'}-${matchKey}`,
-        teamId,
-        present: played,
-        played,
-        placement: tm.placement || 0,
-        teamTotalKills: teamKills,
-        playerKills: playerResult?.kills || 0,
-        playerDamage: playerResult?.damage || 0,
-        teamTotalDamage: teamDamage,
-        teamSize: isSoloTourney ? 1 : Math.max(2, teammatesResults.length + 1),
-        isSolo: isSoloTourney,
-        day: tm.day,
-        lobby: tm.lobby,
-        groupId: tm.groupId || null,
-        killsWithoutPlayer,
-        damageWithoutPlayer,
-        teamKills,
-        teamDamage,
-        points: pts,
-        isWin,
-        isTop3,
-        isTop5,
-        hadTeammates: isSoloTourney ? false : (teammatesResults.length > 0 || distinctTeammatesInTourney > 1),
-      });
-    });
-
-    myPlayerMatches.forEach(pm => {
-      const matchKey = `${pm.day}-${pm.lobby}${pm.groupId ? '-' + pm.groupId : ''}`;
-      if (!processedMatchKeys.has(matchKey)) {
-        processedMatchKeys.add(matchKey);
-        const played = true;
-        const playerKills = pm.kills || 0;
-        const playerDamage = pm.damage || 0;
-        const teamKills = playerKills;
-        const teamDamage = playerDamage;
-        const killsWithoutPlayer = 0;
-        const damageWithoutPlayer = 0;
-        const isWin = false;
-        const isTop3 = false;
-        const isTop5 = false;
-        const pts = playerKills * 2;
-
-        teamMatchHistory.push({
-          matchId: `${tournament?.id || 't'}-${matchKey}`,
-          teamId,
-          present: played,
-          played,
-          placement: 99,
-          teamTotalKills: teamKills,
-          playerKills,
-          playerDamage,
-          teamTotalDamage: teamDamage,
-          teamSize: 1,
-          isSolo: true,
-          day: pm.day,
-          lobby: pm.lobby,
-          groupId: pm.groupId || null,
-          killsWithoutPlayer,
-          damageWithoutPlayer,
-          teamKills,
-          teamDamage,
-          points: pts,
-          isWin,
-          isTop3,
-          isTop5,
-          hadTeammates: false,
-        });
-      }
-    });
-
+    const teamMatchHistory = buildTeamMatchHistoryEntries(
+      tournament,
+      player.playerId,
+      teamMatchResults,
+      playerMatchResults,
+      playerReg ? [playerReg] : []
+    );
     return computePlayerInfluence(player.playerId, teamMatchHistory);
-  }, [player, teamMatchResults, playerMatchResults, tournament]);
+  }, [player, teamMatchResults, playerMatchResults, tournament, playerReg]);
 
   // Tournament-scoped xG calculation
   const tournamentXG = useMemo(() => {

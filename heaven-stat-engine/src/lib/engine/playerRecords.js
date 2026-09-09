@@ -34,6 +34,7 @@ export function computeTournamentPlayerRecords(
   playerMatchResults = [],
   teamMatchResults = [],
   tournament = null,
+  playerRegistrations = [],
 ) {
   if (!playerAnalyticsData || playerAnalyticsData.length === 0) {
     return {
@@ -54,7 +55,7 @@ export function computeTournamentPlayerRecords(
   const round2 = n => Math.round(n * 100) / 100;
   const playersWithMVPScore = playerAnalyticsData.map(p => {
     const influenceResult = computeTournamentPlayerInfluence(
-      p.playerId, tournament, teamMatchResults, playerMatchResults
+      p.playerId, tournament, teamMatchResults, playerMatchResults, playerRegistrations
     );
     const influenceScore = influenceResult?.influenceScore ?? null;
     const mvpScore = round2(
@@ -201,6 +202,7 @@ export function computeTeamRosterAnalytics(
   playerMatchResults = [],
   teamMatchResults = [],
   tournament = null,
+  playerRegistrations = [],
 ) {
   if (!teamId && !teamName) {
     return {
@@ -339,7 +341,7 @@ export function computeTeamRosterAnalytics(
   const rosterWithMVPScore = roster.map(r => {
     const playerAnalytic = teamPlayers.find(p => p.playerId === r.playerId);
     const influenceResult = computeTournamentPlayerInfluence(
-      r.playerId, tournament, teamMatchResults, playerMatchResults
+      r.playerId, tournament, teamMatchResults, playerMatchResults, playerRegistrations
     );
     const influenceScore = influenceResult?.influenceScore ?? null;
     const rating0to100 = playerAnalytic?.scores?.RATING || 0;

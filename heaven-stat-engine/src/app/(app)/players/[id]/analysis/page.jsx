@@ -81,7 +81,7 @@ export default function PlayerAnalysisPage() {
 
           // Build this tournament's match history entries via the shared helper
           // (same logic as computeTournamentPlayerInfluence — one source of truth)
-          const tournamentEntries = buildTeamMatchHistoryEntries(t, id, teamResults, playerResults);
+          const tournamentEntries = buildTeamMatchHistoryEntries(t, id, teamResults, playerResults, myPlayerRegs);
           teamMatchHistory.push(...tournamentEntries);
         });
 

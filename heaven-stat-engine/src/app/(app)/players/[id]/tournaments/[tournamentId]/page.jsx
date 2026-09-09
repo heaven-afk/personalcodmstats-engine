@@ -154,8 +154,8 @@ export default function PlayerTournamentDeepDivePage() {
     const pStats = computePlayerStats(playerResults, playerRegs, tournament);
     const pad    = computePlayerAnalytics(pStats, teamResults);
     const me     = pad.find(p => p.playerId === id) || null;
-    const recs   = computeTournamentPlayerRecords(pad, playerResults, teamResults, tournament);
-    const inf    = computeTournamentPlayerInfluence(id, tournament, teamResults, playerResults);
+    const recs   = computeTournamentPlayerRecords(pad, playerResults, teamResults, tournament, playerRegs);
+    const inf    = computeTournamentPlayerInfluence(id, tournament, teamResults, playerResults, playerRegs);
     return { thisPlayer: me, playerAnalyticsData: pad, records: recs, influence: inf };
   }, [tournament, playerResults, playerRegs, teamResults, id]);
 
