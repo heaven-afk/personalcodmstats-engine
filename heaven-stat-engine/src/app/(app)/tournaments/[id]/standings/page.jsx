@@ -451,13 +451,14 @@ export default function StandingsPage() {
       } else {
         // Option B: Advance into a new Standard tournament
         if (!newTournamentName.trim()) {
-          toast.error('Please enter a new tournament name');
+          toast.error('Please enter a new event name');
           setAdvancing(false);
           return;
         }
 
         const newT = await createTournament({
           name: newTournamentName.trim(),
+          organisationName: tournament.organisationName || tournament.organizationName || '',
           season: tournament.season || '2026 Season 1',
           description: `Seeded from ${selectedGroup?.groupName || 'Qualifier'} advancement`,
           type: 'standard',
@@ -1132,7 +1133,7 @@ export default function StandingsPage() {
                 </div>
               ) : (
                 <div className="form-field">
-                  <label className="form-label" style={{ fontSize: '0.75rem' }}>New Tournament Name</label>
+                  <label className="form-label" style={{ fontSize: '0.75rem' }}>New Event Name</label>
                   <input
                     className="form-input"
                     placeholder="e.g. MGL Season 9 — Main Event"

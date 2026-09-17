@@ -33,6 +33,7 @@ export async function createTournament(data, userRole, creatorUid, creatorEmail)
   const payload = {
     name: '', season: '', description: '', status: 'setup',
     type: data.type || 'standard',
+    organisationName: data.organisationName?.trim() || data.organizationName?.trim() || '',
     eventStartDate: data.eventStartDate || null,
     eventEndDate: data.eventEndDate || null,
     createdAt: serverTimestamp(), completedAt: null,
@@ -41,6 +42,7 @@ export async function createTournament(data, userRole, creatorUid, creatorEmail)
     creatorEmail: resolvedCreatorEmail,
     editorUids: initialEditors,
     ...data,
+    organisationName: data.organisationName !== undefined ? (data.organisationName?.trim() || '') : (data.organizationName?.trim() || ''),
     editorUids: data.editorUids !== undefined ? data.editorUids : initialEditors,
   };
   if (payload.type === 'standard' && !payload.structure) {

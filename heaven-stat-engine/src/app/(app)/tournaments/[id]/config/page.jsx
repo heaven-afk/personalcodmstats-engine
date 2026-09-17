@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useTournament } from '../layout';
-import { updateTournament, deleteTournament, setTournamentRanked } from '@/lib/firestore/tournaments';
+import { updateTournament, deleteTournament, setTournamentRanked, getTournaments } from '@/lib/firestore/tournaments';
 import { rankEvent } from '@/lib/firestore/rankEvent';
 import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
@@ -114,11 +114,26 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
   const [saving, setSaving] = useState(false);
 
   // States mirroring create wizard, initialized from tournament directly
+  const [organisationName, setOrganisationName] = useState(tournament.organisationName || tournament.organizationName || '');
   const [name, setName] = useState(tournament.name || '');
   const [season, setSeason] = useState(tournament.season || '');
   const [description, setDescription] = useState(tournament.description || '');
   const [eventStartDate, setEventStartDate] = useState(tournament.eventStartDate || '');
   const [eventEndDate, setEventEndDate] = useState(tournament.eventEndDate || '');
+  const [existingOrgs, setExistingOrgs] = useState([]);
+
+  useEffect(() => {
+    getTournaments().then(list => {
+      if (Array.isArray(list)) {
+        const orgs = Array.from(new Set(
+          list
+            .map(t => (t.organisationName || t.organizationName || '').trim())
+            .filter(Boolean)
+        )).sort();
+        setExistingOrgs(orgs);
+      }
+    }).catch(err => console.warn('Could not fetch organisations:', err));
+  }, []);
   const [totalDays, setTotalDays] = useState(tournament.structure?.totalDays || 6);
   const [lobbiesPerDay, setLobbiesPerDay] = useState(tournament.structure?.lobbiesPerDay || 4);
   const [playerClasses, setPlayerClasses] = useState(tournament.structure?.playerClasses || []);
@@ -317,13 +332,14 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
 
   const handleSave = async () => {
     if (!name.trim()) {
-      toast.error('Tournament name is required');
+      toast.error('Event name is required');
       return;
     }
     setSaving(true);
     try {
       const updates = {
         name: name.trim(),
+        organisationName: organisationName.trim(),
         season: season.trim(),
         description: description.trim(),
         eventStartDate: eventStartDate || null,
@@ -400,9 +416,9 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
       </div>
 
       {isLocked && (
-        <div className="card" style={{ borderLeft: '4px solid var(--red)', background: 'rgba(192, 0, 0, 0.08)', marginBottom: 20 }}>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            <strong>Locked:</strong> Since this tournament is in the <strong>{tournament.status}</strong> phase, you can view the configuration but edits cannot be saved.
+        <div className="card" style={{ borderLeft: '4px solid var(--gold)', background: 'rgba(201, 168, 76, 0.08)', marginBottom: 20 }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0 }}>
+            <strong style={{ color: 'var(--gold)' }}>Notice:</strong> This event is in the <strong>{tournament.status}</strong> phase. Basic event information (Event Name, Organisation Name, Season, Dates, Description, Banner) can be updated and saved at any time. Match structure and scoring rules are locked to protect existing tournament data.
           </p>
         </div>
       )}
@@ -412,7 +428,28 @@ function TournamentConfigForm({ tournament, refresh, setTournament, id, router }
         <div className="flex-col">
           <h2 className="card-title" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 16 }}>Basic Information</h2>
           <div className="form-field">
-            <label className="form-label">Tournament Name *</label>
+            <label className="form-label">Organisation Name</label>
+            <input
+              id="config-organisation-name"
+              className="form-input"
+              value={organisationName}
+              onChange={e => setOrganisationName(e.target.value)}
+              placeholder="e.g. Heaven Esports, ESL Gaming, Activision"
+              list="config-existing-orgs-list"
+            />
+            {existingOrgs.length > 0 && (
+              <datalist id="config-existing-orgs-list">
+                {existingOrgs.map((org, i) => (
+                  <option key={i} value={org} />
+                ))}
+              </datalist>
+            )}
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 3 }}>
+              Group this event under an organisation. Helps group previous and future events together.
+            </span>
+          </div>
+          <div className="form-field">
+            <label className="form-label">Event Name *</label>
             <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. MGL Season 5 Finals" />
           </div>
           <div className="form-field">

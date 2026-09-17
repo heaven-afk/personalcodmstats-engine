@@ -1,8 +1,8 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { createTournament } from '@/lib/firestore/tournaments';
+import { createTournament, getTournaments } from '@/lib/firestore/tournaments';
 import { createGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
 import { ChevronRight, ChevronLeft, Plus, Trash2, Check, Zap, AlignJustify, Layers, FileSpreadsheet } from 'lucide-react';
@@ -52,11 +52,26 @@ export default function CreateTournamentPage() {
   }
 
   // Step 1
+  const [organisationName, setOrganisationName] = useState('');
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
   const [description, setDescription] = useState('');
   const [eventStartDate, setEventStartDate] = useState('');
   const [eventEndDate, setEventEndDate] = useState('');
+  const [existingOrgs, setExistingOrgs] = useState([]);
+
+  useEffect(() => {
+    getTournaments().then(list => {
+      if (Array.isArray(list)) {
+        const orgs = Array.from(new Set(
+          list
+            .map(t => (t.organisationName || t.organizationName || '').trim())
+            .filter(Boolean)
+        )).sort();
+        setExistingOrgs(orgs);
+      }
+    }).catch(err => console.warn('Could not fetch existing organisations:', err));
+  }, []);
   
   // Banner options
   const [bannerSource, setBannerSource] = useState('upload'); // 'upload' | 'url'
@@ -160,7 +175,7 @@ export default function CreateTournamentPage() {
   const updateQualifierGroupStructure = (idx, field, val) => setQualifierGroups(prev => prev.map((g, i) => i === idx ? { ...g, structure: { ...g.structure, [field]: val } } : g));
 
   const handleCreate = async () => {
-    if (!name.trim()) { toast.error('Tournament name is required'); setStep(1); return; }
+    if (!name.trim()) { toast.error('Event name is required'); setStep(1); return; }
     if (tournamentType === 'qualifier' && qualifierGroups.length === 0) {
       toast.error('At least one group is required for a Qualifier tournament');
       setStep(2);
@@ -170,6 +185,7 @@ export default function CreateTournamentPage() {
     try {
       const tournamentPayload = {
         name: name.trim(),
+        organisationName: organisationName.trim(),
         season: season.trim(),
         description: description.trim(),
         eventStartDate: eventStartDate || null,
@@ -431,8 +447,29 @@ export default function CreateTournamentPage() {
           <div className="flex-col">
             <h2 className="card-title" style={{ marginBottom: 4 }}>Basic Information</h2>
             <div className="form-field">
-              <label className="form-label">Tournament Name *</label>
-              <input id="tournament-name" className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. MGL Season 5 Finals" />
+              <label className="form-label">Organisation Name</label>
+              <input
+                id="organisation-name"
+                className="form-input"
+                value={organisationName}
+                onChange={e => setOrganisationName(e.target.value)}
+                placeholder="e.g. Heaven Esports, ESL Gaming, Activision"
+                list="existing-orgs-list"
+              />
+              {existingOrgs.length > 0 && (
+                <datalist id="existing-orgs-list">
+                  {existingOrgs.map((org, i) => (
+                    <option key={i} value={org} />
+                  ))}
+                </datalist>
+              )}
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 3 }}>
+                Groups related events under a unified organisation brand. Pick from existing or enter a new one.
+              </span>
+            </div>
+            <div className="form-field">
+              <label className="form-label">Event Name *</label>
+              <input id="event-name" className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. MGL Season 5 Finals" />
             </div>
             <div className="form-field">
               <label className="form-label">Season</label>
@@ -674,7 +711,7 @@ export default function CreateTournamentPage() {
             <button
               className="btn btn-primary"
               onClick={() => {
-                if (step === 1 && !name.trim()) { toast.error('Name is required'); return; }
+                if (step === 1 && !name.trim()) { toast.error('Event name is required'); return; }
                 setStep(s => s + 1);
               }}
             >

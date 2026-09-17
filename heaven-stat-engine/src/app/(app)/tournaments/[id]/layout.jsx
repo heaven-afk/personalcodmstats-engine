@@ -8,6 +8,7 @@ import { setupTournamentPresence } from '@/lib/presence';
 import TournamentSubNav from '@/components/layout/TournamentSubNav';
 import ActiveCollaborators from '@/components/ui/ActiveCollaborators';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Context so child pages can read the tournament
@@ -73,6 +74,22 @@ export default function TournamentLayout({ children }) {
       {/* Tournament header with active collaborators */}
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
         <div>
+          {(tournament.organisationName || tournament.organizationName) && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: '0.75rem',
+              fontWeight: 800,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: 'var(--gold)',
+              marginBottom: 4,
+            }}>
+              <Building2 size={13} />
+              <span>{tournament.organisationName || tournament.organizationName}</span>
+            </div>
+          )}
           <h1 className="page-title">{tournament.name}</h1>
           <p className="page-subtitle">
             {[

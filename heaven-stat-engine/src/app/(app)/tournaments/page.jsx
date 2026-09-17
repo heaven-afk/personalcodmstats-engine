@@ -1,17 +1,20 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTournaments, deleteTournament } from '@/lib/firestore/tournaments';
+import { getTournaments, deleteTournament, updateTournament } from '@/lib/firestore/tournaments';
 import { formatEventDates } from '@/lib/utils/dateUtils';
 import DataTable from '@/components/ui/DataTable';
 import { StatusBadge, TierBadge } from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import Modal from '@/components/ui/Modal';
-import { Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search, Medal, Eye, Edit3, ShieldAlert } from 'lucide-react';
+import {
+  Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search,
+  Medal, Eye, Edit3, ShieldAlert, Building2, ChevronDown, ChevronRight,
+  Layers, FolderTree
+} from 'lucide-react';
 import toast from 'react-hot-toast';
-
 import useSWR from 'swr';
 
 const STATUS_OPTIONS = ['all', 'setup', 'active', 'completed', 'archived'];
@@ -20,8 +23,16 @@ export default function TournamentsListPage() {
   const { user, isOwner, isOperator } = useAuth();
   const { data: tournaments = [], isLoading: loading, mutate } = useSWR('tournaments', getTournaments);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [orgFilter, setOrgFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
+  const [groupByOrg, setGroupByOrg] = useState(true); // default grouped by organisation
+  const [collapsedOrgs, setCollapsedOrgs] = useState({});
+
+  // Quick edit organisation modal state (for easily tagging past/current events)
+  const [editingOrgTournament, setEditingOrgTournament] = useState(null);
+  const [orgInput, setOrgInput] = useState('');
+  const [savingOrg, setSavingOrg] = useState(false);
 
   // Delete confirmation state
   const [deletingId, setDeletingId] = useState(null);
@@ -70,20 +81,91 @@ export default function TournamentsListPage() {
     return Boolean(isCreator || isAssigned);
   };
 
-  const filtered = tournaments.filter(t => {
-    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    const nameMatch = t.name?.toLowerCase().includes(q);
-    const seasonMatch = t.season?.toLowerCase().includes(q);
-    const dateStr = formatEventDates(t.eventStartDate, t.eventEndDate)?.toLowerCase();
-    const dateMatch = dateStr?.includes(q);
-    return nameMatch || seasonMatch || dateMatch;
-  });
+  const openQuickOrgModal = (t) => {
+    setEditingOrgTournament(t);
+    setOrgInput(t.organisationName || t.organizationName || '');
+  };
+
+  const handleSaveQuickOrg = async () => {
+    if (!editingOrgTournament) return;
+    setSavingOrg(true);
+    try {
+      const trimmedOrg = orgInput.trim();
+      await updateTournament(editingOrgTournament.id, {
+        organisationName: trimmedOrg,
+      });
+      toast.success('Organisation updated!');
+      mutate(
+        tournaments.map(t => t.id === editingOrgTournament.id ? { ...t, organisationName: trimmedOrg } : t),
+        false
+      );
+      mutate();
+      setEditingOrgTournament(null);
+    } catch (err) {
+      toast.error('Failed to update organisation: ' + err.message);
+    } finally {
+      setSavingOrg(false);
+    }
+  };
+
+  // List of all distinct organisations currently in tournaments
+  const allExistingOrgs = useMemo(() => {
+    return Array.from(new Set(
+      tournaments
+        .map(t => (t.organisationName || t.organizationName || '').trim())
+        .filter(Boolean)
+    )).sort();
+  }, [tournaments]);
+
+  // Filter tournaments by status, organisation, and search
+  const filtered = useMemo(() => {
+    return tournaments.filter(t => {
+      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+      const tOrg = (t.organisationName || t.organizationName || '').trim();
+      if (orgFilter !== 'all') {
+        if (orgFilter === '__unassigned__') {
+          if (tOrg) return false;
+        } else if (tOrg.toLowerCase() !== orgFilter.toLowerCase()) {
+          return false;
+        }
+      }
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      const nameMatch = t.name?.toLowerCase().includes(q);
+      const orgMatch = tOrg.toLowerCase().includes(q);
+      const seasonMatch = t.season?.toLowerCase().includes(q);
+      const dateStr = formatEventDates(t.eventStartDate, t.eventEndDate)?.toLowerCase();
+      const dateMatch = dateStr?.includes(q);
+      return nameMatch || orgMatch || seasonMatch || dateMatch;
+    });
+  }, [tournaments, statusFilter, orgFilter, searchQuery]);
+
+  // Group tournaments by organisation
+  const grouped = useMemo(() => {
+    const map = {};
+    filtered.forEach(t => {
+      const org = (t.organisationName || t.organizationName || '').trim() || 'Independent / Unassigned';
+      if (!map[org]) map[org] = [];
+      map[org].push(t);
+    });
+    return map;
+  }, [filtered]);
+
+  const orgKeys = useMemo(() => {
+    return Object.keys(grouped).sort((a, b) => {
+      if (a === 'Independent / Unassigned') return 1;
+      if (b === 'Independent / Unassigned') return -1;
+      return a.localeCompare(b);
+    });
+  }, [grouped]);
+
+  const toggleOrgCollapse = (orgName) => {
+    setCollapsedOrgs(prev => ({ ...prev, [orgName]: !prev[orgName] }));
+  };
 
   const columns = [
     {
-      header: 'Name',
+      header: 'Event Name',
       accessor: 'name',
       render: (t) => {
         const bannerSrc = t.banner || t.bannerUrl;
@@ -125,6 +207,40 @@ export default function TournamentsListPage() {
         );
       },
     },
+    {
+      header: 'Organisation',
+      accessor: 'organisationName',
+      render: (t) => {
+        const org = (t.organisationName || t.organizationName || '').trim();
+        const canEdit = checkCanEdit(t);
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {org ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: 'var(--gold)', fontSize: '0.82rem' }}>
+                <Building2 size={13} />
+                {org}
+              </span>
+            ) : (
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontStyle: 'italic' }}>Independent</span>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                style={{ padding: '2px 4px', color: 'var(--text-muted)' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openQuickOrgModal(t);
+                }}
+                title="Edit Organisation"
+              >
+                <Edit3 size={11} />
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
     { header: 'Season', accessor: 'season' },
     {
       header: 'Status',
@@ -162,6 +278,17 @@ export default function TournamentsListPage() {
             <Link href={`/tournaments/${t.id}`} className="btn btn-secondary btn-sm">
               {canEdit ? 'Open' : 'View (Read-Only)'}
             </Link>
+            {canEdit && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--gold)', padding: '5px 8px' }}
+                onClick={() => openQuickOrgModal(t)}
+                title="Edit Organisation"
+              >
+                <Building2 size={14} />
+              </button>
+            )}
             {isOwner && (
               <button
                 type="button"
@@ -179,14 +306,156 @@ export default function TournamentsListPage() {
     },
   ];
 
+  // Helper to render individual tournament grid card
+  const renderCard = (t) => {
+    const bannerSrc = t.banner || t.bannerUrl;
+    const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
+    const canEdit = checkCanEdit(t);
+    const org = (t.organisationName || t.organizationName || '').trim();
+
+    return (
+      <div
+        key={t.id}
+        style={{
+          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
+          border: '1px solid var(--border-md)',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        {/* Banner or Header */}
+        {bannerSrc ? (
+          <img src={bannerSrc} alt="" style={{ width: '100%', height: '120px', objectFit: 'cover' }} referrerPolicy="no-referrer" />
+        ) : (
+          <div style={{ height: '120px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--border)' }}>
+            <Trophy size={38} className="text-gold" style={{ opacity: 0.85 }} />
+          </div>
+        )}
+
+        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+          <div>
+            {/* Top row with Organisation badge & Season */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span
+                  onClick={() => canEdit && openQuickOrgModal(t)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    background: org ? 'rgba(201,168,76,0.14)' : 'rgba(255,255,255,0.05)',
+                    color: org ? 'var(--gold)' : 'var(--text-muted)',
+                    border: `1px solid ${org ? 'rgba(201,168,76,0.3)' : 'var(--border-md)'}`,
+                    cursor: canEdit ? 'pointer' : 'default',
+                    transition: 'all 0.15s',
+                  }}
+                  title={canEdit ? 'Click to change organisation' : undefined}
+                >
+                  <Building2 size={11} />
+                  {org || 'No Organisation'}
+                  {canEdit && <Edit3 size={9} style={{ opacity: 0.7, marginLeft: 2 }} />}
+                </span>
+
+                {t.season && (
+                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    {t.season}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {isOperator && (
+                  canEdit ? (
+                    <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                      Editor
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(148, 163, 184, 0.15)', color: 'var(--text-muted)', border: '1px solid rgba(148, 163, 184, 0.3)' }}>
+                      Read-Only
+                    </span>
+                  )
+                )}
+                {t.isRanked && <TierBadge tier={t.rankedTier} size="xs" />}
+                <StatusBadge status={t.status} />
+              </div>
+            </div>
+
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3 }}>
+              {t.name}
+            </h3>
+
+            {/* Prominent Event Date Range */}
+            {dateRange && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '0.8rem', color: 'var(--gold)', fontWeight: 600 }}>
+                <Calendar size={13} style={{ flexShrink: 0 }} />
+                <span>{dateRange}</span>
+              </div>
+            )}
+          </div>
+
+          {t.description && (
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineClamp: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {t.description}
+            </p>
+          )}
+
+          {/* Metadata Chips */}
+          <div style={{ display: 'flex', gap: '10px', background: 'rgba(15, 23, 42, 0.6)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'auto' }}>
+            <div>Days: <strong style={{ color: 'var(--text-primary)' }}>{t.structure?.totalDays ?? '—'}</strong></div>
+            <div>Lobbies: <strong style={{ color: 'var(--text-primary)' }}>{t.structure?.lobbiesPerDay ?? '—'}</strong></div>
+            <div>Type: <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{t.type || 'standard'}</strong></div>
+          </div>
+        </div>
+
+        {/* Card Actions */}
+        <div style={{ padding: '12px 16px', background: 'rgba(15, 23, 42, 0.9)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Link href={`/tournaments/${t.id}`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+            {canEdit ? 'Open Hub' : 'View Hub (Read-Only)'}
+          </Link>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--gold)', marginLeft: '6px', padding: '6px' }}
+              onClick={() => openQuickOrgModal(t)}
+              title="Change Organisation"
+            >
+              <Building2 size={15} />
+            </button>
+          )}
+          {isOwner && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--danger)', marginLeft: '6px', padding: '6px' }}
+              onClick={() => openDeleteModal(t.id, t.name)}
+              title="Delete Tournament"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (loading) return <LoadingSpinner size="lg" text="Loading tournaments..." />;
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Tournaments</h1>
-          <p className="page-subtitle">All events — setup, active, completed, archived</p>
+          <h1 className="page-title">Tournaments & Events</h1>
+          <p className="page-subtitle">Manage, view, and organize esports competitions</p>
         </div>
         <Link href="/tournaments/new" className="btn btn-primary">
           <Plus size={16} />
@@ -219,36 +488,76 @@ export default function TournamentsListPage() {
         ))}
       </div>
 
-      {/* Toolbar: Search + View Mode Switcher */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-        <div className="search-input-wrap" style={{ flex: 1, minWidth: 240, maxWidth: 360 }}>
-          <Search size={15} className="search-icon" />
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search by name, season, or date..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
+      {/* Toolbar: Search + Org Filter + Grouping Toggle + View Switcher */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 260, flexWrap: 'wrap' }}>
+          <div className="search-input-wrap" style={{ flex: 1, minWidth: 220, maxWidth: 360 }}>
+            <Search size={15} className="search-icon" />
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search by event name, organisation, season..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          {/* Organisation Filter Dropdown */}
+          {allExistingOrgs.length > 0 && (
+            <select
+              className="form-select"
+              value={orgFilter}
+              onChange={e => setOrgFilter(e.target.value)}
+              style={{ fontSize: '0.8rem', padding: '6px 12px', minWidth: 160, maxWidth: 220, height: 38 }}
+            >
+              <option value="all">All Organisations ({allExistingOrgs.length})</option>
+              {allExistingOrgs.map(org => (
+                <option key={org} value={org}>{org}</option>
+              ))}
+              <option value="__unassigned__">Independent / Unassigned</option>
+            </select>
+          )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-card)', padding: '3px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Group by Organisation Toggle */}
           <button
             type="button"
-            className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-            onClick={() => setViewMode('grid')}
+            className={`btn btn-sm ${groupByOrg ? 'btn-primary' : 'btn-secondary'}`}
+            style={{
+              padding: '7px 13px',
+              fontSize: '0.8rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: groupByOrg ? '0 0 12px rgba(201,168,76,0.25)' : 'none',
+            }}
+            onClick={() => setGroupByOrg(v => !v)}
+            title="Toggle grouping events under their organisation header"
           >
-            <LayoutGrid size={15} /> Grid
+            <Building2 size={15} />
+            <span>Group by Organisation</span>
           </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-            onClick={() => setViewMode('table')}
-          >
-            <List size={15} /> List
-          </button>
+
+          {/* Grid / List Switcher */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-card)', padding: '3px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
+            <button
+              type="button"
+              className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+              onClick={() => setViewMode('grid')}
+            >
+              <LayoutGrid size={15} /> Grid
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+              onClick={() => setViewMode('table')}
+            >
+              <List size={15} /> List
+            </button>
+          </div>
         </div>
       </div>
 
@@ -256,125 +565,225 @@ export default function TournamentsListPage() {
         <EmptyState
           icon={Trophy}
           title="No tournaments found"
-          text={statusFilter === 'all'
+          text={statusFilter === 'all' && orgFilter === 'all' && !searchQuery
             ? 'Create your first tournament to get started.'
-            : `No tournaments with status "${statusFilter}".`}
+            : `No tournaments matching current filters.`}
           action={statusFilter === 'all' && (
             <Link href="/tournaments/new" className="btn btn-primary">
               <Plus size={16} /> New Tournament
             </Link>
           )}
         />
-      ) : viewMode === 'grid' ? (
-        /* Grid View */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filtered.map(t => {
-            const bannerSrc = t.banner || t.bannerUrl;
-            const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
-            const canEdit = checkCanEdit(t);
+      ) : groupByOrg ? (
+        /* ── Grouped by Organisation View ────────────────────────────── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {orgKeys.map(orgName => {
+            const orgTourneys = grouped[orgName];
+            const isCollapsed = Boolean(collapsedOrgs[orgName]);
+            const isUnassigned = orgName === 'Independent / Unassigned';
 
             return (
-              <div
-                key={t.id}
-                style={{
-                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%)',
-                  border: '1px solid var(--border-md)',
-                  borderRadius: '16px',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {/* Banner or Header */}
-                {bannerSrc ? (
-                  <img src={bannerSrc} alt="" style={{ width: '100%', height: '120px', objectFit: 'cover' }} referrerPolicy="no-referrer" />
-                ) : (
-                  <div style={{ height: '120px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--border)' }}>
-                    <Trophy size={38} className="text-gold" style={{ opacity: 0.85 }} />
-                  </div>
-                )}
-
-                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                        {t.season || '—'}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {isOperator && (
-                          canEdit ? (
-                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-                              Editor
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: 4, background: 'rgba(148, 163, 184, 0.15)', color: 'var(--text-muted)', border: '1px solid rgba(148, 163, 184, 0.3)' }}>
-                              Read-Only
-                            </span>
-                          )
-                        )}
-                        {t.isRanked && <TierBadge tier={t.rankedTier} size="xs" />}
-                        <StatusBadge status={t.status} />
-                      </div>
+              <div key={orgName} style={{ display: 'flex', flexDirection: 'column' }}>
+                {/* Organisation Header Banner */}
+                <div
+                  onClick={() => toggleOrgCollapse(orgName)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 18px',
+                    background: isUnassigned
+                      ? 'rgba(15, 23, 42, 0.65)'
+                      : 'linear-gradient(90deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                    border: `1px solid ${isUnassigned ? 'var(--border-md)' : 'rgba(201,168,76,0.35)'}`,
+                    borderRadius: isCollapsed ? 12 : '12px 12px 0 0',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 8,
+                      background: isUnassigned ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, rgba(201,168,76,0.3) 0%, rgba(201,168,76,0.1) 100%)',
+                      border: `1px solid ${isUnassigned ? 'var(--border-md)' : 'rgba(201,168,76,0.45)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <Building2 size={17} style={{ color: isUnassigned ? 'var(--text-muted)' : 'var(--gold)' }} />
                     </div>
 
-                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, lineHeight: 1.3 }}>
-                      {t.name}
-                    </h3>
-
-                    {/* Prominent Event Date Range */}
-                    {dateRange && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '0.8rem', color: 'var(--gold)', fontWeight: 600 }}>
-                        <Calendar size={13} style={{ flexShrink: 0 }} />
-                        <span>{dateRange}</span>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <h2 style={{
+                          fontSize: '1.05rem',
+                          fontWeight: 800,
+                          margin: 0,
+                          color: isUnassigned ? 'var(--text-secondary)' : 'var(--text-primary)',
+                          letterSpacing: '0.02em',
+                        }}>
+                          {orgName}
+                        </h2>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: 99,
+                          background: isUnassigned ? 'var(--bg-alt-row)' : 'rgba(201,168,76,0.12)',
+                          border: `1px solid ${isUnassigned ? 'var(--border-md)' : 'rgba(201,168,76,0.3)'}`,
+                          color: isUnassigned ? 'var(--text-muted)' : 'var(--gold)',
+                        }}>
+                          {orgTourneys.length} {orgTourneys.length === 1 ? 'Event' : 'Events'}
+                        </span>
                       </div>
+                      {isUnassigned && (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                          Past or independent events without a designated organisation. Click the organisation badge on any card to assign one.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{isCollapsed ? 'Expand' : 'Collapse'}</span>
+                    <ChevronDown size={17} style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.2s' }} />
+                  </div>
+                </div>
+
+                {/* Body Content */}
+                {!isCollapsed && (
+                  <div style={{
+                    padding: '18px 16px',
+                    background: 'rgba(15, 23, 42, 0.4)',
+                    border: '1px solid var(--border-md)',
+                    borderTop: 'none',
+                    borderRadius: '0 0 12px 12px',
+                  }}>
+                    {viewMode === 'grid' ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {orgTourneys.map(t => renderCard(t))}
+                      </div>
+                    ) : (
+                      <DataTable
+                        columns={columns}
+                        data={orgTourneys}
+                        searchPlaceholder="Filter events in this organisation..."
+                      />
                     )}
                   </div>
-
-                  {t.description && (
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineClamp: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {t.description}
-                    </p>
-                  )}
-
-                  {/* Metadata Chips */}
-                  <div style={{ display: 'flex', gap: '10px', background: 'rgba(15, 23, 42, 0.6)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'auto' }}>
-                    <div>Days: <strong style={{ color: 'var(--text-primary)' }}>{t.structure?.totalDays ?? '—'}</strong></div>
-                    <div>Lobbies: <strong style={{ color: 'var(--text-primary)' }}>{t.structure?.lobbiesPerDay ?? '—'}</strong></div>
-                    <div>Type: <strong style={{ color: 'var(--text-primary)', textTransform: 'capitalize' }}>{t.type || 'standard'}</strong></div>
-                  </div>
-                </div>
-
-                {/* Card Actions */}
-                <div style={{ padding: '12px 16px', background: 'rgba(15, 23, 42, 0.9)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Link href={`/tournaments/${t.id}`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
-                    {canEdit ? 'Open Hub' : 'View Hub (Read-Only)'}
-                  </Link>
-                  {isOwner && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ color: 'var(--danger)', marginLeft: '8px', padding: '6px' }}
-                      onClick={() => openDeleteModal(t.id, t.name)}
-                      title="Delete Tournament"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             );
           })}
         </div>
       ) : (
-        /* Table View */
-        <DataTable
-          columns={columns}
-          data={filtered}
-          searchPlaceholder="Search by name or season..."
-        />
+        /* ── Flat View (Standard Grid or Table) ───────────────────────── */
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filtered.map(t => renderCard(t))}
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filtered}
+            searchPlaceholder="Search by event name or season..."
+          />
+        )
+      )}
+
+      {/* ── Quick Assign Organisation Modal ─────────────────────────────── */}
+      {editingOrgTournament && (
+        <Modal
+          title="Assign Organisation"
+          onClose={() => setEditingOrgTournament(null)}
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-text-secondary">
+              Update the host organisation for <strong className="text-text-primary">{editingOrgTournament.name}</strong>. This organizes previous events under the same banner on your dashboard.
+            </p>
+
+            <div className="form-field">
+              <label className="form-label">Organisation Name</label>
+              <input
+                className="form-input"
+                value={orgInput}
+                onChange={e => setOrgInput(e.target.value)}
+                placeholder="e.g. Heaven Esports, ESL Gaming, Activision"
+                list="quick-modal-orgs"
+                autoFocus
+              />
+              {allExistingOrgs.length > 0 && (
+                <datalist id="quick-modal-orgs">
+                  {allExistingOrgs.map((org, i) => (
+                    <option key={i} value={org} />
+                  ))}
+                </datalist>
+              )}
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                Enter an existing organisation or type a new one. Leave blank to mark as Independent.
+              </span>
+            </div>
+
+            {/* Quick select buttons */}
+            {allExistingOrgs.length > 0 && (
+              <div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                  Quick select from existing organisations:
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {allExistingOrgs.map((org, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="btn btn-secondary btn-xs"
+                      onClick={() => setOrgInput(org)}
+                      style={{
+                        fontSize: '0.72rem',
+                        borderColor: orgInput.toLowerCase() === org.toLowerCase() ? 'var(--gold)' : undefined,
+                        color: orgInput.toLowerCase() === org.toLowerCase() ? 'var(--gold)' : undefined,
+                      }}
+                    >
+                      <Building2 size={11} /> {org}
+                    </button>
+                  ))}
+                  {orgInput && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => setOrgInput('')}
+                      style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-border">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setEditingOrgTournament(null)}
+                disabled={savingOrg}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={savingOrg}
+                onClick={handleSaveQuickOrg}
+              >
+                {savingOrg ? 'Saving...' : 'Save Organisation'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* Delete Confirmation Modal (Owner Only) */}

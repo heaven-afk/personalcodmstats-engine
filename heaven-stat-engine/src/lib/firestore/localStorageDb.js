@@ -56,6 +56,7 @@ const SEED_TOURNAMENTS = [
   {
     id: 't1',
     name: 'Heaven BR Showcase Season 1',
+    organisationName: 'Heaven Esports',
     season: '2026 Season 1',
     description: 'The inaugural showcase tournament of Heaven BR Battle Royale league.',
     status: 'active',
@@ -195,6 +196,7 @@ export function localCreateTournament(data) {
     id,
     name: '', season: '', description: '', status: 'setup',
     type: data.type || 'standard',
+    organisationName: data.organisationName?.trim() || data.organizationName?.trim() || '',
     eventStartDate: data.eventStartDate || null,
     eventEndDate: data.eventEndDate || null,
     createdAt: mockTimestamp(), completedAt: null,

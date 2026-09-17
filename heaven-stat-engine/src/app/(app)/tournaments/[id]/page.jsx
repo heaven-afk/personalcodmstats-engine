@@ -1069,9 +1069,9 @@ export default function TournamentOverviewPage() {
               {advancing ? 'Advancing...' : `Advance to ${STATUS_FLOW[currentIdx + 1]}`}
             </button>
           )}
-          {isOwner && (
+          {canEdit && (
             <button className="btn btn-secondary" onClick={() => router.push(`/tournaments/${tournament.id}/config`)}>
-              {tournament.status === 'setup' ? 'Edit Configuration' : 'View Configuration'}
+              {tournament.status === 'setup' ? 'Edit Configuration' : 'Edit Event Info & Config'}
             </button>
           )}
         </div>
