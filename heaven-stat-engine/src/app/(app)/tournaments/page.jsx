@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTournaments, deleteTournament, updateTournament } from '@/lib/firestore/tournaments';
@@ -12,7 +12,7 @@ import Modal from '@/components/ui/Modal';
 import {
   Plus, Trophy, Trash2, Calendar, LayoutGrid, List, Search,
   Medal, Eye, Edit3, ShieldAlert, Building2, ChevronDown, ChevronRight,
-  Layers, FolderTree
+  Folder, FolderOpen, X, Sparkles, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useSWR from 'swr';
@@ -25,9 +25,12 @@ export default function TournamentsListPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [orgFilter, setOrgFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
-  const [groupByOrg, setGroupByOrg] = useState(true); // default grouped by organisation
-  const [collapsedOrgs, setCollapsedOrgs] = useState({});
+  const [viewMode, setViewMode] = useState('folders'); // 'folders' | 'grid' | 'table'
+
+  // Expanded Mobile-Style Folder state: holds the organisation name currently open, or null
+  const [openedFolderOrg, setOpenedFolderOrg] = useState(null);
+  const [folderSearchQuery, setFolderSearchQuery] = useState('');
+  const [folderViewMode, setFolderViewMode] = useState('grid'); // 'grid' | 'table' inside opened folder
 
   // Quick edit organisation modal state (for easily tagging past/current events)
   const [editingOrgTournament, setEditingOrgTournament] = useState(null);
@@ -40,6 +43,18 @@ export default function TournamentsListPage() {
   const [deleteChecked1, setDeleteChecked1] = useState(false);
   const [deleteChecked2, setDeleteChecked2] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  // Close opened folder on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && openedFolderOrg) {
+        setOpenedFolderOrg(null);
+        setFolderSearchQuery('');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [openedFolderOrg]);
 
   const openDeleteModal = (id, name) => {
     if (!isOwner) return;
@@ -159,9 +174,19 @@ export default function TournamentsListPage() {
     });
   }, [grouped]);
 
-  const toggleOrgCollapse = (orgName) => {
-    setCollapsedOrgs(prev => ({ ...prev, [orgName]: !prev[orgName] }));
-  };
+  // Events belonging to the currently opened mobile-style folder
+  const activeFolderTournaments = useMemo(() => {
+    if (!openedFolderOrg) return [];
+    const list = grouped[openedFolderOrg] || [];
+    if (!folderSearchQuery.trim()) return list;
+    const q = folderSearchQuery.toLowerCase().trim();
+    return list.filter(t => {
+      const nameMatch = t.name?.toLowerCase().includes(q);
+      const seasonMatch = t.season?.toLowerCase().includes(q);
+      const dateStr = formatEventDates(t.eventStartDate, t.eventEndDate)?.toLowerCase();
+      return nameMatch || seasonMatch || dateStr?.includes(q);
+    });
+  }, [openedFolderOrg, grouped, folderSearchQuery]);
 
   const columns = [
     {
@@ -306,7 +331,7 @@ export default function TournamentsListPage() {
     },
   ];
 
-  // Helper to render individual tournament grid card
+  // Helper to render an individual tournament grid card
   const renderCard = (t) => {
     const bannerSrc = t.banner || t.bannerUrl;
     const dateRange = formatEventDates(t.eventStartDate, t.eventEndDate);
@@ -448,6 +473,213 @@ export default function TournamentsListPage() {
     );
   };
 
+  // Helper to render Mobile-App Style Frosted Glass Folder Card
+  const renderFolderCard = (orgName) => {
+    const orgTourneys = grouped[orgName] || [];
+    const isUnassigned = orgName === 'Independent / Unassigned';
+    const previewItems = orgTourneys.slice(0, 4);
+    const overflowCount = orgTourneys.length - 3;
+    const hasActive = orgTourneys.some(t => t.status === 'active');
+
+    return (
+      <div
+        key={orgName}
+        onClick={() => {
+          setOpenedFolderOrg(orgName);
+          setFolderSearchQuery('');
+        }}
+        style={{
+          position: 'relative',
+          borderRadius: '26px',
+          padding: '18px',
+          background: 'linear-gradient(145deg, rgba(25, 36, 56, 0.55) 0%, rgba(13, 20, 36, 0.8) 100%)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          border: isUnassigned
+            ? '1px solid rgba(255, 255, 255, 0.1)'
+            : '1px solid rgba(201, 168, 76, 0.28)',
+          boxShadow: '0 16px 36px -10px rgba(0, 0, 0, 0.5), inset 0 1px 1px 0 rgba(255, 255, 255, 0.18)',
+          cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+          transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          userSelect: 'none',
+          overflow: 'hidden',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'translateY(-5px) scale(1.015)';
+          e.currentTarget.style.boxShadow = '0 24px 48px -10px rgba(0, 0, 0, 0.65), 0 0 24px rgba(201, 168, 76, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.3)';
+          e.currentTarget.style.borderColor = 'rgba(201, 168, 76, 0.5)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'none';
+          e.currentTarget.style.boxShadow = '0 16px 36px -10px rgba(0, 0, 0, 0.5), inset 0 1px 1px 0 rgba(255, 255, 255, 0.18)';
+          e.currentTarget.style.borderColor = isUnassigned ? 'rgba(255, 255, 255, 0.1)' : 'rgba(201, 168, 76, 0.28)';
+        }}
+      >
+        {/* Subtle glossy sheen line across top */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: '10%',
+          right: '10%',
+          height: '1px',
+          background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent)',
+          pointerEvents: 'none',
+        }} />
+
+        {/* 2x2 Mini Preview Grid (Mobile App Folder Style) */}
+        <div style={{
+          width: '100%',
+          aspectRatio: '1',
+          background: 'rgba(10, 15, 29, 0.65)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: '18px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '10px',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gridTemplateRows: '1fr 1fr',
+          gap: '8px',
+          overflow: 'hidden',
+          boxShadow: 'inset 0 2px 8px rgba(0, 0, 0, 0.4)',
+        }}>
+          {Array.from({ length: 4 }).map((_, slotIdx) => {
+            const item = previewItems[slotIdx];
+            const isOverflowCell = slotIdx === 3 && orgTourneys.length > 4;
+
+            if (!item) {
+              // Empty placeholder slot inside folder
+              return (
+                <div
+                  key={slotIdx}
+                  style={{
+                    borderRadius: '10px',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px dashed rgba(255, 255, 255, 0.06)',
+                  }}
+                />
+              );
+            }
+
+            const bannerSrc = item.banner || item.bannerUrl;
+
+            return (
+              <div
+                key={item.id || slotIdx}
+                style={{
+                  position: 'relative',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {bannerSrc ? (
+                  <img
+                    src={bannerSrc}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <Trophy size={16} className="text-gold" style={{ opacity: 0.75 }} />
+                )}
+
+                {/* +N badge for 4th cell if more items exist */}
+                {isOverflowCell && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'rgba(10, 15, 29, 0.75)',
+                    backdropFilter: 'blur(6px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    color: 'var(--gold)',
+                    letterSpacing: '0.04em',
+                    textShadow: '0 2px 4px rgba(0,0,0,0.6)',
+                  }}>
+                    +{overflowCount}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Folder Meta Information */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <h3 style={{
+              fontSize: '1.05rem',
+              fontWeight: 800,
+              color: isUnassigned ? 'var(--text-secondary)' : 'var(--text-primary)',
+              margin: 0,
+              lineHeight: 1.3,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+            }}>
+              {orgName}
+            </h3>
+
+            {hasActive && (
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: '#22c55e',
+                  boxShadow: '0 0 8px #22c55e',
+                  flexShrink: 0,
+                }}
+                title="Active events inside"
+              />
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              color: isUnassigned ? 'var(--text-muted)' : 'var(--gold)',
+              background: isUnassigned ? 'rgba(255,255,255,0.05)' : 'rgba(201,168,76,0.12)',
+              border: `1px solid ${isUnassigned ? 'var(--border-md)' : 'rgba(201,168,76,0.25)'}`,
+              padding: '2px 8px',
+              borderRadius: 99,
+            }}>
+              <Folder size={11} />
+              {orgTourneys.length} {orgTourneys.length === 1 ? 'Event' : 'Events'}
+            </span>
+
+            <span style={{
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              fontWeight: 600,
+            }}>
+              <span>Open</span>
+              <ChevronRight size={13} />
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) return <LoadingSpinner size="lg" text="Loading tournaments..." />;
 
   return (
@@ -455,7 +687,7 @@ export default function TournamentsListPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Tournaments & Events</h1>
-          <p className="page-subtitle">Manage, view, and organize esports competitions</p>
+          <p className="page-subtitle">Browse competitions grouped in modern organisation folders</p>
         </div>
         <Link href="/tournaments/new" className="btn btn-primary">
           <Plus size={16} />
@@ -488,7 +720,7 @@ export default function TournamentsListPage() {
         ))}
       </div>
 
-      {/* Toolbar: Search + Org Filter + Grouping Toggle + View Switcher */}
+      {/* Toolbar: Search + Org Filter + Mode Switcher */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 260, flexWrap: 'wrap' }}>
           <div className="search-input-wrap" style={{ flex: 1, minWidth: 220, maxWidth: 360 }}>
@@ -519,45 +751,35 @@ export default function TournamentsListPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {/* Group by Organisation Toggle */}
+        {/* View Switcher: Folders | Flat Grid | Table */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-card)', padding: '3px', borderRadius: 10, border: '1px solid var(--border-md)' }}>
           <button
             type="button"
-            className={`btn btn-sm ${groupByOrg ? 'btn-primary' : 'btn-secondary'}`}
-            style={{
-              padding: '7px 13px',
-              fontSize: '0.8rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              boxShadow: groupByOrg ? '0 0 12px rgba(201,168,76,0.25)' : 'none',
-            }}
-            onClick={() => setGroupByOrg(v => !v)}
-            title="Toggle grouping events under their organisation header"
+            className={`btn btn-sm ${viewMode === 'folders' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={() => setViewMode('folders')}
+            title="App-style folder grouping"
           >
-            <Building2 size={15} />
-            <span>Group by Organisation</span>
+            <Folder size={14} /> Folders
           </button>
-
-          {/* Grid / List Switcher */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-card)', padding: '3px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
-            <button
-              type="button"
-              className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-              onClick={() => setViewMode('grid')}
-            >
-              <LayoutGrid size={15} /> Grid
-            </button>
-            <button
-              type="button"
-              className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-              onClick={() => setViewMode('table')}
-            >
-              <List size={15} /> List
-            </button>
-          </div>
+          <button
+            type="button"
+            className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={() => setViewMode('grid')}
+            title="Flat grid view"
+          >
+            <LayoutGrid size={14} /> Flat Grid
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+            style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}
+            onClick={() => setViewMode('table')}
+            title="Table list view"
+          >
+            <List size={14} /> Table
+          </button>
         </div>
       </div>
 
@@ -574,125 +796,250 @@ export default function TournamentsListPage() {
             </Link>
           )}
         />
-      ) : groupByOrg ? (
-        /* ── Grouped by Organisation View ────────────────────────────── */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-          {orgKeys.map(orgName => {
-            const orgTourneys = grouped[orgName];
-            const isCollapsed = Boolean(collapsedOrgs[orgName]);
-            const isUnassigned = orgName === 'Independent / Unassigned';
+      ) : viewMode === 'folders' ? (
+        /* ── Modern Mobile App Folder Grid ─────────────────────────────── */
+        <div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
+            gap: '24px',
+          }}>
+            {orgKeys.map(orgName => renderFolderCard(orgName))}
+          </div>
 
-            return (
-              <div key={orgName} style={{ display: 'flex', flexDirection: 'column' }}>
-                {/* Organisation Header Banner */}
-                <div
-                  onClick={() => toggleOrgCollapse(orgName)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 18px',
-                    background: isUnassigned
-                      ? 'rgba(15, 23, 42, 0.65)'
-                      : 'linear-gradient(90deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%)',
-                    border: `1px solid ${isUnassigned ? 'var(--border-md)' : 'rgba(201,168,76,0.35)'}`,
-                    borderRadius: isCollapsed ? 12 : '12px 12px 0 0',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 8,
-                      background: isUnassigned ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, rgba(201,168,76,0.3) 0%, rgba(201,168,76,0.1) 100%)',
-                      border: `1px solid ${isUnassigned ? 'var(--border-md)' : 'rgba(201,168,76,0.45)'}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}>
-                      <Building2 size={17} style={{ color: isUnassigned ? 'var(--text-muted)' : 'var(--gold)' }} />
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <h2 style={{
-                          fontSize: '1.05rem',
-                          fontWeight: 800,
-                          margin: 0,
-                          color: isUnassigned ? 'var(--text-secondary)' : 'var(--text-primary)',
-                          letterSpacing: '0.02em',
-                        }}>
-                          {orgName}
-                        </h2>
-                        <span style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 99,
-                          background: isUnassigned ? 'var(--bg-alt-row)' : 'rgba(201,168,76,0.12)',
-                          border: `1px solid ${isUnassigned ? 'var(--border-md)' : 'rgba(201,168,76,0.3)'}`,
-                          color: isUnassigned ? 'var(--text-muted)' : 'var(--gold)',
-                        }}>
-                          {orgTourneys.length} {orgTourneys.length === 1 ? 'Event' : 'Events'}
-                        </span>
-                      </div>
-                      {isUnassigned && (
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                          Past or independent events without a designated organisation. Click the organisation badge on any card to assign one.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{isCollapsed ? 'Expand' : 'Collapse'}</span>
-                    <ChevronDown size={17} style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.2s' }} />
-                  </div>
-                </div>
-
-                {/* Body Content */}
-                {!isCollapsed && (
-                  <div style={{
-                    padding: '18px 16px',
-                    background: 'rgba(15, 23, 42, 0.4)',
-                    border: '1px solid var(--border-md)',
-                    borderTop: 'none',
-                    borderRadius: '0 0 12px 12px',
-                  }}>
-                    {viewMode === 'grid' ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {orgTourneys.map(t => renderCard(t))}
-                      </div>
-                    ) : (
-                      <DataTable
-                        columns={columns}
-                        data={orgTourneys}
-                        searchPlaceholder="Filter events in this organisation..."
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          <div style={{ textAlign: 'center', marginTop: 36, color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+            Click on any folder card above to open and explore its tournaments in full detail.
+          </div>
+        </div>
+      ) : viewMode === 'grid' ? (
+        /* ── Flat Grid View ───────────────────────────────────────────── */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filtered.map(t => renderCard(t))}
         </div>
       ) : (
-        /* ── Flat View (Standard Grid or Table) ───────────────────────── */
-        viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filtered.map(t => renderCard(t))}
+        /* ── Table View ───────────────────────────────────────────────── */
+        <DataTable
+          columns={columns}
+          data={filtered}
+          searchPlaceholder="Search by event name or season..."
+        />
+      )}
+
+      {/* ── EXPANDED MOBILE-STYLE FOLDER MODAL / SHEET ──────────────────── */}
+      {openedFolderOrg && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            background: 'rgba(5, 10, 20, 0.75)',
+            backdropFilter: 'blur(24px) saturate(190%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(190%)',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setOpenedFolderOrg(null);
+              setFolderSearchQuery('');
+            }
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '1180px',
+              maxHeight: '88vh',
+              background: 'linear-gradient(155deg, rgba(26, 38, 57, 0.88) 0%, rgba(13, 20, 36, 0.96) 100%)',
+              backdropFilter: 'blur(36px)',
+              WebkitBackdropFilter: 'blur(36px)',
+              border: '1px solid rgba(201, 168, 76, 0.35)',
+              borderRadius: '28px',
+              boxShadow: '0 30px 80px -15px rgba(0, 0, 0, 0.85), inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 0 40px rgba(201, 168, 76, 0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Top Glossy Bar */}
+            <div style={{
+              height: '3px',
+              background: 'linear-gradient(90deg, transparent, #b8860b, #C9A84C, #d4a017, transparent)',
+              width: '100%',
+            }} />
+
+            {/* Folder Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 16,
+              background: 'rgba(15, 23, 42, 0.4)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  background: 'linear-gradient(135deg, rgba(201,168,76,0.3) 0%, rgba(201,168,76,0.08) 100%)',
+                  border: '1px solid rgba(201,168,76,0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 14px rgba(201,168,76,0.2)',
+                  flexShrink: 0,
+                }}>
+                  <FolderOpen size={22} style={{ color: 'var(--gold)' }} />
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)', letterSpacing: '0.02em' }}>
+                      {openedFolderOrg}
+                    </h2>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '3px 9px',
+                      borderRadius: 99,
+                      background: 'rgba(201,168,76,0.14)',
+                      border: '1px solid rgba(201,168,76,0.35)',
+                      color: 'var(--gold)',
+                    }}>
+                      {(grouped[openedFolderOrg] || []).length} Events
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '3px 0 0' }}>
+                    Showing all tournaments and events organized by {openedFolderOrg}
+                  </p>
+                </div>
+              </div>
+
+              {/* Controls inside folder: search, view toggle, and close */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div className="search-input-wrap" style={{ minWidth: 200, maxWidth: 280 }}>
+                  <Search size={14} className="search-icon" />
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search in this folder..."
+                    value={folderSearchQuery}
+                    onChange={e => setFolderSearchQuery(e.target.value)}
+                    style={{ height: 34, fontSize: '0.8rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(15, 23, 42, 0.6)', padding: '2px', borderRadius: 8, border: '1px solid var(--border-md)' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${folderViewMode === 'grid' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ padding: '5px 9px' }}
+                    onClick={() => setFolderViewMode('grid')}
+                  >
+                    <LayoutGrid size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${folderViewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ padding: '5px 9px' }}
+                    onClick={() => setFolderViewMode('table')}
+                  >
+                    <List size={13} />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenedFolderOrg(null);
+                    setFolderSearchQuery('');
+                  }}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: 'var(--text-primary)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                    e.currentTarget.style.borderColor = 'var(--danger)';
+                    e.currentTarget.style.color = '#ef4444';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  title="Close Folder (Esc)"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Folder Body */}
+            <div style={{
+              padding: '24px',
+              overflowY: 'auto',
+              flex: 1,
+            }}>
+              {activeFolderTournaments.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+                  No tournaments match &quot;{folderSearchQuery}&quot; in this folder.
+                </div>
+              ) : folderViewMode === 'grid' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {activeFolderTournaments.map(t => renderCard(t))}
+                </div>
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={activeFolderTournaments}
+                  searchPlaceholder="Filter folder events..."
+                />
+              )}
+            </div>
+
+            {/* Folder Footer */}
+            <div style={{
+              padding: '12px 24px',
+              background: 'rgba(10, 15, 29, 0.7)',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '0.78rem',
+              color: 'var(--text-muted)',
+            }}>
+              <span>
+                Tip: Click <strong>&quot;Open Hub&quot;</strong> on any tournament card to manage matches, entries, and standings.
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => {
+                  setOpenedFolderOrg(null);
+                  setFolderSearchQuery('');
+                }}
+              >
+                Close Folder
+              </button>
+            </div>
           </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={filtered}
-            searchPlaceholder="Search by event name or season..."
-          />
-        )
+        </div>
       )}
 
       {/* ── Quick Assign Organisation Modal ─────────────────────────────── */}
