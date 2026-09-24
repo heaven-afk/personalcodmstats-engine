@@ -459,6 +459,7 @@ export default function RegisterPage() {
           selectedGroupId={selectedGroupId || null}
           canEdit={canEdit}
           isOwner={isOwner}
+          tournament={tournament}
         />
       )}
       {tab === 'players' && (
@@ -569,7 +570,7 @@ function useSheetUpload(onImport) {
 // ─── Team Registration Panel ─────────────────────────────────────────────────
 const INITIAL_TEAM_STATE = { slot: '', teamName: '', clanName: '', tier: '' };
 
-function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress, selectedGroupId, canEdit = true, isOwner = false }) {
+function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRefresh, setImportProgress, selectedGroupId, canEdit = true, isOwner = false, tournament = null }) {
   const [addingRow, setAddingRow] = useState(false);
   const [newTeam, setNewTeam] = useState(INITIAL_TEAM_STATE);
   const [teamSearch, setTeamSearch] = useState('');
@@ -937,6 +938,9 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
     { w: 60, label: '' },
   ];
 
+  const totalTeamsExpected = tournament?.structure?.totalTeams || tournament?.structure?.totalSlots || 0;
+  const missingTeams = totalTeamsExpected > 0 ? Math.max(0, totalTeamsExpected - registrations.length) : 0;
+
   return (
     <div className="data-table-container">
       {modal}
@@ -944,6 +948,18 @@ function TeamRegistrationPanel({ tournamentId, registrations, globalTeams, onRef
       <div className="data-table-toolbar">
         <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>Teams</span>
         <span className="data-table-count">{registrations.length} registered</span>
+        {totalTeamsExpected > 0 && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: '0.72rem', fontWeight: 700,
+            padding: '2px 8px', borderRadius: 6,
+            background: missingTeams === 0 ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+            border: `1px solid ${missingTeams === 0 ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`,
+            color: missingTeams === 0 ? '#10b981' : '#ef4444',
+          }}>
+            {missingTeams === 0 ? '✓ All teams registered' : `⚠ ${missingTeams} team${missingTeams !== 1 ? 's' : ''} missing`}
+          </span>
+        )}
         <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
           {isOwner && registrations.length > 0 && (
             <button

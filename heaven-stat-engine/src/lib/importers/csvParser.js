@@ -212,8 +212,20 @@ export async function readExcelAsGrid(file, sheetName = null) {
   const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
-  const name = sheetName && workbook.Sheets[sheetName] ? sheetName : workbook.SheetNames[0];
-  const sheet = workbook.Sheets[name];
+  let name = null;
+  if (sheetName) {
+    if (workbook.Sheets[sheetName]) {
+      name = sheetName;
+    } else {
+      const targetClean = sheetName.trim().toLowerCase();
+      name = workbook.SheetNames.find(n => n.trim().toLowerCase() === targetClean) || null;
+    }
+  }
+  if (!name) {
+    name = workbook.SheetNames?.[0];
+  }
+  const sheet = name ? workbook.Sheets[name] : null;
+  if (!sheet) return [];
   return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 }
 

@@ -36,12 +36,26 @@ const LOBBY_COLORS = [
 const lc = (n) => LOBBY_COLORS[(n - 1) % LOBBY_COLORS.length];
 
 // ─── Smart Team Spreadsheet Parser ───────────────────────────────────────────
-function parseSmartTeamSpreadsheet(grid, customConfig = null) {
+function parseSmartTeamSpreadsheet(grid, customConfig = null, contextLabel = '') {
   if (!grid || grid.length === 0) {
     return { lobbies: [], rows: [], columnMappings: {}, config: null };
   }
 
   const maxCols = grid.reduce((max, row) => Math.max(max, (row || []).length), 0);
+
+  // Helper to extract lobby number from sheet name / filename
+  const extractLobbyFromContext = (label) => {
+    if (!label) return null;
+    const match = String(label).match(/lobby\s*(\d+)/i) || 
+                  String(label).match(/game\s*(\d+)/i) || 
+                  String(label).match(/match\s*(\d+)/i) || 
+                  String(label).match(/round\s*(\d+)/i) ||
+                  String(label).match(/\bl\s*(\d+)/i) ||
+                  String(label).match(/^[MRmr](\d+)$/) ||
+                  String(label).match(/\b(?:m|r|g)\s*(\d+)\b/i);
+    return match ? parseInt(match[1]) : null;
+  };
+  const contextLobbyNum = extractLobbyFromContext(contextLabel) || 1;
 
   // If custom configuration is provided by the user
   if (customConfig && typeof customConfig === 'object') {
@@ -109,11 +123,11 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
     };
   }
 
-  // Auto-detection mode: find row containing team or lobby headers
+  // Auto-detection mode: find row containing team or lobby headers (search up to 50 rows)
   let headerRowIndex = -1;
   let subheaderRowIndex = -1;
 
-  for (let r = 0; r < Math.min(grid.length, 15); r++) {
+  for (let r = 0; r < Math.min(grid.length, 50); r++) {
     const row = grid[r] || [];
     const hasTeam = row.some(cell => {
       const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -126,13 +140,17 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
   }
 
   if (headerRowIndex === -1) {
-    for (let r = 0; r < Math.min(grid.length, 15); r++) {
+    for (let r = 0; r < Math.min(grid.length, 50); r++) {
       const row = grid[r] || [];
       const hasHeaderCell = row.some(cell => {
         const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         return (
           clean === 'slot' ||
           clean === 'clan' ||
+          clean === 'placement' ||
+          clean === 'pos' ||
+          clean === 'rank' ||
+          clean === 'kills' ||
           clean.startsWith('lobby') ||
           clean.startsWith('game') ||
           clean.startsWith('match') ||
@@ -163,6 +181,8 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
       cleanSub.includes('kill') ||
       cleanSub.includes('pts') ||
       cleanSub.includes('points') ||
+      cleanSub === 'p' ||
+      cleanSub === 'k' ||
       cleanSub.startsWith('lobby') ||
       cleanSub.startsWith('game') ||
       cleanSub.startsWith('match') ||
@@ -201,6 +221,7 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
   let teamCol = -1;
   let slotCol = -1;
   const lobbies = {};
+  const unprefixedStats = { placement: [], kills: [] };
 
   const checkTeam = (v) => v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || v === 'club' || v === 'teams' || v === 'squad';
   const checkSlot = (v) => v === 'slot' || v === 'id' || v === 'no' || v === 'index' || v === 'slotno' || v === '#';
@@ -275,7 +296,11 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
       const match = val.match(/lobby\s*(\d+)/i) || 
                     val.match(/game\s*(\d+)/i) || 
                     val.match(/match\s*(\d+)/i) || 
-                    val.match(/\bl\s*(\d+)/i);
+                    val.match(/round\s*(\d+)/i) ||
+                    val.match(/\bl\s*(\d+)/i) ||
+                    val.match(/^[MRmr](\d+)$/) ||
+                    val.match(/^[pPkK]\s*(\d+)$/) ||
+                    val.match(/^(\d+)$/);
       return match ? parseInt(match[1]) : null;
     };
 
@@ -330,6 +355,50 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
           lobbies[lobbyNum].placementCol = c;
         }
       }
+    } else {
+      // Un-prefixed column
+      let category = null;
+      if (subheaderRowIndex !== -1 && getCategory(cleanSubVal) !== null) {
+        category = getCategory(cleanSubVal);
+      } else if (lastHeaderCategory !== null) {
+        category = lastHeaderCategory;
+      } else if (superHeaderRowIndex !== -1 && currentCategory !== null) {
+        category = currentCategory;
+      } else {
+        const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
+        category = getCategory(checkVal);
+      }
+      if (category && unprefixedStats[category]) {
+        unprefixedStats[category].push(c);
+      }
+    }
+  }
+
+  // Handle un-prefixed stat columns
+  const detectedLobbies = Object.keys(lobbies);
+  if (detectedLobbies.length === 0) {
+    if (unprefixedStats.placement.length > 0 || unprefixedStats.kills.length > 0) {
+      const maxCount = Math.max(unprefixedStats.placement.length, unprefixedStats.kills.length);
+      if (maxCount > 1) {
+        for (let i = 0; i < maxCount; i++) {
+          const l = i + 1;
+          lobbies[l] = {
+            placementCol: unprefixedStats.placement[i] !== undefined ? unprefixedStats.placement[i] : -1,
+            killsCol: unprefixedStats.kills[i] !== undefined ? unprefixedStats.kills[i] : -1
+          };
+        }
+      } else {
+        lobbies[contextLobbyNum] = {
+          placementCol: unprefixedStats.placement[0] !== undefined ? unprefixedStats.placement[0] : -1,
+          killsCol: unprefixedStats.kills[0] !== undefined ? unprefixedStats.kills[0] : -1
+        };
+      }
+    }
+  } else {
+    const targetLobby = lobbies[contextLobbyNum] || lobbies[1];
+    if (targetLobby) {
+      if (targetLobby.placementCol === -1 && unprefixedStats.placement.length > 0) targetLobby.placementCol = unprefixedStats.placement[0];
+      if (targetLobby.killsCol === -1 && unprefixedStats.kills.length > 0) targetLobby.killsCol = unprefixedStats.kills[0];
     }
   }
 
@@ -346,9 +415,25 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
     }
   }
 
-  if (teamCol === -1) teamCol = 0;
-
   const startRowIndex = Math.max(headerRowIndex, subheaderRowIndex) + 1;
+
+  if (teamCol === -1) {
+    let col0IsNumbers = true;
+    let col1HasText = false;
+    for (let r = startRowIndex; r < Math.min(grid.length, startRowIndex + 5); r++) {
+      const val0 = String(grid[r]?.[0] || '').trim();
+      const val1 = String(grid[r]?.[1] || '').trim();
+      if (val0 && isNaN(val0)) col0IsNumbers = false;
+      if (val1 && isNaN(val1)) col1HasText = true;
+    }
+    if (col0IsNumbers && col1HasText) {
+      teamCol = 1;
+      if (slotCol === -1) slotCol = 0;
+    } else {
+      teamCol = 0;
+    }
+  }
+
   const parsedRows = [];
 
   for (let r = startRowIndex; r < grid.length; r++) {
@@ -394,7 +479,7 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
 
   // Ensure default lobby 1 exists if none detected
   if (Object.keys(lobbies).length === 0) {
-    lobbies[1] = { placementCol: -1, killsCol: -1 };
+    lobbies[contextLobbyNum || 1] = { placementCol: -1, killsCol: -1 };
   }
 
   return {
@@ -406,7 +491,6 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null) {
       slotCol,
       startRowIndex,
       lobbies
-    }
   };
 }
 
@@ -561,6 +645,7 @@ export default function TeamEntryPage() {
   const [smartImportColumnMappings, setSmartImportColumnMappings] = useState({});
   const [smartImportFileName, setSmartImportFileName] = useState('');
   const [smartImportTargetDay, setSmartImportTargetDay] = useState(day);
+  const [multiSheetData, setMultiSheetData] = useState(null);
 
   // Sync smartImportTargetDay when day changes
   useEffect(() => {
@@ -645,14 +730,14 @@ export default function TeamEntryPage() {
   }, [allBonus, selectedGroupId]);
 
   // Smart Spreadsheet Processor
-  const handleProcessGrid = useCallback((grid, fileName) => {
+  const handleProcessGrid = useCallback((grid, fileName, sheetName = '') => {
     if (!grid || grid.length === 0) {
       toast.error('Failed to parse sheet data.');
       return;
     }
 
     setSmartImportGrid(grid);
-    const { lobbies, rows, columnMappings, config } = parseSmartTeamSpreadsheet(grid);
+    const { lobbies, rows, columnMappings, config } = parseSmartTeamSpreadsheet(grid, null, sheetName || fileName);
 
     if (rows.length === 0) {
       const fallbackConfig = config || {
@@ -723,7 +808,7 @@ export default function TeamEntryPage() {
     if (!mappingDraft) return;
 
     try {
-      const { lobbies, rows, columnMappings, config } = parseSmartTeamSpreadsheet(smartImportGrid, mappingDraft);
+      const { lobbies, rows, columnMappings, config } = parseSmartTeamSpreadsheet(smartImportGrid, mappingDraft, multiSheetData?.currentSheet || '');
       if (rows.length === 0) {
         toast.error('No valid team records found with this mapping. Please verify the Start Row and Team Name column.');
         return;
@@ -758,10 +843,14 @@ export default function TeamEntryPage() {
   const handleCancelSmartImport = () => {
     setSmartImportGrid(null);
     setSmartImportRows([]);
+    setSmartImportLobbies([]);
+    setSmartImportSelectedLobbies([]);
+    setSmartImportColumnMappings({});
     setSmartImportConfig(null);
     setMappingDraft(null);
     setIsEditingMapping(false);
     setSmartImportFileName('');
+    setMultiSheetData(null);
   };
 
   const handleConfirmSmartImport = async () => {
@@ -975,13 +1064,16 @@ export default function TeamEntryPage() {
       if (/\.csv$/i.test(file.name)) {
         const text = await file.text();
         const grid = parseCSVToGrid(text);
+        setMultiSheetData(null);
         handleProcessGrid(grid, file.name);
       } else {
         const names = await getSheetNames(file);
         if (names.length === 1) {
           const grid = await readExcelAsGrid(file, names[0]);
-          handleProcessGrid(grid, `${file.name} (${names[0]})`);
+          setMultiSheetData({ file, sheets: names, currentSheet: names[0] });
+          handleProcessGrid(grid, `${file.name} (${names[0]})`, names[0]);
         } else {
+          setMultiSheetData({ file, sheets: names, currentSheet: names[0] });
           setSheetModal({ file, sheets: names, fileName: file.name });
         }
       }
@@ -998,11 +1090,27 @@ export default function TeamEntryPage() {
       toast.error('You do not have permission to edit this tournament');
       return;
     }
-    if (!sheetModal?.file) return;
+    const activeFile = sheetModal?.file || multiSheetData?.file;
+    if (!activeFile) return;
     try {
       setImportingFile(true);
-      const grid = await readExcelAsGrid(sheetModal.file, sheetName);
-      handleProcessGrid(grid, `${sheetModal.fileName} (${sheetName})`);
+      // Clear previous smart import state
+      setSmartImportGrid(null);
+      setSmartImportRows([]);
+      setSmartImportLobbies([]);
+      setSmartImportSelectedLobbies([]);
+      setSmartImportColumnMappings({});
+      setSmartImportConfig(null);
+      setMappingDraft(null);
+      setIsEditingMapping(false);
+
+      const grid = await readExcelAsGrid(activeFile, sheetName);
+      if (!grid || grid.length === 0) {
+        toast.error(`Sheet "${sheetName}" appears to be empty.`);
+        return;
+      }
+      setMultiSheetData(prev => ({ ...(prev || {}), file: activeFile, sheets: prev?.sheets || [sheetName], currentSheet: sheetName }));
+      handleProcessGrid(grid, `${activeFile.name} (${sheetName})`, sheetName);
       setSheetModal(null);
     } catch (err) {
       console.error('Failed to read selected sheet:', err);
@@ -2207,6 +2315,40 @@ export default function TeamEntryPage() {
                       <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>
                         {smartImportLobbies.length} Lobbies Detected
                       </span>
+                      {multiSheetData?.sheets && multiSheetData.sheets.length > 1 && (
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: 'rgba(201,168,76,0.1)',
+                          border: '1px solid rgba(201,168,76,0.35)',
+                          borderRadius: 6,
+                          padding: '2px 8px',
+                          marginLeft: 6
+                        }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)' }}>Sheet:</span>
+                          <select
+                            className="form-input"
+                            value={multiSheetData.currentSheet || multiSheetData.sheets[0]}
+                            onChange={(e) => handleSheetSelect(e.target.value)}
+                            disabled={importingFile}
+                            style={{
+                              fontSize: '0.75rem',
+                              padding: '2px 6px',
+                              background: 'var(--bg-card)',
+                              fontWeight: 600,
+                              color: 'var(--text-primary)',
+                              border: '1px solid var(--border-md)',
+                              borderRadius: 4,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {multiSheetData.sheets.map(name => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
                       Review matched teams and lobby stats. You can edit column mappings to customize which columns map to placement and kills.

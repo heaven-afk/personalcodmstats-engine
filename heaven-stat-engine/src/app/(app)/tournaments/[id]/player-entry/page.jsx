@@ -32,12 +32,26 @@ import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
 import { getActiveReviveConfig, getReviveTypeForMatch } from '@/lib/utils/reviveConfig';
 
 // ─── Smart Spreadsheet Parser ────────────────────────────────────────────────
-function parseSmartSpreadsheet(grid, customConfig = null) {
+function parseSmartSpreadsheet(grid, customConfig = null, contextLabel = '') {
   if (!grid || grid.length === 0) {
     return { lobbies: [], rows: [], columnMappings: {}, config: null };
   }
 
   const maxCols = grid.reduce((max, row) => Math.max(max, (row || []).length), 0);
+
+  // Helper to extract lobby number from sheet name / filename
+  const extractLobbyFromContext = (label) => {
+    if (!label) return null;
+    const match = String(label).match(/lobby\s*(\d+)/i) || 
+                  String(label).match(/game\s*(\d+)/i) || 
+                  String(label).match(/match\s*(\d+)/i) || 
+                  String(label).match(/round\s*(\d+)/i) ||
+                  String(label).match(/\bl\s*(\d+)/i) ||
+                  String(label).match(/^[MRmr](\d+)$/) ||
+                  String(label).match(/\b(?:m|r|g)\s*(\d+)\b/i);
+    return match ? parseInt(match[1]) : null;
+  };
+  const contextLobbyNum = extractLobbyFromContext(contextLabel) || 1;
 
   // If custom configuration is provided by the user
   if (customConfig && typeof customConfig === 'object') {
@@ -61,7 +75,9 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
         pLower === 'player' || 
         pLower === 'ign' || 
         pLower === 'name' || 
-        pLower === 'players'
+        pLower === 'players' ||
+        pLower === 'total' ||
+        pLower === 'totals'
       ) {
         continue;
       }
@@ -109,15 +125,19 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
     };
   }
 
-  // Auto-detection mode: find row containing player/team/ign or lobby headers
+  // Auto-detection mode: find row containing player/team/ign or lobby headers (search up to 50 rows)
   let headerRowIndex = -1;
   let subheaderRowIndex = -1;
 
-  for (let r = 0; r < Math.min(grid.length, 15); r++) {
+  for (let r = 0; r < Math.min(grid.length, 50); r++) {
     const row = grid[r] || [];
     const hasPlayerOrTeam = row.some(cell => {
       const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      return clean === 'playername' || clean === 'player' || clean === 'teamname' || clean === 'ign' || clean === 'team' || clean === 'players';
+      return (
+        clean === 'playername' || clean === 'player' || clean === 'teamname' || 
+        clean === 'ign' || clean === 'team' || clean === 'players' || clean === 'name' || 
+        clean === 'roster' || clean === 'member' || clean === 'user'
+      );
     });
     if (hasPlayerOrTeam) {
       headerRowIndex = r;
@@ -126,15 +146,18 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
   }
 
   if (headerRowIndex === -1) {
-    for (let r = 0; r < Math.min(grid.length, 15); r++) {
+    for (let r = 0; r < Math.min(grid.length, 50); r++) {
       const row = grid[r] || [];
       const hasHeaderCell = row.some(cell => {
         const clean = String(cell || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         return (
           clean === 'slot' ||
           clean === 'clan' ||
+          clean === 'kills' ||
+          clean === 'damage' ||
           clean.startsWith('lobby') || 
           clean.startsWith('game') ||
+          clean.startsWith('match') ||
           (clean.startsWith('l') && /^\d+$/.test(clean.substring(1)))
         );
       });
@@ -155,11 +178,12 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
     return (
       cleanSub.includes('damage') || 
       cleanSub.includes('dmg') || 
-      cleanSub.includes('ccurc') || 
       cleanSub.includes('acc') || 
       cleanSub.includes('accuracy') || 
       cleanSub.includes('kills') ||
       cleanSub.includes('kill') ||
+      cleanSub === 'k' ||
+      cleanSub === 'd' ||
       cleanSub.startsWith('lobby') || 
       cleanSub.startsWith('game') ||
       cleanSub.startsWith('match') ||
@@ -180,7 +204,6 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
         clean.includes('damage') || 
         clean.includes('dmg') || 
         clean.includes('accuracy') || 
-        clean.includes('ccurc') || 
         clean.includes('acc')
       );
     });
@@ -196,21 +219,34 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
   let teamCol = -1;
   let slotCol = -1;
   const lobbies = {};
+  const unprefixedStats = { kills: [], damage: [], accuracy: [] };
 
-  const checkPlayer = (v) => v === 'playername' || v === 'player' || v === 'ign' || v === 'name' || v === 'players';
-  const checkTeam = (v) => v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || v === 'club';
-  const checkSlot = (v) => v === 'slot' || v === 'id' || v === 'no' || v === 'index' || v === 'slotno' || v === '#';
+  const checkPlayer = (v) => 
+    v === 'playername' || v === 'player' || v === 'ign' || v === 'name' || 
+    v === 'players' || v === 'member' || v === 'proname' || v === 'username' || v === 'user';
+  const checkTeam = (v) => 
+    v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || 
+    v === 'club' || v === 'teams' || v === 'squad' || v === 'clanname';
+  const checkSlot = (v) => 
+    v === 'slot' || v === 'id' || v === 'no' || v === 'index' || v === 'slotno' || v === 'slotnum' || v === '#';
 
   const getCategory = (clean) => {
-    if (clean.includes('damage') || clean.includes('dmg')) return 'damage';
+    if (clean.includes('damage') || clean.includes('dmg') || clean === 'dam' || clean.includes('damagedealt') || clean === 'totaldamage') return 'damage';
     if (
-      clean.includes('ccurc') || 
       clean.includes('acc') || 
       clean.includes('accuracy') || 
       clean.includes('pct') || 
       clean.includes('percent')
     ) return 'accuracy';
-    if (clean.includes('kills') || clean.includes('kill') || clean === 'pts' || clean === 'killsmatch') return 'kills';
+    if (
+      clean.includes('kills') || 
+      clean.includes('kill') || 
+      clean === 'k' || 
+      clean === 'pts' || 
+      clean === 'killsmatch' ||
+      clean.includes('frag') ||
+      clean.includes('elim')
+    ) return 'kills';
     return null;
   };
 
@@ -265,7 +301,11 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
       const match = val.match(/lobby\s*(\d+)/i) || 
                     val.match(/game\s*(\d+)/i) || 
                     val.match(/match\s*(\d+)/i) || 
-                    val.match(/\bl\s*(\d+)/i);
+                    val.match(/round\s*(\d+)/i) ||
+                    val.match(/\bl\s*(\d+)/i) ||
+                    val.match(/^[MRmr](\d+)$/) ||
+                    val.match(/^[kKdDaA]\s*(\d+)$/) ||
+                    val.match(/^(\d+)$/);
       return match ? parseInt(match[1]) : null;
     };
 
@@ -325,12 +365,74 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
           lobbies[lobbyNum].killsCol = c;
         }
       }
+    } else {
+      // Cell did not match a specific lobby number, but may be an un-prefixed stat column
+      let category = null;
+      if (subheaderRowIndex !== -1 && getCategory(cleanSubVal) !== null) {
+        category = getCategory(cleanSubVal);
+      } else if (lastHeaderCategory !== null) {
+        category = lastHeaderCategory;
+      } else if (superHeaderRowIndex !== -1 && currentCategory !== null) {
+        category = currentCategory;
+      } else {
+        const checkVal = subheaderRowIndex !== -1 ? cleanSubVal : cleanVal;
+        category = getCategory(checkVal);
+      }
+      if (category && unprefixedStats[category]) {
+        unprefixedStats[category].push(c);
+      }
     }
   }
 
-  if (playerCol === -1) playerCol = 0;
+  // Handle un-prefixed stat columns (standard scoresheet where the whole sheet represents a match/lobby)
+  const detectedLobbies = Object.keys(lobbies);
+  if (detectedLobbies.length === 0) {
+    if (unprefixedStats.kills.length > 1) {
+      unprefixedStats.kills.forEach((kCol, idx) => {
+        const l = idx + 1;
+        lobbies[l] = {
+          killsCol: kCol,
+          damageCol: unprefixedStats.damage[idx] !== undefined ? unprefixedStats.damage[idx] : -1,
+          accuracyCol: unprefixedStats.accuracy[idx] !== undefined ? unprefixedStats.accuracy[idx] : -1
+        };
+      });
+    } else {
+      lobbies[contextLobbyNum] = {
+        killsCol: unprefixedStats.kills[0] !== undefined ? unprefixedStats.kills[0] : -1,
+        damageCol: unprefixedStats.damage[0] !== undefined ? unprefixedStats.damage[0] : -1,
+        accuracyCol: unprefixedStats.accuracy[0] !== undefined ? unprefixedStats.accuracy[0] : -1
+      };
+    }
+  } else {
+    // If lobby 1 or context lobby is missing some stats, fill from un-prefixed
+    const targetLobby = lobbies[contextLobbyNum] || lobbies[1];
+    if (targetLobby) {
+      if (targetLobby.killsCol === -1 && unprefixedStats.kills.length > 0) targetLobby.killsCol = unprefixedStats.kills[0];
+      if (targetLobby.damageCol === -1 && unprefixedStats.damage.length > 0) targetLobby.damageCol = unprefixedStats.damage[0];
+      if (targetLobby.accuracyCol === -1 && unprefixedStats.accuracy.length > 0) targetLobby.accuracyCol = unprefixedStats.accuracy[0];
+    }
+  }
 
   const startRowIndex = Math.max(headerRowIndex, subheaderRowIndex) + 1;
+
+  if (playerCol === -1) {
+    // Check if column 0 is mostly numbers (e.g. slot/index), in which case column 1 might be player name
+    let col0IsNumbers = true;
+    let col1HasText = false;
+    for (let r = startRowIndex; r < Math.min(grid.length, startRowIndex + 5); r++) {
+      const val0 = String(grid[r]?.[0] || '').trim();
+      const val1 = String(grid[r]?.[1] || '').trim();
+      if (val0 && isNaN(val0)) col0IsNumbers = false;
+      if (val1 && isNaN(val1)) col1HasText = true;
+    }
+    if (col0IsNumbers && col1HasText) {
+      playerCol = 1;
+      if (slotCol === -1) slotCol = 0;
+    } else {
+      playerCol = 0;
+    }
+  }
+
   const parsedRows = [];
 
   for (let r = startRowIndex; r < grid.length; r++) {
@@ -346,7 +448,9 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
       pLower === 'player' || 
       pLower === 'ign' || 
       pLower === 'name' || 
-      pLower === 'players'
+      pLower === 'players' ||
+      pLower === 'total' ||
+      pLower === 'totals'
     ) {
       continue;
     }
@@ -377,7 +481,7 @@ function parseSmartSpreadsheet(grid, customConfig = null) {
 
   // Ensure default lobby 1 exists if none detected
   if (Object.keys(lobbies).length === 0) {
-    lobbies[1] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
+    lobbies[contextLobbyNum || 1] = { killsCol: -1, damageCol: -1, accuracyCol: -1 };
   }
 
   return {
@@ -699,6 +803,7 @@ export default function PlayerEntryPage() {
   const [smartImportFileName, setSmartImportFileName] = useState('');
   const [importing, setImporting] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
+  const [multiSheetData, setMultiSheetData] = useState(null);
 
   const isSmartImportActive = Boolean((smartImportGrid && smartImportGrid.length > 0) || smartImportRows.length > 0);
 
@@ -723,14 +828,14 @@ export default function PlayerEntryPage() {
     return cols;
   }, [smartImportGrid]);
 
-  const handleProcessGrid = useCallback((grid, fileName) => {
+  const handleProcessGrid = useCallback((grid, fileName, sheetName = '') => {
     if (!grid || grid.length === 0) {
       toast.error("Failed to parse sheet data.");
       return;
     }
 
     setSmartImportGrid(grid);
-    const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(grid);
+    const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(grid, null, sheetName || fileName);
 
     if (rows.length === 0) {
       const fallbackConfig = config || {
@@ -802,7 +907,7 @@ export default function PlayerEntryPage() {
     if (!mappingDraft) return;
 
     try {
-      const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(smartImportGrid, mappingDraft);
+      const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(smartImportGrid, mappingDraft, multiSheetData?.currentSheet || '');
       if (rows.length === 0) {
         toast.error("No valid player records found with this mapping. Please verify the Start Row and Player Name column.");
         return;
@@ -855,6 +960,7 @@ export default function PlayerEntryPage() {
     setMappingDraft(null);
     setIsEditingMapping(false);
     setPendingFile(null);
+    setMultiSheetData(null);
   };
 
   const handleConfirmSmartImport = async () => {
@@ -1140,11 +1246,11 @@ export default function PlayerEntryPage() {
     });
   };
 
-  const saveRow = async (playerId, lobbyNum) => {
+  const saveRow = async (playerId, lobbyNum, overrideValues = null) => {
     if (isLocked || !canEdit) return;
     const pForm = formData[playerId];
     if (!pForm || !pForm.lobbies || !pForm.lobbies[lobbyNum]) return;
-    const row = pForm.lobbies[lobbyNum];
+    const row = overrideValues ? { ...pForm.lobbies[lobbyNum], ...overrideValues } : pForm.lobbies[lobbyNum];
 
     const isKillsEmpty = row.kills === '' || row.kills === null || row.kills === undefined;
     const isDamageEmpty = row.damage === '' || row.damage === null || row.damage === undefined;
@@ -1282,15 +1388,18 @@ export default function PlayerEntryPage() {
       if (isCSV) {
         const text = await file.text();
         const grid = parseCSVToGrid(text);
+        setMultiSheetData(null);
         handleProcessGrid(grid, file.name);
       } else {
         const names = await getSheetNames(file);
         if (names.length === 1) {
           const grid = await readExcelAsGrid(file, names[0]);
-          handleProcessGrid(grid, file.name);
+          setMultiSheetData({ file, sheets: names, currentSheet: names[0] });
+          handleProcessGrid(grid, file.name, names[0]);
         } else {
           setPendingFile(file);
-          setSheetModal({ sheets: names });
+          setMultiSheetData({ file, sheets: names, currentSheet: names[0] });
+          setSheetModal({ sheets: names, file });
         }
       }
     } catch (err) {
@@ -1301,13 +1410,27 @@ export default function PlayerEntryPage() {
   };
 
   const handleSheetSelect = async (sheetName) => {
-    if (!sheetModal || !pendingFile) return;
+    const activeFile = pendingFile || multiSheetData?.file;
+    if (!activeFile) return;
     setImportingFile(true);
+    // Clear any previous smart import state before loading new sheet
+    setSmartImportGrid(null);
+    setSmartImportRows([]);
+    setSmartImportLobbies([]);
+    setSmartImportSelectedLobbies([]);
+    setSmartImportColumnMappings({});
+    setSmartImportConfig(null);
+    setMappingDraft(null);
+    setIsEditingMapping(false);
     try {
-      const grid = await readExcelAsGrid(pendingFile, sheetName);
-      handleProcessGrid(grid, pendingFile.name);
+      const grid = await readExcelAsGrid(activeFile, sheetName);
+      if (!grid || grid.length === 0) {
+        toast.error(`Sheet "${sheetName}" appears to be empty.`);
+        return;
+      }
+      setMultiSheetData(prev => ({ ...(prev || {}), file: activeFile, sheets: prev?.sheets || [sheetName], currentSheet: sheetName }));
+      handleProcessGrid(grid, `${activeFile.name} › ${sheetName}`, sheetName);
       setSheetModal(null);
-      setPendingFile(null);
     } catch (err) {
       toast.error('Failed to parse sheet: ' + err.message);
     } finally {
@@ -2562,17 +2685,51 @@ export default function PlayerEntryPage() {
         <div className="card" style={{ marginBottom: 24, border: '2px solid var(--border-gold)', background: 'var(--bg-card)', padding: 20 }}>
           <div className="flex-between" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 16 }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <FileSpreadsheet size={24} style={{ color: 'var(--gold)' }} />
                 <h3 style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)', margin: 0 }}>
                   Smart Spreadsheet Import Preview ({smartImportFileName})
                 </h3>
+                {multiSheetData?.sheets && multiSheetData.sheets.length > 1 && (
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'rgba(201,168,76,0.1)',
+                    border: '1px solid rgba(201,168,76,0.35)',
+                    borderRadius: 6,
+                    padding: '2px 8px',
+                    marginLeft: 6
+                  }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gold)' }}>Sheet:</span>
+                    <select
+                      className="form-input"
+                      value={multiSheetData.currentSheet || multiSheetData.sheets[0]}
+                      onChange={(e) => handleSheetSelect(e.target.value)}
+                      disabled={importingFile}
+                      style={{
+                        fontSize: '0.75rem',
+                        padding: '2px 6px',
+                        background: 'var(--bg-card)',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-md)',
+                        borderRadius: 4,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {multiSheetData.sheets.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6, marginBottom: 0 }}>
                 Review matched players and stats. You can edit column mappings to customize which columns map to each metric.
               </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -2986,9 +3143,25 @@ export default function PlayerEntryPage() {
                     <th style={{ width: 110, textAlign: 'center', padding: '10px 8px' }}>Match Status</th>
                     <th style={{ textAlign: 'left', padding: '10px 8px' }}>Sheet Row (Name / Team)</th>
                     <th style={{ textAlign: 'left', padding: '10px 8px' }}>Matched Registered Player</th>
-                    {smartImportSelectedLobbies.map(l => (
-                      <th key={l} style={{ textAlign: 'center', padding: '10px 8px', width: 140 }}>L{l} Stats</th>
-                    ))}
+                    {smartImportSelectedLobbies.map(l => {
+                      const col = getLobbyColor(l);
+                      return (
+                        <th key={l} style={{
+                          textAlign: 'center',
+                          padding: '10px 8px',
+                          width: 140,
+                          background: col.bg,
+                          color: col.text,
+                          borderBottom: `2px solid ${col.border}`,
+                          fontWeight: 700
+                        }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: col.text, display: 'inline-block' }} />
+                            Lobby {l}
+                          </span>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -3062,18 +3235,35 @@ export default function PlayerEntryPage() {
                           </select>
                         </td>
                         {smartImportSelectedLobbies.map(l => {
+                          const col = getLobbyColor(l);
                           const stat = row.stats[l] || {};
                           const hasKills = stat.kills !== null;
                           const hasDmg = stat.damage !== null;
                           const hasAcc = stat.accuracy !== null;
                           
                           return (
-                            <td key={l} style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', padding: '8px' }}>
+                            <td key={l} style={{
+                              textAlign: 'center',
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '0.75rem',
+                              padding: '8px',
+                              background: col.bg.replace('0.12', '0.04')
+                            }}>
                               {hasKills || hasDmg || hasAcc ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-                                  <span style={{ fontWeight: 600 }}>{hasKills ? `${stat.kills} K` : '—'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+                                  <span style={{
+                                    fontWeight: 700,
+                                    fontSize: '0.82rem',
+                                    color: col.text,
+                                    background: col.bg,
+                                    border: `1px solid ${col.border}`,
+                                    padding: '2px 8px',
+                                    borderRadius: 5
+                                  }}>
+                                    {hasKills ? `${stat.kills} K` : '—'}
+                                  </span>
                                   <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                                    {hasDmg ? `${Math.round(stat.damage)} D` : '—'} · {hasAcc ? `${stat.accuracy}%` : '—'}
+                                    {hasDmg ? `${Math.round(stat.damage)} D` : '—'} {hasAcc ? `· ${stat.accuracy}%` : ''}
                                   </span>
                                 </div>
                               ) : (
@@ -3234,23 +3424,36 @@ export default function PlayerEntryPage() {
                           )}
                         </div>
 
-                        {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => (
-                          <div key={l} style={{ width: '46px' }}>
-                            {isLocked || !canEdit ? (
-                              <span style={{ display: 'block', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                                {row.lobbies?.[l]?.kills !== '' && row.lobbies?.[l]?.kills !== null && row.lobbies?.[l]?.kills !== undefined
-                                  ? row.lobbies[l].kills
-                                  : '—'}
-                              </span>
-                            ) : (
-                              <PlayerStatInput
-                                value={row.lobbies?.[l]?.kills}
-                                onSave={(v) => { handleChange(row.playerId, l, 'kills', v); saveRow(row.playerId, l); }}
-                                inputStyle={{ width: '100%', padding: '3px 2px', fontSize: '0.78rem', textAlign: 'center' }}
-                              />
-                            )}
-                          </div>
-                        ))}
+                        {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
+                          const col = getLobbyColor(l);
+                          return (
+                            <div key={l} style={{ width: '46px' }}>
+                              {isLocked || !canEdit ? (
+                                <span style={{ display: 'block', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                  {row.lobbies?.[l]?.kills !== '' && row.lobbies?.[l]?.kills !== null && row.lobbies?.[l]?.kills !== undefined
+                                    ? row.lobbies[l].kills
+                                    : '—'}
+                                </span>
+                              ) : (
+                                <PlayerStatInput
+                                  value={row.lobbies?.[l]?.kills}
+                                  onSave={(v) => {
+                                    const overrides = { kills: v };
+                                    handleChange(row.playerId, l, 'kills', v);
+                                    saveRow(row.playerId, l, overrides);
+                                  }}
+                                  inputStyle={{
+                                    width: '100%', padding: '3px 2px', fontSize: '0.78rem', textAlign: 'center',
+                                    borderColor: col.border,
+                                    background: col.bg,
+                                    color: col.text,
+                                    fontWeight: 700,
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
 
                         <div style={{ width: '45px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: hasAnyKills ? 'var(--gold)' : 'var(--text-muted)' }}>
                           {hasAnyKills ? totalKills : '—'}
@@ -3382,7 +3585,11 @@ export default function PlayerEntryPage() {
                                       <PlayerStatInput
                                         value={row.lobbies?.[l]?.damage}
                                         step={1}
-                                        onSave={(v) => { handleChange(row.playerId, l, 'damage', v); saveRow(row.playerId, l); }}
+                                        onSave={(v) => {
+                                          const overrides = { damage: v };
+                                          handleChange(row.playerId, l, 'damage', v);
+                                          saveRow(row.playerId, l, overrides);
+                                        }}
                                         inputStyle={{ width: '100%', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }}
                                       />
                                     )}
@@ -3400,7 +3607,11 @@ export default function PlayerEntryPage() {
                                         value={row.lobbies?.[l]?.accuracy}
                                         step={0.1}
                                         max={100}
-                                        onSave={(v) => { handleChange(row.playerId, l, 'accuracy', v); saveRow(row.playerId, l); }}
+                                        onSave={(v) => {
+                                          const overrides = { accuracy: v };
+                                          handleChange(row.playerId, l, 'accuracy', v);
+                                          saveRow(row.playerId, l, overrides);
+                                        }}
                                         inputStyle={{ width: '100%', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }}
                                       />
                                     )}
