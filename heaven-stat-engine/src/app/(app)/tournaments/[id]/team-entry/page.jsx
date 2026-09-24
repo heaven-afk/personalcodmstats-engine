@@ -491,6 +491,7 @@ function parseSmartTeamSpreadsheet(grid, customConfig = null, contextLabel = '')
       slotCol,
       startRowIndex,
       lobbies
+    }
   };
 }
 
