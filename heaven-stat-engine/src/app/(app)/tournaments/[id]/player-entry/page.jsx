@@ -216,14 +216,19 @@ function parseSmartSpreadsheet(grid, customConfig = null, contextLabel = '') {
   const subheaderRow = subheaderRowIndex !== -1 ? grid[subheaderRowIndex] : [];
 
   let playerCol = -1;
+  let ignCol = -1;
   let teamCol = -1;
   let slotCol = -1;
   const lobbies = {};
   const unprefixedStats = { kills: [], damage: [], accuracy: [] };
 
+  const checkIGN = (v) => 
+    v === 'ign' || v === 'ingamename' || v.includes('ingame');
   const checkPlayer = (v) => 
-    v === 'playername' || v === 'player' || v === 'ign' || v === 'name' || 
-    v === 'players' || v === 'member' || v === 'proname' || v === 'username' || v === 'user';
+    checkIGN(v) ||
+    v === 'playername' || v === 'player' || v === 'name' || 
+    v === 'players' || v === 'member' || v === 'proname' || v === 'username' || v === 'user' ||
+    v.includes('player') || v.includes('proname') || v.includes('professional');
   const checkTeam = (v) => 
     v === 'teamname' || v === 'team' || v === 'clan' || v === 'org' || 
     v === 'club' || v === 'teams' || v === 'squad' || v === 'clanname';
@@ -283,8 +288,11 @@ function parseSmartSpreadsheet(grid, customConfig = null, contextLabel = '') {
       }
     }
 
-    if (checkPlayer(cleanVal) || (subheaderRowIndex !== -1 && checkPlayer(cleanSubVal))) {
-      if (playerCol === -1) {
+    if (checkIGN(cleanVal) || (subheaderRowIndex !== -1 && checkIGN(cleanSubVal))) {
+      if (ignCol === -1) ignCol = c;
+      if (playerCol === -1) playerCol = c;
+    } else if (checkPlayer(cleanVal) || (subheaderRowIndex !== -1 && checkPlayer(cleanSubVal))) {
+      if (playerCol === -1 || playerCol === ignCol) {
         playerCol = c;
       }
     } else if (checkTeam(cleanVal) || (subheaderRowIndex !== -1 && checkTeam(cleanSubVal))) {
@@ -439,11 +447,13 @@ function parseSmartSpreadsheet(grid, customConfig = null, contextLabel = '') {
     const rowData = grid[r];
     if (!rowData || rowData.length === 0) continue;
 
-    const playerName = String(rowData[playerCol] || '').trim();
-    const pLower = playerName.toLowerCase();
+    const playerName = playerCol !== -1 ? String(rowData[playerCol] || '').trim() : '';
+    const ign = ignCol !== -1 && ignCol !== playerCol ? String(rowData[ignCol] || '').trim() : '';
+    const effectiveName = playerName || ign;
+    const pLower = effectiveName.toLowerCase();
     if (
-      !playerName || 
-      playerName === '0' || 
+      !effectiveName || 
+      effectiveName === '0' || 
       pLower === 'player name' || 
       pLower === 'player' || 
       pLower === 'ign' || 
@@ -472,7 +482,8 @@ function parseSmartSpreadsheet(grid, customConfig = null, contextLabel = '') {
     });
 
     parsedRows.push({
-      parsedName: playerName,
+      parsedName: playerName || ign,
+      parsedIGN: ign || (playerCol === ignCol ? playerName : ''),
       parsedTeam: teamName,
       parsedSlot: slot,
       stats,
@@ -490,6 +501,7 @@ function parseSmartSpreadsheet(grid, customConfig = null, contextLabel = '') {
     columnMappings: lobbies,
     config: {
       playerCol,
+      ignCol,
       teamCol,
       slotCol,
       startRowIndex,
@@ -499,17 +511,18 @@ function parseSmartSpreadsheet(grid, customConfig = null, contextLabel = '') {
 }
 
 // ─── Smart Player Matcher Utility ──────────────────────────────────────────
-function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers) {
-  if (!parsedName || !parsedName.trim()) {
+function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers, parsedIGN = '') {
+  if ((!parsedName || !parsedName.trim()) && (!parsedIGN || !parsedIGN.trim())) {
     return { playerId: null, playerName: 'Unmatched', ign: '', teamName: '', accuracy: 0, matchType: null, confidence: 'none' };
   }
 
   const cleanStr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const pNameClean = cleanStr(parsedName);
+  const pIgnClean = cleanStr(parsedIGN);
   const pTeamClean = cleanStr(parsedTeam);
 
-  if (!pNameClean) {
-    return { playerId: null, playerName: parsedName, ign: parsedName, teamName: '', accuracy: 0, matchType: null, confidence: 'none' };
+  if (!pNameClean && !pIgnClean) {
+    return { playerId: null, playerName: parsedName || parsedIGN, ign: parsedIGN || parsedName, teamName: '', accuracy: 0, matchType: null, confidence: 'none' };
   }
 
   const safeRegs = Array.isArray(regs) ? regs : [];
@@ -533,25 +546,27 @@ function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers) {
     let ignSim = 0;
     let profSim = 0;
 
-    // IGN Similarity
-    if (ignClean) {
-      if (pNameClean === ignClean) {
+    // IGN Similarity (use parsedIGN if available, else test against parsedName)
+    const testIgnClean = pIgnClean || pNameClean;
+    if (ignClean && testIgnClean) {
+      if (testIgnClean === ignClean) {
         ignSim = 1.0;
-      } else if (pNameClean.length >= 3 && (pNameClean.includes(ignClean) || ignClean.includes(pNameClean))) {
+      } else if (testIgnClean.length >= 3 && (testIgnClean.includes(ignClean) || ignClean.includes(testIgnClean))) {
         ignSim = 0.88;
       } else {
-        ignSim = stringSimilarity(pNameClean, ignClean);
+        ignSim = stringSimilarity(testIgnClean, ignClean);
       }
     }
 
-    // Professional Name Similarity
-    if (profClean) {
-      if (pNameClean === profClean) {
+    // Professional Name Similarity (use parsedName if available, else test against parsedIGN)
+    const testProfClean = pNameClean || pIgnClean;
+    if (profClean && testProfClean) {
+      if (testProfClean === profClean) {
         profSim = 1.0;
-      } else if (pNameClean.length >= 3 && (pNameClean.includes(profClean) || profClean.includes(pNameClean))) {
+      } else if (testProfClean.length >= 3 && (testProfClean.includes(profClean) || profClean.includes(testProfClean))) {
         profSim = 0.88;
       } else {
-        profSim = stringSimilarity(pNameClean, profClean);
+        profSim = stringSimilarity(testProfClean, profClean);
       }
     }
 
@@ -564,6 +579,12 @@ function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers) {
     } else {
       bestSim = ignSim;
       currentType = ignSim === 1.0 ? 'exact_ign' : 'fuzzy_ign';
+    }
+
+    // Double exact bonus if both matched
+    if (pIgnClean && pNameClean && ignSim >= 0.88 && profSim >= 0.88) {
+      bestSim = 1.0;
+      currentType = 'exact_both';
     }
 
     // Team boost if available
@@ -605,8 +626,8 @@ function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers) {
 
   return {
     playerId: null,
-    playerName: parsedName,
-    ign: parsedName,
+    playerName: parsedName || parsedIGN,
+    ign: parsedIGN || parsedName,
     teamName: parsedTeam || '',
     accuracy: 0,
     matchType: null,
@@ -614,8 +635,8 @@ function matchPlayerByName(parsedName, parsedTeam, regs, allPlayers) {
   };
 }
 
-function findBestMatch(parsedName, parsedTeam, regs, allPlayers) {
-  const match = matchPlayerByName(parsedName, parsedTeam, regs, allPlayers);
+function findBestMatch(parsedName, parsedTeam, regs, allPlayers, parsedIGN = '') {
+  const match = matchPlayerByName(parsedName, parsedTeam, regs, allPlayers, parsedIGN);
   if (!match || !match.playerId) return null;
   return {
     matchedPlayerId: match.playerId,
@@ -860,10 +881,11 @@ export default function PlayerEntryPage() {
     }
 
     const previewRows = rows.map((row, idx) => {
-      const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
+      const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players, row.parsedIGN);
       return {
         id: idx,
         parsedName: row.parsedName,
+        parsedIGN: row.parsedIGN,
         parsedTeam: row.parsedTeam,
         parsedSlot: row.parsedSlot,
         matchedPlayerId: match ? match.matchedPlayerId || match.playerId : null,
@@ -914,10 +936,11 @@ export default function PlayerEntryPage() {
       }
 
       const previewRows = rows.map((row, idx) => {
-        const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
+        const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players, row.parsedIGN);
         return {
           id: idx,
           parsedName: row.parsedName,
+          parsedIGN: row.parsedIGN,
           parsedTeam: row.parsedTeam,
           parsedSlot: row.parsedSlot,
           matchedPlayerId: match ? match.matchedPlayerId || match.playerId : null,
@@ -1119,10 +1142,11 @@ export default function PlayerEntryPage() {
       const { lobbies, rows, columnMappings, config } = parseSmartSpreadsheet(grid);
       if (rows.length > 0) {
         const previewRows = rows.map((row, idx) => {
-          const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players);
+          const match = findBestMatch(row.parsedName, row.parsedTeam, playerRegs, players, row.parsedIGN);
           return {
             id: idx,
             parsedName: row.parsedName,
+            parsedIGN: row.parsedIGN,
             parsedTeam: row.parsedTeam,
             parsedSlot: row.parsedSlot,
             matchedPlayerId: match ? match.matchedPlayerId || match.playerId : null,
@@ -3202,6 +3226,11 @@ export default function PlayerEntryPage() {
                         </td>
                         <td style={{ padding: '8px' }}>
                           <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{row.parsedName}</div>
+                          {row.parsedIGN && row.parsedIGN !== row.parsedName && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                              IGN: {row.parsedIGN}
+                            </div>
+                          )}
                           {row.parsedTeam && (
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
                               {row.parsedTeam} {row.parsedSlot ? `(Slot ${row.parsedSlot})` : ''}
@@ -3370,24 +3399,9 @@ export default function PlayerEntryPage() {
                 }}>
                   <span style={{ width: '18px', textAlign: 'center' }}>#</span>
                   <span style={{ flex: 1, minWidth: 0 }}>PLAYER</span>
-                  {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
-                    const col = getLobbyColor(l);
-                    return (
-                      <span key={l} style={{
-                        width: '46px',
-                        textAlign: 'center',
-                        color: col.text,
-                        background: col.bg,
-                        border: `1px solid ${col.border}`,
-                        borderRadius: '4px',
-                        padding: '1px 0',
-                        fontSize: '0.65rem',
-                        fontWeight: 700
-                      }}>
-                        L{l}
-                      </span>
-                    );
-                  })}
+                  {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => (
+                    <span key={l} style={{ width: '46px', textAlign: 'center' }}>L{l}</span>
+                  ))}
                   <span style={{ width: '45px', textAlign: 'right', color: 'var(--gold)' }}>TOT</span>
                 </div>
                 
@@ -3424,36 +3438,27 @@ export default function PlayerEntryPage() {
                           )}
                         </div>
 
-                        {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => {
-                          const col = getLobbyColor(l);
-                          return (
-                            <div key={l} style={{ width: '46px' }}>
-                              {isLocked || !canEdit ? (
-                                <span style={{ display: 'block', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                                  {row.lobbies?.[l]?.kills !== '' && row.lobbies?.[l]?.kills !== null && row.lobbies?.[l]?.kills !== undefined
-                                    ? row.lobbies[l].kills
-                                    : '—'}
-                                </span>
-                              ) : (
-                                <PlayerStatInput
-                                  value={row.lobbies?.[l]?.kills}
-                                  onSave={(v) => {
-                                    const overrides = { kills: v };
-                                    handleChange(row.playerId, l, 'kills', v);
-                                    saveRow(row.playerId, l, overrides);
-                                  }}
-                                  inputStyle={{
-                                    width: '100%', padding: '3px 2px', fontSize: '0.78rem', textAlign: 'center',
-                                    borderColor: col.border,
-                                    background: col.bg,
-                                    color: col.text,
-                                    fontWeight: 700,
-                                  }}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
+                        {Array.from({ length: maxLobbies }, (_, i) => i + 1).map(l => (
+                          <div key={l} style={{ width: '46px' }}>
+                            {isLocked || !canEdit ? (
+                              <span style={{ display: 'block', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                {row.lobbies?.[l]?.kills !== '' && row.lobbies?.[l]?.kills !== null && row.lobbies?.[l]?.kills !== undefined
+                                  ? row.lobbies[l].kills
+                                  : '—'}
+                              </span>
+                            ) : (
+                              <PlayerStatInput
+                                value={row.lobbies?.[l]?.kills}
+                                onSave={(v) => {
+                                  const overrides = { kills: v };
+                                  handleChange(row.playerId, l, 'kills', v);
+                                  saveRow(row.playerId, l, overrides);
+                                }}
+                                inputStyle={{ width: '100%', padding: '3px 2px', fontSize: '0.78rem', textAlign: 'center' }}
+                              />
+                            )}
+                          </div>
+                        ))}
 
                         <div style={{ width: '45px', textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: hasAnyKills ? 'var(--gold)' : 'var(--text-muted)' }}>
                           {hasAnyKills ? totalKills : '—'}

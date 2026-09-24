@@ -145,10 +145,64 @@ export function parsePlayerMatchCSV(text) {
 }
 
 // ─── Excel import (SheetJS) ───────────────────────────────────────────────────
+export function resolveCrossSheetReferences(workbook) {
+  if (!workbook || !workbook.SheetNames) return;
+
+  const getTargetWs = (sheetRef) => {
+    let cleanRef = sheetRef.trim();
+    if (cleanRef.startsWith("'") && cleanRef.endsWith("'")) {
+      cleanRef = cleanRef.slice(1, -1).trim();
+    } else if (cleanRef.startsWith('"') && cleanRef.endsWith('"')) {
+      cleanRef = cleanRef.slice(1, -1).trim();
+    }
+    if (workbook.Sheets[cleanRef]) return workbook.Sheets[cleanRef];
+    const match = workbook.SheetNames.find(n => n.trim().toLowerCase() === cleanRef.toLowerCase());
+    return match ? workbook.Sheets[match] : null;
+  };
+
+  for (let pass = 0; pass < 3; pass++) {
+    for (const sName of workbook.SheetNames) {
+      const ws = workbook.Sheets[sName];
+      if (!ws) continue;
+      for (const cellAddress of Object.keys(ws)) {
+        if (cellAddress.startsWith('!')) continue;
+        const cell = ws[cellAddress];
+        if (!cell || !cell.f) continue;
+        if (cell.v !== undefined && cell.v !== null && cell.v !== '' && cell.v !== 0) continue;
+
+        let fStr = String(cell.f).trim();
+        if (fStr.startsWith('=')) fStr = fStr.slice(1).trim();
+
+        const bangIdx = fStr.lastIndexOf('!');
+        let targetWs = ws;
+        let targetCellAddr = fStr;
+
+        if (bangIdx !== -1) {
+          const sheetRef = fStr.slice(0, bangIdx).trim();
+          targetCellAddr = fStr.slice(bangIdx + 1).trim();
+          targetWs = getTargetWs(sheetRef);
+        }
+
+        targetCellAddr = targetCellAddr.replace(/\$/g, '').trim().toUpperCase();
+
+        if (targetWs && targetWs[targetCellAddr]) {
+          const srcCell = targetWs[targetCellAddr];
+          if (srcCell.v !== undefined && srcCell.v !== null && srcCell.v !== '') {
+            cell.v = srcCell.v;
+            cell.t = srcCell.t || (typeof srcCell.v === 'number' ? 'n' : 's');
+            cell.w = srcCell.w || String(srcCell.v);
+          }
+        }
+      }
+    }
+  }
+}
+
 export async function parseExcelFile(file) {
   const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
+  const workbook = XLSX.read(buffer, { type: 'array', cellFormula: true, sheetStubs: true, cellDates: true });
+  resolveCrossSheetReferences(workbook);
   return workbook;
 }
 
@@ -210,8 +264,7 @@ export async function exportToExcel(data, filename, sheetName = 'Sheet1') {
 // ─── Smart Grid Parsers ───────────────────────────────────────────────────────
 export async function readExcelAsGrid(file, sheetName = null) {
   const XLSX = await import('xlsx');
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
+  const workbook = await parseExcelFile(file);
   let name = null;
   if (sheetName) {
     if (workbook.Sheets[sheetName]) {
