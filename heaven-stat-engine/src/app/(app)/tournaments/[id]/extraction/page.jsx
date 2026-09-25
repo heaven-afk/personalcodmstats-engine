@@ -197,44 +197,67 @@ export default function ExtractionPage() {
   const [teamResults, setTeamResults] = useState([]);
   const [playerResults, setPlayerResults] = useState([]);
   const [bonusPoints, setBonusPoints] = useState([]);
-  const [allTournamentsData, setAllTournamentsData] = useState({ tournaments: [], teamRes: {}, playerRes: {} });
+  const [allTournamentsData, setAllTournamentsData] = useState({ tournaments: [], teamRes: {}, playerRes: {}, loaded: false, loading: false });
 
   useEffect(() => {
+    let cancelled = false;
     async function loadData() {
       try {
-        const [tReg, pReg, tRes, pRes, bPts, gList, allT] = await Promise.all([
+        const [tReg, pReg, tRes, pRes, bPts, gList] = await Promise.all([
           getTeamRegistrations(tournamentId),
           getPlayerRegistrations(tournamentId),
           getTeamMatchResults(tournamentId),
           getPlayerMatchResults(tournamentId),
           getBonusPoints(tournamentId),
           getGroups(tournamentId),
-          getTournaments(),
         ]);
-        setTeamRegs(tReg);
-        setPlayerRegs(pReg);
-        setTeamResults(tRes);
-        setPlayerResults(pRes);
-        setBonusPoints(bPts);
+        if (cancelled) return;
+        setTeamRegs(tReg || []);
+        setPlayerRegs(pReg || []);
+        setTeamResults(tRes || []);
+        setPlayerResults(pRes || []);
+        setBonusPoints(bPts || []);
         setGroups(gList || []);
+      } catch (err) {
+        if (!cancelled) toast.error('Failed to load raw tournament data: ' + err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadData();
+    return () => { cancelled = true; };
+  }, [tournamentId]);
 
-        const allTTeamRes = await Promise.all(allT.map(t => getTeamMatchResults(t.id)));
-        const allTPlayerRes = await Promise.all(allT.map(t => getPlayerMatchResults(t.id)));
+  // Lazy-load cross-tournament data ONLY if user selects a global form preset
+  useEffect(() => {
+    if (!activePreset.startsWith('global-form')) return;
+    if (allTournamentsData.loaded || allTournamentsData.loading) return;
+
+    let cancelled = false;
+    async function loadGlobalFormData() {
+      setAllTournamentsData(prev => ({ ...prev, loading: true }));
+      try {
+        const allT = await getTournaments();
+        const allTTeamRes = await Promise.all(allT.map(t => getTeamMatchResults(t.id).catch(() => [])));
+        const allTPlayerRes = await Promise.all(allT.map(t => getPlayerMatchResults(t.id).catch(() => [])));
+        if (cancelled) return;
         const tResMap = {};
         const pResMap = {};
         allT.forEach((t, i) => {
           tResMap[t.id] = allTTeamRes[i] || [];
           pResMap[t.id] = allTPlayerRes[i] || [];
         });
-        setAllTournamentsData({ tournaments: allT, teamRes: tResMap, playerRes: pResMap });
+        setAllTournamentsData({ tournaments: allT, teamRes: tResMap, playerRes: pResMap, loaded: true, loading: false });
       } catch (err) {
-        toast.error('Failed to load raw tournament data: ' + err.message);
-      } finally {
-        setLoading(false);
+        if (!cancelled) {
+          console.warn('Failed to load global form data:', err);
+          setAllTournamentsData(prev => ({ ...prev, loading: false }));
+        }
       }
     }
-    loadData();
-  }, [tournamentId]);
+    loadGlobalFormData();
+    return () => { cancelled = true; };
+  }, [activePreset, allTournamentsData.loaded, allTournamentsData.loading]);
 
   const selectedGroupObj = isQualifier && selectedGroupId !== 'all' ? groups.find(g => g.id === selectedGroupId) : null;
   const activeStructure = selectedGroupObj?.structure || structure;
@@ -1170,6 +1193,9 @@ export default function ExtractionPage() {
 
       // 13. Global Form Teams
       case 'global-form-teams': {
+        if (!allTournamentsData.loaded) {
+          return { rows: [], columns: [] };
+        }
         const forms = activeTeamRegs.map(r => {
           const gf = computeTeamGlobalForm(r.teamId, allTournamentsData.tournaments, allTournamentsData.teamRes);
           return {
@@ -1210,6 +1236,9 @@ export default function ExtractionPage() {
 
       // 14. Global Form Players
       case 'global-form-players': {
+        if (!allTournamentsData.loaded) {
+          return { rows: [], columns: [] };
+        }
         const forms = activePlayerRegs.map(r => {
           const gf = computePlayerGlobalForm(r.playerId, allTournamentsData.tournaments, allTournamentsData.playerRes);
           return {
@@ -1309,7 +1338,31 @@ export default function ExtractionPage() {
     }
   };
 
-  const { rows, columns } = getExtractData();
+  const isGlobalFormLoading = activePreset.startsWith('global-form') && (!allTournamentsData.loaded || allTournamentsData.loading);
+
+  const { rows, columns } = useMemo(() => {
+    return getExtractData();
+  }, [
+    activePreset,
+    tournament,
+    teamRegs,
+    playerRegs,
+    teamResults,
+    playerResults,
+    bonusPoints,
+    groups,
+    selectedGroupId,
+    selectedDay,
+    selectedMap,
+    selectedRevive,
+    limit,
+    allTournamentsData,
+    scoring,
+    structure,
+    isQualifier,
+    activeMapConfig,
+    activeReviveConfig,
+  ]);
 
   const getFileName = (ext) => {
     const safeName = (tournament?.name || 'Tournament')
@@ -1790,16 +1843,22 @@ export default function ExtractionPage() {
             </div>
 
             <div style={{ padding: 12 }}>
-              <DataTable
-                columns={columns}
-                data={rows}
-                searchable={true}
-                searchPlaceholder="Search within preview records..."
-                emptyMessage="No data records match this extraction filter setup."
-                pageSize={['player-kills-by-team', 'player-roster', 'team-registry', 'daily-pts-matrix'].includes(activePreset) ? 50 : 15}
-                sortable={activePreset !== 'player-kills-by-team'}
-                rowClassName={(row) => row._isSpacer ? 'extraction-spacer-row' : ''}
-              />
+              {isGlobalFormLoading ? (
+                <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+                  <LoadingSpinner size="md" text="Loading historical cross-tournament data for Global Form..." />
+                </div>
+              ) : (
+                <DataTable
+                  columns={columns}
+                  data={rows}
+                  searchable={true}
+                  searchPlaceholder="Search within preview records..."
+                  emptyMessage="No data records match this extraction filter setup."
+                  pageSize={['player-kills-by-team', 'player-roster', 'team-registry', 'daily-pts-matrix'].includes(activePreset) ? 50 : 15}
+                  sortable={activePreset !== 'player-kills-by-team'}
+                  rowClassName={(row) => row._isSpacer ? 'extraction-spacer-row' : ''}
+                />
+              )}
             </div>
           </div>
 
