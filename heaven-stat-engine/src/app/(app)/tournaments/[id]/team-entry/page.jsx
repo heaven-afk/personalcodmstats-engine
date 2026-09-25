@@ -3327,6 +3327,131 @@ export default function TeamEntryPage() {
           </div>
         </div>
       </div>
+
+      {/* Clear Team Results Modal */}
+      {clearModalOpen && isOwner && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-gold)',
+            borderRadius: 14, padding: '24px', width: '100%', maxWidth: 480,
+            boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Trash2 size={18} style={{ color: 'var(--danger)' }} />
+                </div>
+                <div>
+                  <h3 style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', margin: 0 }}>
+                    Clear Team Match Results
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Tournament Day {day} {selectedGroup ? `(${selectedGroup.groupName})` : ''}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setClearModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                disabled={clearing}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 20 }}>
+              Choose whether you want to clear results for a specific lobby or wipe all team entries for the entire day.
+            </p>
+
+            {/* Option 1: Clear Particular Lobby */}
+            <div style={{
+              background: 'var(--bg-alt-row)',
+              border: '1px solid var(--border-md)',
+              borderRadius: 10,
+              padding: '14px',
+              marginBottom: 14
+            }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: 4 }}>
+                Option 1: Clear a Particular Lobby
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+                Clear placement and kill results only for the selected lobby.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <select
+                  className="form-select"
+                  style={{ flex: 1, minWidth: 140, fontSize: '0.82rem', padding: '6px 10px' }}
+                  value={selectedLobbyToClear}
+                  onChange={(e) => setSelectedLobbyToClear(Number(e.target.value))}
+                  disabled={clearing}
+                >
+                  {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => (
+                    <option key={l} value={l}>Lobby {l}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.4)', fontWeight: 600 }}
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to clear team results for Day ${day} Lobby ${selectedLobbyToClear}?`)) {
+                      handleClearTeamResults('lobby');
+                    }
+                  }}
+                  disabled={clearing}
+                >
+                  {clearing ? 'Clearing...' : `Clear Lobby ${selectedLobbyToClear}`}
+                </button>
+              </div>
+            </div>
+
+            {/* Option 2: Clear Entire Day */}
+            <div style={{
+              background: 'rgba(239,68,68,0.05)',
+              border: '1px solid rgba(239,68,68,0.25)',
+              borderRadius: 10,
+              padding: '14px',
+              marginBottom: 20
+            }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--danger)', marginBottom: 4 }}>
+                Option 2: Clear Entire Day {day}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+                Permanently delete all match results across all {lobbiesPerDay} lobbies for Day {day}.
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ background: 'var(--danger)', borderColor: 'var(--danger)', width: '100%', justifyContent: 'center' }}
+                onClick={() => {
+                  if (window.confirm(`Warning: This will permanently delete ALL team results across all lobbies for Day ${day}. Proceed?`)) {
+                    handleClearTeamResults('entire');
+                  }
+                }}
+                disabled={clearing}
+              >
+                {clearing ? 'Clearing Day...' : `Clear All Results for Day ${day}`}
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setClearModalOpen(false)}
+                disabled={clearing}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3537,131 +3662,6 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
             })}
           </tbody>
         </table>
-      )}
-
-      {/* Clear Team Results Modal */}
-      {clearModalOpen && isOwner && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
-        }}>
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid var(--border-gold)',
-            borderRadius: 14, padding: '24px', width: '100%', maxWidth: 480,
-            boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
-            position: 'relative'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Trash2 size={18} style={{ color: 'var(--danger)' }} />
-                </div>
-                <div>
-                  <h3 style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', margin: 0 }}>
-                    Clear Team Match Results
-                  </h3>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Tournament Day {day} {selectedGroup ? `(${selectedGroup.groupName})` : ''}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setClearModalOpen(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                disabled={clearing}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 20 }}>
-              Choose whether you want to clear results for a specific lobby or wipe all team entries for the entire day.
-            </p>
-
-            {/* Option 1: Clear Particular Lobby */}
-            <div style={{
-              background: 'var(--bg-alt-row)',
-              border: '1px solid var(--border-md)',
-              borderRadius: 10,
-              padding: '14px',
-              marginBottom: 14
-            }}>
-              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: 4 }}>
-                Option 1: Clear a Particular Lobby
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10 }}>
-                Clear placement and kill results only for the selected lobby.
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <select
-                  className="form-select"
-                  style={{ flex: 1, minWidth: 140, fontSize: '0.82rem', padding: '6px 10px' }}
-                  value={selectedLobbyToClear}
-                  onChange={(e) => setSelectedLobbyToClear(Number(e.target.value))}
-                  disabled={clearing}
-                >
-                  {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => (
-                    <option key={l} value={l}>Lobby {l}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.4)', fontWeight: 600 }}
-                  onClick={() => {
-                    if (window.confirm(`Are you sure you want to clear team results for Day ${day} Lobby ${selectedLobbyToClear}?`)) {
-                      handleClearTeamResults('lobby');
-                    }
-                  }}
-                  disabled={clearing}
-                >
-                  {clearing ? 'Clearing...' : `Clear Lobby ${selectedLobbyToClear}`}
-                </button>
-              </div>
-            </div>
-
-            {/* Option 2: Clear Entire Day */}
-            <div style={{
-              background: 'rgba(239,68,68,0.05)',
-              border: '1px solid rgba(239,68,68,0.25)',
-              borderRadius: 10,
-              padding: '14px',
-              marginBottom: 20
-            }}>
-              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--danger)', marginBottom: 4 }}>
-                Option 2: Clear Entire Day {day}
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10 }}>
-                Permanently delete all match results across all {lobbiesPerDay} lobbies for Day {day}.
-              </div>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                style={{ background: 'var(--danger)', borderColor: 'var(--danger)', width: '100%', justifyContent: 'center' }}
-                onClick={() => {
-                  if (window.confirm(`Warning: This will permanently delete ALL team results across all lobbies for Day ${day}. Proceed?`)) {
-                    handleClearTeamResults('entire');
-                  }
-                }}
-                disabled={clearing}
-              >
-                {clearing ? 'Clearing Day...' : `Clear All Results for Day ${day}`}
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setClearModalOpen(false)}
-                disabled={clearing}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
