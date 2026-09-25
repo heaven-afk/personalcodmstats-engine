@@ -700,25 +700,29 @@ export default function TeamEntryPage() {
   const [clearing, setClearing] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (typeof refreshLayout === 'function') {
-      try { await refreshLayout(); } catch {}
+    try {
+      const [regs, results, bonus, gList] = await Promise.all([
+        getTeamRegistrations(id),
+        getTeamMatchResults(id),
+        getBonusPoints(id),
+        getGroups(id),
+      ]);
+      setTeamRegs(regs || []);
+      setAllResults(results || []);
+      setAllBonus(bonus || []);
+      setGroups(gList || []);
+      if (gList && gList.length > 0) {
+        setSelectedGroupId(prev => (!prev || !gList.some(g => g.id === prev)) ? gList[0].id : prev);
+      }
+    } catch (err) {
+      console.error('Failed to load team data:', err);
+      toast.error('Failed to load team data');
     }
-    const [regs, results, bonus, gList] = await Promise.all([
-      getTeamRegistrations(id),
-      getTeamMatchResults(id),
-      getBonusPoints(id),
-      getGroups(id),
-    ]);
-    setTeamRegs(regs);
-    setAllResults(results);
-    setAllBonus(bonus);
-    setGroups(gList);
-    if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
-      setSelectedGroupId(gList[0].id);
-    }
-  }, [id, selectedGroupId, refreshLayout]);
+  }, [id]);
 
-  useEffect(() => { refresh().finally(() => setLoading(false)); }, [refresh]);
+  useEffect(() => {
+    refresh().finally(() => setLoading(false));
+  }, [refresh]);
 
   const hasGroups = groups.length > 0;
   const selectedGroup = hasGroups ? groups.find(g => g.id === selectedGroupId) : null;
@@ -727,7 +731,7 @@ export default function TeamEntryPage() {
   const activeReviveConfig = getActiveReviveConfig(tournament, selectedGroup);
   const totalDays = activeStructure.totalDays || 6;
   const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
-  const { scoring = {} } = tournament;
+  const { scoring = {} } = tournament || {};
   const { killPointValue = 2, placementPoints = [], bonusTypes = [] } = scoring;
 
   const activeTeamRegs = useMemo(() => {
@@ -968,6 +972,9 @@ export default function TeamEntryPage() {
         await updateTournament(id, { mapConfig: updatedConfig });
       }
       toast.success(`Day ${day} Lobby ${lobbyNum} Map set to ${newMap}`);
+      if (typeof refreshLayout === 'function') {
+        try { await refreshLayout(); } catch {}
+      }
       await refresh();
     } catch (err) {
       toast.error('Failed to update map schedule: ' + err.message);
@@ -1016,6 +1023,9 @@ export default function TeamEntryPage() {
 
       const reviveMeta = getReviveType(newRevive);
       toast.success(`Day ${day} Lobby ${lobbyNum} Revive Type set to ${reviveMeta.label} (synchronized across system)`);
+      if (typeof refreshLayout === 'function') {
+        try { await refreshLayout(); } catch {}
+      }
       await refresh();
     } catch (err) {
       console.error('Failed to update revive schedule:', err);
@@ -1727,7 +1737,7 @@ export default function TeamEntryPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Team Entry</h1>
-          <p className="page-subtitle">Match data entry · {tournament.name}</p>
+          <p className="page-subtitle">Match data entry · {tournament?.name || 'Tournament'}</p>
         </div>
       </div>
 

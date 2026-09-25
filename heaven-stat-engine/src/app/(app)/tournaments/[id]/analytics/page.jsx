@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo, Fragment } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { getTeamMatchResults, getBonusPoints, getPlayerMatchResults } from '@/lib/firestore/matchData';
 import { getTeams, getPlayers } from '@/lib/firestore/registry';
@@ -37,7 +37,9 @@ function RatingBar({ label, value, displayValue, type }) {
 }
 
 export default function AnalyticsPage() {
+  const { id } = useParams();
   const { tournament } = useTournament();
+  const tournamentId = tournament?.id || id;
   const searchParams = useSearchParams();
   const tabParam = searchParams ? searchParams.get('tab') : null;
   const [activeTab, setActiveTab] = useState(tabParam === 'deep' ? 'deep' : 'overview');
@@ -69,16 +71,17 @@ export default function AnalyticsPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const { scoring = {} } = tournament;
+  const { scoring = {} } = tournament || {};
 
   useEffect(() => {
+    if (!tournamentId) return;
     async function load() {
       try {
         const [tr, pr, preg, bp, allTeams, allPlayers] = await Promise.all([
-          getTeamMatchResults(tournament.id).catch(e => { console.warn('Failed to load teamMatchResults:', e); return []; }),
-          getPlayerMatchResults(tournament.id).catch(e => { console.warn('Failed to load playerMatchResults:', e); return []; }),
-          getPlayerRegistrations(tournament.id).catch(e => { console.warn('Failed to load playerRegistrations:', e); return []; }),
-          getBonusPoints(tournament.id).catch(e => { console.warn('Failed to load bonusPoints:', e); return []; }),
+          getTeamMatchResults(tournamentId).catch(e => { console.warn('Failed to load teamMatchResults:', e); return []; }),
+          getPlayerMatchResults(tournamentId).catch(e => { console.warn('Failed to load playerMatchResults:', e); return []; }),
+          getPlayerRegistrations(tournamentId).catch(e => { console.warn('Failed to load playerRegistrations:', e); return []; }),
+          getBonusPoints(tournamentId).catch(e => { console.warn('Failed to load bonusPoints:', e); return []; }),
           getTeams().catch(e => { console.warn('Failed to load teams:', e); return []; }),
           getPlayers().catch(e => { console.warn('Failed to load players:', e); return []; }),
         ]);
@@ -102,7 +105,7 @@ export default function AnalyticsPage() {
       finally { setLoading(false); }
     }
     load();
-  }, [tournament.id]);
+  }, [tournamentId]);
 
   const analyticsData = useMemo(
     () => computeTeamAnalytics(teamResults, bonusPoints, scoring),

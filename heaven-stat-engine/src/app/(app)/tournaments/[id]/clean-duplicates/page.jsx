@@ -11,12 +11,14 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { AlertTriangle, CheckCircle, Trash2, ShieldAlert, Users, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function CleanDuplicatesPage() {
   const router = useRouter();
+  const { id } = useParams();
   const { tournament } = useTournament();
+  const tournamentId = tournament?.id || id;
   const { isOperator, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -38,11 +40,11 @@ export default function CleanDuplicatesPage() {
 
   // Load registrations, groups, and match results to identify duplicates
   const scanForDuplicates = useCallback(async () => {
-    if (isOperator || !tournament?.id) return;
+    if (isOperator || !tournamentId) return;
     setScanning(true);
     try {
       // 1. Fetch groups list
-      const gList = await getGroups(tournament.id);
+      const gList = await getGroups(tournamentId);
       setGroups(gList);
 
       const groupMap = (gList || []).reduce((acc, g) => {
@@ -52,11 +54,11 @@ export default function CleanDuplicatesPage() {
 
       if (scanType === 'team') {
         // --- TEAM DUPLICATES SCAN ---
-        const teamRegs = await getTeamRegistrations(tournament.id);
+        const teamRegs = await getTeamRegistrations(tournamentId);
         const names = new Set(teamRegs.map(r => r.teamName?.trim().toLowerCase()).filter(Boolean));
         setRegisteredNames(names);
 
-        let tr = await getTeamMatchResults(tournament.id);
+        let tr = await getTeamMatchResults(tournamentId);
 
         // Filter by group if selected
         if (selectedGroupId && selectedGroupId !== 'all') {
@@ -125,11 +127,11 @@ export default function CleanDuplicatesPage() {
 
       } else {
         // --- PLAYER DUPLICATES SCAN ---
-        const playerRegs = await getPlayerRegistrations(tournament.id);
+        const playerRegs = await getPlayerRegistrations(tournamentId);
         const playerNames = new Set(playerRegs.map(r => (r.professionalName || r.ign || '').trim().toLowerCase()).filter(Boolean));
         setRegisteredNames(playerNames);
 
-        let pr = await getPlayerMatchResults(tournament.id);
+        let pr = await getPlayerMatchResults(tournamentId);
 
         if (selectedGroupId && selectedGroupId !== 'all') {
           pr = pr.filter(doc => doc.groupId === selectedGroupId);
@@ -192,7 +194,7 @@ export default function CleanDuplicatesPage() {
       setScanning(false);
       setLoading(false);
     }
-  }, [tournament?.id, scanType, selectedGroupId]);
+  }, [tournamentId, scanType, selectedGroupId, isOperator]);
 
   useEffect(() => {
     scanForDuplicates();
@@ -211,9 +213,9 @@ export default function CleanDuplicatesPage() {
       for (const dup of duplicates) {
         for (const item of dup.toDelete) {
           if (scanType === 'team') {
-            await deleteTeamMatchResult(tournament.id, item.id);
+            await deleteTeamMatchResult(tournamentId, item.id);
           } else {
-            await deletePlayerMatchResult(tournament.id, item.id);
+            await deletePlayerMatchResult(tournamentId, item.id);
           }
           deletedCount++;
         }

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react';
 import { useParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTournament } from '@/lib/firestore/tournaments';
@@ -27,14 +27,19 @@ export default function TournamentLayout({ children }) {
   const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const refresh = async () => {
-    const t = await getTournament(id);
-    setTournament(t);
-  };
+  const refresh = useCallback(async () => {
+    try {
+      const t = await getTournament(id);
+      setTournament(t);
+      return t;
+    } catch (e) {
+      console.error('Failed to load tournament in layout:', e);
+    }
+  }, [id]);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
-  }, [id]);
+  }, [refresh]);
 
   // Track live real-time presence within this tournament
   useEffect(() => {
@@ -107,7 +112,7 @@ export default function TournamentLayout({ children }) {
       <TournamentSubNav tournamentId={id} canEdit={canEdit} />
 
       {/* Pass tournament + refresh + permissions to children via context */}
-      <TournamentContext.Provider value={{ tournament, setTournament, refresh, canEdit, canManageEditors }}>
+      <TournamentContext.Provider value={useMemo(() => ({ tournament, setTournament, refresh, canEdit, canManageEditors }), [tournament, refresh, canEdit, canManageEditors])}>
         {children}
       </TournamentContext.Provider>
     </div>

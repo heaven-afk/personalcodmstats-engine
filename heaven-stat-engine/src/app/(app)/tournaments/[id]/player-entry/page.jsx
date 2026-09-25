@@ -743,6 +743,7 @@ function parsePlayerEntryPaste(text, playerRegs) {
 export default function PlayerEntryPage() {
   const { id } = useParams();
   const { tournament, refresh } = useTournament();
+  const tournamentId = tournament?.id || id;
   const { user, isOwner, isOperator } = useAuth();
   const [day, setDay] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -769,7 +770,7 @@ export default function PlayerEntryPage() {
   const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   // Lock state — persisted per tournament + day in localStorage
-  const lockKey = tournament?.id ? `lock_player_${tournament.id}_day${day}` : null;
+  const lockKey = tournamentId ? `lock_player_${tournamentId}_day${day}` : null;
   const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
@@ -1004,7 +1005,7 @@ export default function PlayerEntryPage() {
 
       const resultsByLobby = {};
       for (const lobbyNum of smartImportSelectedLobbies) {
-        resultsByLobby[lobbyNum] = await getPlayerMatchResultsByDayLobby(tournament.id, day, lobbyNum);
+        resultsByLobby[lobbyNum] = await getPlayerMatchResultsByDayLobby(tournamentId, day, lobbyNum);
       }
 
       const promises = [];
@@ -1042,14 +1043,14 @@ export default function PlayerEntryPage() {
 
           if (existingResults.length > 0) {
             const firstExisting = existingResults[0];
-            promises.push(updatePlayerMatchResult(tournament.id, firstExisting.id, payload));
+            promises.push(updatePlayerMatchResult(tournamentId, firstExisting.id, payload));
             updatedCount++;
 
             for (let i = 1; i < existingResults.length; i++) {
-              promises.push(deletePlayerMatchResult(tournament.id, existingResults[i].id));
+              promises.push(deletePlayerMatchResult(tournamentId, existingResults[i].id));
             }
           } else {
-            promises.push(savePlayerMatchResult(tournament.id, payload));
+            promises.push(savePlayerMatchResult(tournamentId, payload));
             addedCount++;
           }
         }
@@ -1119,13 +1120,13 @@ export default function PlayerEntryPage() {
 
     try {
       if (isQualifier && selectedGroupId) {
-        await updateGroup(tournament.id, selectedGroupId, { reviveConfig: updatedReviveConfig });
+        await updateGroup(tournamentId, selectedGroupId, { reviveConfig: updatedReviveConfig });
       } else {
-        await updateTournament(tournament.id, { reviveConfig: updatedReviveConfig });
+        await updateTournament(tournamentId, { reviveConfig: updatedReviveConfig });
       }
 
       // Propagate revive type to all existing team and player match records in database
-      await updateLobbyReviveType(tournament.id, day, lobbyNum, newRevive, isQualifier && selectedGroupId ? selectedGroupId : null);
+      await updateLobbyReviveType(tournamentId, day, lobbyNum, newRevive, isQualifier && selectedGroupId ? selectedGroupId : null);
 
       const reviveMeta = getReviveType(newRevive);
       toast.success(`Day ${day} Lobby ${lobbyNum} Revive Type set to ${reviveMeta.label} (synchronized across system)`);
@@ -1207,17 +1208,19 @@ export default function PlayerEntryPage() {
         getGroups(id),
       ]);
 
-      setGroups(gList);
-      if (gList.length > 0 && (!selectedGroupId || !gList.some(g => g.id === selectedGroupId))) {
-        setSelectedGroupId(gList[0].id);
+      setGroups(gList || []);
+      let currentGroupId = selectedGroupId;
+      if (gList && gList.length > 0 && (!currentGroupId || !gList.some(g => g.id === currentGroupId))) {
+        currentGroupId = gList[0].id;
+        setSelectedGroupId(currentGroupId);
       }
 
-      const activeGroupRegs = selectedGroupId
-        ? regs.filter(r => r.groupId === selectedGroupId)
-        : regs;
+      const activeGroupRegs = currentGroupId
+        ? (regs || []).filter(r => r.groupId === currentGroupId)
+        : (regs || []);
 
       const enrichedRegs = activeGroupRegs.map(reg => {
-        const teamReg = teamRegs.find(t => t.teamId === reg.teamId || (reg.teamName && t.teamName?.toLowerCase() === reg.teamName.toLowerCase()));
+        const teamReg = (teamRegs || []).find(t => t.teamId === reg.teamId || (reg.teamName && t.teamName?.toLowerCase() === reg.teamName.toLowerCase()));
         return {
           ...reg,
           slot: teamReg ? teamReg.slot : reg.slot
@@ -1225,10 +1228,10 @@ export default function PlayerEntryPage() {
       });
 
       setPlayerRegs(enrichedRegs);
-      setPlayers(allPlayers);
+      setPlayers(allPlayers || []);
 
-      const dayResults = results.filter((r) => r.day === day);
-      const activeStruct = (selectedGroupId && gList.find(g => g.id === selectedGroupId)?.structure) || (tournament?.structure || {});
+      const dayResults = (results || []).filter((r) => r.day === day);
+      const activeStruct = (currentGroupId && gList?.find(g => g.id === currentGroupId)?.structure) || (tournament?.structure || {});
       const numLobbies = activeStruct.lobbiesPerDay || 4;
 
       const fd = {};
@@ -1298,7 +1301,7 @@ export default function PlayerEntryPage() {
     if (isKillsEmpty && isDamageEmpty && isAccuracyEmpty) {
       if (row.existingId) {
         try {
-          await deletePlayerMatchResult(tournament.id, row.existingId);
+          await deletePlayerMatchResult(tournamentId, row.existingId);
           setFormData((prev) => ({
             ...prev,
             [playerId]: {
@@ -1329,9 +1332,9 @@ export default function PlayerEntryPage() {
 
     try {
       if (row.existingId) {
-        await updatePlayerMatchResult(tournament.id, row.existingId, payload);
+        await updatePlayerMatchResult(tournamentId, row.existingId, payload);
       } else {
-        const saved = await savePlayerMatchResult(tournament.id, payload);
+        const saved = await savePlayerMatchResult(tournamentId, payload);
         setFormData((prev) => ({
           ...prev,
           [playerId]: {
@@ -1394,10 +1397,10 @@ export default function PlayerEntryPage() {
         };
 
         if (existing) {
-          await updatePlayerMatchResult(tournament.id, existing, payload);
+          await updatePlayerMatchResult(tournamentId, existing, payload);
           updatedCount++;
         } else {
-          await savePlayerMatchResult(tournament.id, payload);
+          await savePlayerMatchResult(tournamentId, payload);
           addedCount++;
         }
       }
@@ -1549,7 +1552,7 @@ export default function PlayerEntryPage() {
     setClearing(true);
     try {
       if (isEntire) {
-        await clearPlayerMatchResults(tournament.id, {
+        await clearPlayerMatchResults(tournamentId, {
           day,
           groupId: isQualifier ? selectedGroupId : null,
         });
@@ -1573,7 +1576,7 @@ export default function PlayerEntryPage() {
         const playerIds = teamPlayers.map(p => p.playerId);
 
         if (playerIds.length > 0) {
-          await clearPlayerMatchResults(tournament.id, {
+          await clearPlayerMatchResults(tournamentId, {
             day,
             playerIds,
             groupId: isQualifier ? selectedGroupId : null,
@@ -1810,7 +1813,7 @@ export default function PlayerEntryPage() {
       let updatedCount = 0;
       let addedCount = 0;
 
-      const existingResults = await getPlayerMatchResultsByDayLobby(tournament.id, day, lobbyNum);
+      const existingResults = await getPlayerMatchResultsByDayLobby(tournamentId, day, lobbyNum);
       const tempResults = [...existingResults];
 
       for (const row of validResults) {
@@ -1840,7 +1843,7 @@ export default function PlayerEntryPage() {
           // Update the first existing document
           const firstIdx = existingIdxs[0];
           const existing = tempResults[firstIdx];
-          await updatePlayerMatchResult(tournament.id, existing.id, payload);
+          await updatePlayerMatchResult(tournamentId, existing.id, payload);
           tempResults[firstIdx] = { ...existing, ...payload };
           updatedCount++;
 
@@ -1848,7 +1851,7 @@ export default function PlayerEntryPage() {
           for (let i = 1; i < existingIdxs.length; i++) {
             const idxToDelete = existingIdxs[i];
             const extraDoc = tempResults[idxToDelete];
-            await deletePlayerMatchResult(tournament.id, extraDoc.id);
+            await deletePlayerMatchResult(tournamentId, extraDoc.id);
           }
 
           // Re-filter tempResults to remove the extra deleted documents
@@ -1860,7 +1863,7 @@ export default function PlayerEntryPage() {
           }
         } else {
           // Save new
-          const saved = await savePlayerMatchResult(tournament.id, payload);
+          const saved = await savePlayerMatchResult(tournamentId, payload);
           tempResults.push(saved);
           addedCount++;
         }
