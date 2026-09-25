@@ -1202,8 +1202,12 @@ export default function TeamEntryPage() {
   };
 
   const handleClearTeamResults = async (mode, lobbyTarget) => {
-    if (isLocked || !canEdit) {
-      toast.error('You do not have permission to edit or this day is locked');
+    if (!isOwner) {
+      toast.error('Only the owner can clear match data');
+      return;
+    }
+    if (isLocked) {
+      toast.error('This day is locked');
       return;
     }
 
@@ -1829,7 +1833,7 @@ export default function TeamEntryPage() {
                 </span>
               )}
               <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
-                {canEdit && !isLocked && (
+                {isOwner && !isLocked && (
                   <button
                     className="btn btn-secondary btn-sm"
                     style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.4)' }}
@@ -3535,7 +3539,7 @@ function BonusPanel({ tournamentId, day, teamRegs, bonusPoints, bonusTypes, onRe
       )}
 
       {/* Clear Team Results Modal */}
-      {clearModalOpen && (
+      {clearModalOpen && isOwner && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
           background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',

@@ -11,12 +11,98 @@ import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import { getPlayers } from '@/lib/firestore/registry';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import toast from 'react-hot-toast';
-import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock, Sliders, RefreshCw, Plus, Trash } from 'lucide-react';
+import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, ChevronDown, Camera, AlertCircle, AlertTriangle, Trash2, Lock, Unlock, Sliders, RefreshCw, Plus, Trash, Search, Users, Flame, Layers, Shield } from 'lucide-react';
 import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 import { cleanTeamName, stringSimilarity } from '@/lib/utils/similarity';
 
-// Distinct color per lobby slot
+// Curated harmonious color shades for team preview sections
+const TEAM_SHADES = [
+  {
+    name: 'blue',
+    border: '#3B82F6',
+    accentText: '#60A5FA',
+    headerBg: 'linear-gradient(90deg, rgba(59, 130, 246, 0.16) 0%, rgba(59, 130, 246, 0.04) 100%)',
+    cardBorder: 'rgba(59, 130, 246, 0.3)',
+    tagBg: 'rgba(59, 130, 246, 0.2)',
+    tagText: '#93C5FD',
+  },
+  {
+    name: 'emerald',
+    border: '#10B981',
+    accentText: '#34D399',
+    headerBg: 'linear-gradient(90deg, rgba(16, 185, 129, 0.16) 0%, rgba(16, 185, 129, 0.04) 100%)',
+    cardBorder: 'rgba(16, 185, 129, 0.3)',
+    tagBg: 'rgba(16, 185, 129, 0.2)',
+    tagText: '#6EE7B7',
+  },
+  {
+    name: 'amber',
+    border: '#F59E0B',
+    accentText: '#FBBF24',
+    headerBg: 'linear-gradient(90deg, rgba(245, 158, 11, 0.16) 0%, rgba(245, 158, 11, 0.04) 100%)',
+    cardBorder: 'rgba(245, 158, 11, 0.3)',
+    tagBg: 'rgba(245, 158, 11, 0.2)',
+    tagText: '#FCD34D',
+  },
+  {
+    name: 'purple',
+    border: '#8B5CF6',
+    accentText: '#A78BFA',
+    headerBg: 'linear-gradient(90deg, rgba(139, 92, 246, 0.16) 0%, rgba(139, 92, 246, 0.04) 100%)',
+    cardBorder: 'rgba(139, 92, 246, 0.3)',
+    tagBg: 'rgba(139, 92, 246, 0.2)',
+    tagText: '#C4B5FD',
+  },
+  {
+    name: 'rose',
+    border: '#F43F5E',
+    accentText: '#FB7185',
+    headerBg: 'linear-gradient(90deg, rgba(244, 63, 94, 0.16) 0%, rgba(244, 63, 94, 0.04) 100%)',
+    cardBorder: 'rgba(244, 63, 94, 0.3)',
+    tagBg: 'rgba(244, 63, 94, 0.2)',
+    tagText: '#FDA4AF',
+  },
+  {
+    name: 'cyan',
+    border: '#06B6D4',
+    accentText: '#22D3EE',
+    headerBg: 'linear-gradient(90deg, rgba(6, 182, 212, 0.16) 0%, rgba(6, 182, 212, 0.04) 100%)',
+    cardBorder: 'rgba(6, 182, 212, 0.3)',
+    tagBg: 'rgba(6, 182, 212, 0.2)',
+    tagText: '#67E8F9',
+  },
+  {
+    name: 'indigo',
+    border: '#6366F1',
+    accentText: '#818CF8',
+    headerBg: 'linear-gradient(90deg, rgba(99, 102, 241, 0.16) 0%, rgba(99, 102, 241, 0.04) 100%)',
+    cardBorder: 'rgba(99, 102, 241, 0.3)',
+    tagBg: 'rgba(99, 102, 241, 0.2)',
+    tagText: '#A5B4FC',
+  },
+  {
+    name: 'teal',
+    border: '#14B8A6',
+    accentText: '#2DD4BF',
+    headerBg: 'linear-gradient(90deg, rgba(20, 184, 166, 0.16) 0%, rgba(20, 184, 166, 0.04) 100%)',
+    cardBorder: 'rgba(20, 184, 166, 0.3)',
+    tagBg: 'rgba(20, 184, 166, 0.2)',
+    tagText: '#5EEAD4',
+  }
+];
+
+const UNASSIGNED_SHADE = {
+  name: 'gray',
+  border: '#64748B',
+  accentText: '#94A3B8',
+  headerBg: 'linear-gradient(90deg, rgba(100, 116, 139, 0.16) 0%, rgba(100, 116, 139, 0.04) 100%)',
+  cardBorder: 'rgba(100, 116, 139, 0.3)',
+  tagBg: 'rgba(100, 116, 139, 0.2)',
+  tagText: '#CBD5E1',
+};
+
+// Distinct color per lobby slot (for column mappings editor)
 const LOBBY_COLORS = [
   { text: '#C9A84C', bg: 'rgba(201,168,76,0.12)',  border: 'rgba(201,168,76,0.4)'  }, // L1 Gold
   { text: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)'  }, // L2 Blue
@@ -827,7 +913,143 @@ export default function PlayerEntryPage() {
   const [pendingFile, setPendingFile] = useState(null);
   const [multiSheetData, setMultiSheetData] = useState(null);
 
+  // Smart Spreadsheet Preview UI State: Search, Filter, and Team Collapsing
+  const [previewSearch, setPreviewSearch] = useState('');
+  const [previewFilter, setPreviewFilter] = useState('all'); // 'all' | 'unmatched'
+  const [collapsedTeams, setCollapsedTeams] = useState(new Set());
+
   const isSmartImportActive = Boolean((smartImportGrid && smartImportGrid.length > 0) || smartImportRows.length > 0);
+
+  // Group smartImportRows by team with aggregated stats
+  const groupedSmartImport = useMemo(() => {
+    if (!smartImportRows || smartImportRows.length === 0) return [];
+
+    const map = new Map();
+
+    smartImportRows.forEach((row) => {
+      let teamName = '';
+      let slot = null;
+      let clanName = '';
+      let groupId = null;
+
+      if (row.matchedPlayerId) {
+        const reg = playerRegs.find(p => p.playerId === row.matchedPlayerId);
+        if (reg) {
+          teamName = reg.teamName || '';
+          slot = reg.slot || null;
+          clanName = reg.clanName || '';
+          groupId = reg.groupId || null;
+        }
+      }
+
+      if (!teamName && row.parsedTeam) {
+        teamName = row.parsedTeam.trim();
+      }
+      if (!slot && row.parsedSlot) {
+        slot = row.parsedSlot;
+      }
+
+      const isUnassigned = !teamName;
+      const key = isUnassigned ? '__unassigned__' : teamName.toLowerCase().trim();
+      const displayTeamName = isUnassigned ? 'Unmatched / Unassigned Team' : teamName.trim();
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          teamName: displayTeamName,
+          slot,
+          clanName,
+          groupId,
+          isUnassigned,
+          rows: [],
+          totalKills: 0,
+          totalDamage: 0,
+          matchedCount: 0,
+        });
+      }
+
+      const grp = map.get(key);
+      if (!grp.slot && slot) grp.slot = slot;
+      if (!grp.clanName && clanName) grp.clanName = clanName;
+      if (!grp.groupId && groupId) grp.groupId = groupId;
+
+      if (row.matchedPlayerId) {
+        grp.matchedCount++;
+      }
+
+      smartImportSelectedLobbies.forEach(l => {
+        const st = row.stats?.[l];
+        if (st) {
+          if (st.kills !== null && !isNaN(st.kills)) grp.totalKills += Number(st.kills);
+          if (st.damage !== null && !isNaN(st.damage)) grp.totalDamage += Number(st.damage);
+        }
+      });
+
+      grp.rows.push(row);
+    });
+
+    const list = Array.from(map.values());
+    return list.sort((a, b) => {
+      if (a.isUnassigned) return 1;
+      if (b.isUnassigned) return -1;
+      if (a.slot && b.slot && a.slot !== b.slot) return Number(a.slot) - Number(b.slot);
+      return a.teamName.localeCompare(b.teamName);
+    });
+  }, [smartImportRows, playerRegs, smartImportSelectedLobbies]);
+
+  // Overall preview summary statistics
+  const previewStats = useMemo(() => {
+    if (!smartImportRows || smartImportRows.length === 0) {
+      return { totalPlayers: 0, matchedCount: 0, unmatchedCount: 0, totalTeams: 0, totalKills: 0 };
+    }
+    let matched = 0;
+    let kills = 0;
+    smartImportRows.forEach(r => {
+      if (r.matchedPlayerId) matched++;
+      smartImportSelectedLobbies.forEach(l => {
+        const st = r.stats?.[l];
+        if (st && st.kills !== null && !isNaN(st.kills)) kills += Number(st.kills);
+      });
+    });
+    return {
+      totalPlayers: smartImportRows.length,
+      matchedCount: matched,
+      unmatchedCount: smartImportRows.length - matched,
+      totalTeams: groupedSmartImport.filter(g => !g.isUnassigned).length + (groupedSmartImport.some(g => g.isUnassigned) ? 1 : 0),
+      totalKills: kills
+    };
+  }, [smartImportRows, groupedSmartImport, smartImportSelectedLobbies]);
+
+  // Filtered teams for preview search / status filter
+  const filteredGroupedSmartImport = useMemo(() => {
+    let result = groupedSmartImport;
+
+    if (previewFilter === 'unmatched') {
+      result = result
+        .map(grp => ({
+          ...grp,
+          rows: grp.rows.filter(r => !r.matchedPlayerId || r.confidence === 'none')
+        }))
+        .filter(grp => grp.rows.length > 0);
+    }
+
+    if (previewSearch.trim()) {
+      const q = previewSearch.toLowerCase().trim();
+      result = result
+        .map(grp => {
+          const matchTeam = grp.teamName.toLowerCase().includes(q) || (grp.clanName && grp.clanName.toLowerCase().includes(q));
+          if (matchTeam) return grp;
+          const matchingRows = grp.rows.filter(r => 
+            (r.parsedName && r.parsedName.toLowerCase().includes(q)) ||
+            (r.parsedIGN && r.parsedIGN.toLowerCase().includes(q))
+          );
+          return { ...grp, rows: matchingRows };
+        })
+        .filter(grp => grp.rows.length > 0);
+    }
+
+    return result;
+  }, [groupedSmartImport, previewFilter, previewSearch]);
 
   const availableColumns = useMemo(() => {
     if (!smartImportGrid || smartImportGrid.length === 0) return [];
@@ -985,6 +1207,9 @@ export default function PlayerEntryPage() {
     setIsEditingMapping(false);
     setPendingFile(null);
     setMultiSheetData(null);
+    setPreviewSearch('');
+    setPreviewFilter('all');
+    setCollapsedTeams(new Set());
   };
 
   const handleConfirmSmartImport = async () => {
@@ -1536,8 +1761,12 @@ export default function PlayerEntryPage() {
   };
 
   const handleClearPlayerStats = async (mode, teamTarget) => {
-    if (isLocked || !canEdit) {
-      toast.error('You do not have permission to edit or this day is locked');
+    if (!isOwner) {
+      toast.error('Only the owner can clear player stats');
+      return;
+    }
+    if (isLocked) {
+      toast.error('This day is locked');
       return;
     }
 
@@ -2152,7 +2381,7 @@ export default function PlayerEntryPage() {
               <Lock size={11} /> Locked
             </span>
           )}
-          {canEdit && !isLocked && (
+          {isOwner && !isLocked && (
             <button
               className="btn btn-secondary"
               style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.4)' }}
@@ -3328,152 +3557,526 @@ export default function PlayerEntryPage() {
               )}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto', maxHeight: 480, border: '1px solid var(--border-md)', borderRadius: 8, marginBottom: 18 }}>
-              <table className="data-table" style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: 'var(--bg-header)', borderBottom: '1px solid var(--border-md)' }}>
-                    <th style={{ width: 110, textAlign: 'center', padding: '10px 8px' }}>Match Status</th>
-                    <th style={{ textAlign: 'left', padding: '10px 8px' }}>Sheet Row (Name / Team)</th>
-                    <th style={{ textAlign: 'left', padding: '10px 8px' }}>Matched Registered Player</th>
-                    {smartImportSelectedLobbies.map(l => {
-                      const col = getLobbyColor(l);
-                      return (
-                        <th key={l} style={{
-                          textAlign: 'center',
-                          padding: '10px 8px',
-                          width: 140,
-                          background: col.bg,
-                          color: col.text,
-                          borderBottom: `2px solid ${col.border}`,
-                          fontWeight: 700
-                        }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: col.text, display: 'inline-block' }} />
-                            Lobby {l}
-                          </span>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {smartImportRows.map((row) => {
-                    let rowBg = undefined;
-                    if (row.confidence === 'none') {
-                      rowBg = 'rgba(239, 68, 68, 0.04)';
-                    } else if (row.confidence === 'low') {
-                      rowBg = 'rgba(245, 158, 11, 0.04)';
-                    }
+            <div style={{ marginBottom: 18 }}>
+              {/* ── Summary & Filter Toolbar ── */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                padding: '10px 14px',
+                background: 'var(--bg-alt-row)',
+                border: '1px solid var(--border-md)',
+                borderRadius: 8,
+                marginBottom: 14,
+                flexWrap: 'wrap'
+              }}>
+                {/* Left: Aggregated Metrics Pills */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--border)',
+                    padding: '3px 9px',
+                    borderRadius: 6,
+                    fontSize: '0.76rem',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)'
+                  }}>
+                    <Users size={13} style={{ color: 'var(--gold)' }} />
+                    <span>{previewStats.totalTeams} Teams</span>
+                  </span>
+
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--border)',
+                    padding: '3px 9px',
+                    borderRadius: 6,
+                    fontSize: '0.76rem',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)'
+                  }}>
+                    <span>{previewStats.totalPlayers} Players</span>
+                  </span>
+
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    padding: '3px 9px',
+                    borderRadius: 6,
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    color: '#34D399'
+                  }}>
+                    <Check size={13} />
+                    <span>{previewStats.matchedCount} / {previewStats.totalPlayers} Matched ({previewStats.totalPlayers > 0 ? Math.round((previewStats.matchedCount / previewStats.totalPlayers) * 100) : 0}%)</span>
+                  </span>
+
+                  {previewStats.unmatchedCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFilter(prev => prev === 'unmatched' ? 'all' : 'unmatched')}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        background: previewFilter === 'unmatched' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        padding: '3px 9px',
+                        borderRadius: 6,
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        color: '#F87171',
+                        cursor: 'pointer'
+                      }}
+                      title="Click to toggle showing only unmatched rows"
+                    >
+                      <AlertTriangle size={13} />
+                      <span>{previewStats.unmatchedCount} Unmatched {previewFilter === 'unmatched' ? '(Filtered)' : '(Show Only)'}</span>
+                    </button>
+                  )}
+
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    background: 'rgba(245, 158, 11, 0.12)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    padding: '3px 9px',
+                    borderRadius: 6,
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    color: '#FBBF24'
+                  }}>
+                    <Flame size={13} />
+                    <span>{previewStats.totalKills} Kills Detected</span>
+                  </span>
+                </div>
+
+                {/* Right: Search & Expand Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      placeholder="Filter team, player, IGN..."
+                      value={previewSearch}
+                      onChange={(e) => setPreviewSearch(e.target.value)}
+                      className="form-input"
+                      style={{
+                        paddingLeft: 28,
+                        paddingRight: 8,
+                        paddingTop: 4,
+                        paddingBottom: 4,
+                        fontSize: '0.75rem',
+                        width: 190,
+                        borderRadius: 6,
+                        background: 'var(--bg-card)'
+                      }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => {
+                      if (collapsedTeams.size === 0) {
+                        const allKeys = new Set(groupedSmartImport.map(g => g.key));
+                        setCollapsedTeams(allKeys);
+                      } else {
+                        setCollapsedTeams(new Set());
+                      }
+                    }}
+                    style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}
+                  >
+                    {collapsedTeams.size === 0 ? 'Collapse All' : 'Expand All'}
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Grouped and Sectioned Team Preview Cards ── */}
+              {filteredGroupedSmartImport.length === 0 ? (
+                <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--bg-alt-row)', borderRadius: 8, border: '1px dashed var(--border)' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>No matching rows found</div>
+                  <p style={{ fontSize: '0.75rem', margin: '0 0 10px 0' }}>Try clearing the search query or changing the filter.</p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => { setPreviewSearch(''); setPreviewFilter('all'); }}
+                  >
+                    Reset Filter
+                  </button>
+                </div>
+              ) : (
+                <div style={{ maxHeight: 540, overflowY: 'auto', paddingRight: 4 }}>
+                  {filteredGroupedSmartImport.map((grp, teamIdx) => {
+                    const shade = grp.isUnassigned ? UNASSIGNED_SHADE : TEAM_SHADES[teamIdx % TEAM_SHADES.length];
+                    const isCollapsed = collapsedTeams.has(grp.key);
+                    const groupObj = groups.find(g => g.id === grp.groupId);
 
                     return (
-                      <tr key={row.id} style={{
-                        background: rowBg,
-                        borderBottom: '1px solid var(--border-md)'
-                      }}>
-                        <td style={{ textAlign: 'center', padding: '8px' }}>
-                          {row.confidence === 'high' && (
-                            <span style={{ color: '#10B981', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <Check size={14} /> High
+                      <div
+                        key={grp.key}
+                        style={{
+                          marginBottom: 12,
+                          borderRadius: 8,
+                          border: `1px solid ${shade.cardBorder}`,
+                          borderLeft: `4px solid ${shade.border}`,
+                          background: 'var(--bg-card)',
+                          overflow: 'hidden',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                        }}
+                      >
+                        {/* Section Header Banner */}
+                        <div
+                          onClick={() => {
+                            setCollapsedTeams(prev => {
+                              const next = new Set(prev);
+                              if (next.has(grp.key)) next.delete(grp.key);
+                              else next.add(grp.key);
+                              return next;
+                            });
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '9px 14px',
+                            background: shade.headerBg,
+                            borderBottom: isCollapsed ? 'none' : `1px solid ${shade.cardBorder}`,
+                            cursor: 'pointer',
+                            userSelect: 'none',
+                            flexWrap: 'wrap',
+                            gap: 8
+                          }}
+                        >
+                          {/* Left: Slot + Team Name + Clan + Group Tag */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ color: shade.accentText, display: 'inline-flex', alignItems: 'center' }}>
+                              {isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
                             </span>
-                          )}
-                          {row.confidence === 'medium' && (
-                            <span style={{ color: 'var(--gold)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <Check size={14} /> Med
-                            </span>
-                          )}
-                          {row.confidence === 'low' && (
-                            <span style={{ color: '#F59E0B', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <AlertTriangle size={14} /> Low
-                            </span>
-                          )}
-                          {row.confidence === 'none' && (
-                            <span style={{ color: '#EF4444', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <X size={14} /> None
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '8px' }}>
-                          <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{row.parsedName}</div>
-                          {row.parsedIGN && row.parsedIGN !== row.parsedName && (
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 1 }}>
-                              IGN: {row.parsedIGN}
-                            </div>
-                          )}
-                          {row.parsedTeam && (
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                              {row.parsedTeam} {row.parsedSlot ? `(Slot ${row.parsedSlot})` : ''}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: '8px' }}>
-                          <select
-                            className="form-input"
-                            style={{
-                              fontSize: '0.78rem',
-                              padding: '4px 8px',
-                              width: '100%',
-                              maxWidth: 320,
-                              borderColor: row.confidence === 'none' ? '#EF4444' : undefined,
-                              background: 'var(--bg-card)'
-                            }}
-                            value={row.matchedPlayerId || ''}
-                            onChange={(e) => handleUpdateMatch(row.id, e.target.value)}
-                          >
-                            <option value="">[ Skip Row / Do Not Import ]</option>
-                            {playerRegs.map(p => {
-                              const globalPlayer = players.find(gp => gp.id === p.playerId);
-                              const dispName = globalPlayer?.professionalName || p.professionalName || p.ign;
-                              return (
-                                <option key={p.playerId} value={p.playerId}>
-                                  Slot {p.slot}: {dispName} ({p.ign}) - {p.teamName || 'No Team'}
-                                </option>
-                              );
-                            })}
-                          </select>
-                        </td>
-                        {smartImportSelectedLobbies.map(l => {
-                          const col = getLobbyColor(l);
-                          const stat = row.stats[l] || {};
-                          const hasKills = stat.kills !== null;
-                          const hasDmg = stat.damage !== null;
-                          const hasAcc = stat.accuracy !== null;
-                          
-                          return (
-                            <td key={l} style={{
-                              textAlign: 'center',
-                              fontFamily: 'var(--font-mono)',
-                              fontSize: '0.75rem',
-                              padding: '8px',
-                              background: col.bg.replace('0.12', '0.04')
+                            {grp.slot && (
+                              <span style={{
+                                background: shade.tagBg,
+                                color: shade.tagText,
+                                fontWeight: 800,
+                                fontSize: '0.68rem',
+                                padding: '2px 7px',
+                                borderRadius: 4,
+                                letterSpacing: '0.04em'
+                              }}>
+                                SLOT {grp.slot}
+                              </span>
+                            )}
+                            <span style={{
+                              fontWeight: 800,
+                              fontSize: '0.88rem',
+                              color: grp.isUnassigned ? '#CBD5E1' : shade.accentText,
+                              letterSpacing: '0.02em'
                             }}>
-                              {hasKills || hasDmg || hasAcc ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
-                                  <span style={{
-                                    fontWeight: 700,
-                                    fontSize: '0.82rem',
-                                    color: col.text,
-                                    background: col.bg,
-                                    border: `1px solid ${col.border}`,
-                                    padding: '2px 8px',
-                                    borderRadius: 5
-                                  }}>
-                                    {hasKills ? `${stat.kills} K` : '—'}
-                                  </span>
-                                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                                    {hasDmg ? `${Math.round(stat.damage)} D` : '—'} {hasAcc ? `· ${stat.accuracy}%` : ''}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)' }}>—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                              {grp.teamName.toUpperCase()}
+                            </span>
+                            {grp.clanName && (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                [{grp.clanName}]
+                              </span>
+                            )}
+                            {groupObj && (
+                              <span style={{
+                                background: 'rgba(201, 168, 76, 0.15)',
+                                color: 'var(--gold)',
+                                border: '1px solid rgba(201, 168, 76, 0.3)',
+                                fontSize: '0.66rem',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: 4
+                              }}>
+                                {groupObj.groupName}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Right: Team stats & Match status badge */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              color: '#FBBF24',
+                              background: 'rgba(245, 158, 11, 0.1)',
+                              border: '1px solid rgba(245, 158, 11, 0.25)',
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}>
+                              <Flame size={11} /> {grp.totalKills} Kills
+                            </span>
+                            <span style={{
+                              fontSize: '0.72rem',
+                              color: 'var(--text-secondary)',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              padding: '2px 8px',
+                              borderRadius: 4
+                            }}>
+                              {grp.rows.length} {grp.rows.length === 1 ? 'Player' : 'Players'}
+                            </span>
+                            {grp.matchedCount === grp.rows.length ? (
+                              <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                color: '#34D399',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                padding: '2px 7px',
+                                borderRadius: 4,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}>
+                                <Check size={11} /> {grp.matchedCount}/{grp.rows.length} Matched
+                              </span>
+                            ) : (
+                              <span style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                color: '#F87171',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                padding: '2px 7px',
+                                borderRadius: 4,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}>
+                                <AlertTriangle size={11} /> {grp.rows.length - grp.matchedCount} Unmatched
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Team Players Table Content */}
+                        {!isCollapsed && (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table className="data-table" style={{ width: '100%', fontSize: '0.78rem', borderCollapse: 'collapse', margin: 0 }}>
+                              <thead>
+                                <tr style={{ background: 'rgba(0, 0, 0, 0.2)', borderBottom: '1px solid var(--border-md)' }}>
+                                  <th style={{ width: 105, textAlign: 'center', padding: '7px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Match Status
+                                  </th>
+                                  <th style={{ textAlign: 'left', padding: '7px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Sheet Player (Name / IGN)
+                                  </th>
+                                  <th style={{ textAlign: 'left', padding: '7px 8px', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                    Matched Registered Player
+                                  </th>
+                                  {smartImportSelectedLobbies.map(l => (
+                                    <th key={l} style={{
+                                      textAlign: 'center',
+                                      padding: '7px 8px',
+                                      width: 135,
+                                      fontSize: '0.7rem',
+                                      color: 'var(--text-secondary)',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.04em',
+                                      background: 'rgba(255, 255, 255, 0.02)',
+                                      borderLeft: '1px solid var(--border-md)'
+                                    }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                        <span style={{
+                                          fontSize: '0.64rem',
+                                          fontWeight: 800,
+                                          padding: '1px 5px',
+                                          borderRadius: 3,
+                                          background: 'rgba(255, 255, 255, 0.08)',
+                                          color: 'var(--text-primary)'
+                                        }}>
+                                          L{l}
+                                        </span>
+                                        Lobby {l}
+                                      </span>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {grp.rows.map((row) => {
+                                  const isMatched = Boolean(row.matchedPlayerId);
+                                  let rowBg = 'transparent';
+                                  if (!isMatched) {
+                                    rowBg = 'rgba(239, 68, 68, 0.05)';
+                                  } else if (row.confidence === 'low') {
+                                    rowBg = 'rgba(245, 158, 11, 0.03)';
+                                  }
+
+                                  return (
+                                    <tr key={row.id} style={{
+                                      background: rowBg,
+                                      borderBottom: '1px solid var(--border-md)'
+                                    }}>
+                                      {/* Match Status */}
+                                      <td style={{ textAlign: 'center', padding: '7px 8px' }}>
+                                        {row.confidence === 'high' && (
+                                          <span style={{
+                                            color: '#10B981',
+                                            background: 'rgba(16, 185, 129, 0.12)',
+                                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            fontWeight: 700,
+                                            fontSize: '0.7rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4
+                                          }}>
+                                            <Check size={11} /> High
+                                          </span>
+                                        )}
+                                        {row.confidence === 'medium' && (
+                                          <span style={{
+                                            color: 'var(--gold)',
+                                            background: 'rgba(201, 168, 76, 0.12)',
+                                            border: '1px solid rgba(201, 168, 76, 0.25)',
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            fontWeight: 700,
+                                            fontSize: '0.7rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4
+                                          }}>
+                                            <Check size={11} /> Med
+                                          </span>
+                                        )}
+                                        {row.confidence === 'low' && (
+                                          <span style={{
+                                            color: '#F59E0B',
+                                            background: 'rgba(245, 158, 11, 0.12)',
+                                            border: '1px solid rgba(245, 158, 11, 0.25)',
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            fontWeight: 700,
+                                            fontSize: '0.7rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4
+                                          }}>
+                                            <AlertTriangle size={11} /> Low
+                                          </span>
+                                        )}
+                                        {(!row.confidence || row.confidence === 'none') && (
+                                          <span style={{
+                                            color: '#EF4444',
+                                            background: 'rgba(239, 68, 68, 0.12)',
+                                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            fontWeight: 700,
+                                            fontSize: '0.7rem',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4
+                                          }}>
+                                            <X size={11} /> Unmatched
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* Sheet Row (Name / IGN / Team) */}
+                                      <td style={{ padding: '7px 8px' }}>
+                                        <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--text-primary)' }}>
+                                          {row.parsedName || '—'}
+                                        </div>
+                                        {row.parsedIGN && row.parsedIGN !== row.parsedName && (
+                                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                                            IGN: <span style={{ color: 'var(--text-secondary)' }}>{row.parsedIGN}</span>
+                                          </div>
+                                        )}
+                                        {row.parsedTeam && (
+                                          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 1 }}>
+                                            Sheet: {row.parsedTeam} {row.parsedSlot ? `(Slot ${row.parsedSlot})` : ''}
+                                          </div>
+                                        )}
+                                      </td>
+
+                                      {/* Matched Registered Player Dropdown */}
+                                      <td style={{ padding: '7px 8px' }}>
+                                        <select
+                                          className="form-input"
+                                          style={{
+                                            fontSize: '0.76rem',
+                                            padding: '4px 8px',
+                                            width: '100%',
+                                            maxWidth: 320,
+                                            borderColor: !isMatched ? '#EF4444' : 'var(--border)',
+                                            background: !isMatched ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-card)',
+                                            borderRadius: 5
+                                          }}
+                                          value={row.matchedPlayerId || ''}
+                                          onChange={(e) => handleUpdateMatch(row.id, e.target.value)}
+                                        >
+                                          <option value="">[ Skip Row / Do Not Import ]</option>
+                                          {playerRegs.map(p => {
+                                            const globalPlayer = players.find(gp => gp.id === p.playerId);
+                                            const dispName = globalPlayer?.professionalName || p.professionalName || p.ign;
+                                            return (
+                                              <option key={p.playerId} value={p.playerId}>
+                                                Slot {p.slot}: {dispName} ({p.ign}) - {p.teamName || 'No Team'}
+                                              </option>
+                                            );
+                                          })}
+                                        </select>
+                                      </td>
+
+                                      {/* Lobby Columns: Uniform, sleek styling */}
+                                      {smartImportSelectedLobbies.map(l => {
+                                        const stat = row.stats?.[l] || {};
+                                        const hasKills = stat.kills !== null && stat.kills !== undefined;
+                                        const hasDmg = stat.damage !== null && stat.damage !== undefined;
+                                        const hasAcc = stat.accuracy !== null && stat.accuracy !== undefined;
+
+                                        return (
+                                          <td key={l} style={{
+                                            textAlign: 'center',
+                                            fontFamily: 'var(--font-mono)',
+                                            fontSize: '0.74rem',
+                                            padding: '7px 8px',
+                                            borderLeft: '1px solid var(--border-md)'
+                                          }}>
+                                            {hasKills || hasDmg || hasAcc ? (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+                                                <span style={{
+                                                  fontWeight: 700,
+                                                  fontSize: '0.82rem',
+                                                  color: '#F8FAFC',
+                                                  background: hasKills && Number(stat.kills) > 0 ? 'rgba(255, 255, 255, 0.09)' : 'rgba(255, 255, 255, 0.04)',
+                                                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                                                  padding: '2px 8px',
+                                                  borderRadius: 5
+                                                }}>
+                                                  {hasKills ? `${stat.kills} K` : '—'}
+                                                </span>
+                                                {(hasDmg || hasAcc) && (
+                                                  <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                                                    {hasDmg ? `${Math.round(stat.damage)} D` : ''} {hasAcc ? `· ${stat.accuracy}%` : ''}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -3550,7 +4153,7 @@ export default function PlayerEntryPage() {
                     {teamName.toUpperCase()}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {canEdit && !isLocked && (
+                    {isOwner && !isLocked && (
                       <button
                         type="button"
                         onClick={() => {
@@ -3705,7 +4308,7 @@ export default function PlayerEntryPage() {
                     {teamName.toUpperCase()}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {canEdit && !isLocked && (
+                    {isOwner && !isLocked && (
                       <button
                         type="button"
                         onClick={() => {
@@ -3861,7 +4464,7 @@ export default function PlayerEntryPage() {
       )}
 
       {/* Clear Player Stats Modal */}
-      {clearModalOpen && (
+      {clearModalOpen && isOwner && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
           background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
