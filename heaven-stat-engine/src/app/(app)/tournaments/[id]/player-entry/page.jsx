@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useTournament } from '../layout';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getPlayerMatchResults, getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult, updateLobbyReviveType,
+  getPlayerMatchResults, getPlayerMatchResultsByDayLobby, savePlayerMatchResult, updatePlayerMatchResult, deletePlayerMatchResult, clearPlayerMatchResults, updateLobbyReviveType,
 } from '@/lib/firestore/matchData';
 import { getPlayerRegistrations, getTeamRegistrations, updateTournament } from '@/lib/firestore/tournaments';
 import { getGroups, updateGroup } from '@/lib/firestore/groups';
@@ -1077,6 +1077,21 @@ export default function PlayerEntryPage() {
   const [ocrConcurrency, setOcrConcurrency] = useState(4);
   const ocrFileRef = useRef(null);
 
+  // Mobile responsiveness & rigid single-lobby OCR target (mobile only)
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(typeof window !== 'undefined' && window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  const [mobileOcrLobby, setMobileOcrLobby] = useState(1);
+
+  // Clear states
+  const [clearModalOpen, setClearModalOpen] = useState(false);
+  const [selectedTeamToClear, setSelectedTeamToClear] = useState('');
+  const [clearing, setClearing] = useState(false);
+
   // Active revive configuration from tournament / group (configured in Team Entry / Player Entry)
   const activeReviveConfig = getActiveReviveConfig(tournament, selectedGroup);
 
@@ -1479,13 +1494,14 @@ export default function PlayerEntryPage() {
     const validFiles = files.filter(f => f.size <= 20 * 1024 * 1024);
     if (validFiles.length === 0) return;
 
+    const targetLobby = isMobile ? mobileOcrLobby : null;
     const newItems = validFiles.map((file, idx) => {
       const uniqueId = `${file.name}-${Date.now()}-${idx}`;
       return {
         id: uniqueId,
         file,
         name: file.name,
-        lobby: idx + 1,
+        lobby: isMobile ? targetLobby : (idx + 1),
         notes: '',
         status: 'pending',
         progress: 0,
@@ -1505,6 +1521,91 @@ export default function PlayerEntryPage() {
 
     setIsOcrMode(true);
     setPasteText(''); // Clear paste input
+  };
+
+  const handleMobileLobbyChange = (newLobby) => {
+    const lobbyNum = parseInt(newLobby) || 1;
+    setMobileOcrLobby(lobbyNum);
+    if (isMobile) {
+      // Rigid mobile adjustment: reassign all queue items to the selected single lobby
+      setOcrQueue(prev => prev.map(item => ({ ...item, lobby: lobbyNum })));
+    }
+  };
+
+  const handleClearPlayerStats = async (mode, teamTarget) => {
+    if (isLocked || !canEdit) {
+      toast.error('You do not have permission to edit or this day is locked');
+      return;
+    }
+
+    const isEntire = mode === 'entire';
+    const targetTeam = teamTarget || selectedTeamToClear;
+
+    if (!isEntire && !targetTeam) {
+      toast.error('Please select a team to clear');
+      return;
+    }
+
+    setClearing(true);
+    try {
+      if (isEntire) {
+        await clearPlayerMatchResults(tournament.id, {
+          day,
+          groupId: isQualifier ? selectedGroupId : null,
+        });
+
+        // Clear all form data in memory
+        setFormData(prev => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach(pid => {
+            const lobbies = {};
+            for (let l = 1; l <= maxLobbies; l++) {
+              lobbies[l] = { kills: '', damage: '', accuracy: '', existingId: null };
+            }
+            updated[pid] = { ...updated[pid], lobbies };
+          });
+          return updated;
+        });
+
+        toast.success(`Cleared all player stats for Day ${day}`);
+      } else {
+        const teamPlayers = playersByTeam[targetTeam] || [];
+        const playerIds = teamPlayers.map(p => p.playerId);
+
+        if (playerIds.length > 0) {
+          await clearPlayerMatchResults(tournament.id, {
+            day,
+            playerIds,
+            groupId: isQualifier ? selectedGroupId : null,
+          });
+
+          // Clear form data for this team's players in memory
+          setFormData(prev => {
+            const updated = { ...prev };
+            playerIds.forEach(pid => {
+              if (updated[pid]) {
+                const lobbies = {};
+                for (let l = 1; l <= maxLobbies; l++) {
+                  lobbies[l] = { kills: '', damage: '', accuracy: '', existingId: null };
+                }
+                updated[pid] = { ...updated[pid], lobbies };
+              }
+            });
+            return updated;
+          });
+        }
+
+        toast.success(`Cleared player stats for "${targetTeam}" on Day ${day}`);
+      }
+
+      setClearModalOpen(false);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to clear player stats:', err);
+      toast.error('Failed to clear stats: ' + err.message);
+    } finally {
+      setClearing(false);
+    }
   };
 
   const handleOcrClear = () => {
@@ -2051,6 +2152,16 @@ export default function PlayerEntryPage() {
           {canEdit && !isLocked && (
             <button
               className="btn btn-secondary"
+              style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.4)' }}
+              onClick={() => setClearModalOpen(true)}
+              title="Clear player stats for a team or entire day"
+            >
+              <Trash2 size={14} style={{ marginRight: 6 }} /> Clear Stats
+            </button>
+          )}
+          {canEdit && !isLocked && (
+            <button
+              className="btn btn-secondary"
               onClick={() => setShowPaste(v => !v)}
               title="Paste player stats from spreadsheet"
             >
@@ -2207,7 +2318,9 @@ export default function PlayerEntryPage() {
             >
               <Camera size={24} style={{ color: 'var(--text-muted)', marginBottom: 6 }} />
               <span style={{ fontSize: '0.75rem', color: 'var(--gold)', fontWeight: 600 }}>Scan Images (OCR)</span>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 4 }}>Upload vision screenshots</span>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                {isMobile ? `Scan all into Lobby ${mobileOcrLobby}` : 'Upload vision screenshots'}
+              </span>
               <input
                 ref={ocrFileRef}
                 type="file"
@@ -2218,6 +2331,43 @@ export default function PlayerEntryPage() {
               />
             </div>
           </div>
+
+          {/* Rigid Mobile Single Lobby Selector (Mobile Only) */}
+          {isMobile && (
+            <div style={{
+              marginTop: 10,
+              marginBottom: 10,
+              background: 'rgba(201,168,76,0.06)',
+              border: '1px solid var(--border-gold)',
+              borderRadius: 8,
+              padding: '10px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)' }}>
+                  📱 Target Lobby (Mobile Scan)
+                </span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  All attached images map to this lobby
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {Array.from({ length: lobbiesPerDay }, (_, i) => i + 1).map(l => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => handleMobileLobbyChange(l)}
+                    className={`btn btn-sm ${mobileOcrLobby === l ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ minWidth: 54, padding: '4px 8px', fontSize: '0.75rem', fontWeight: mobileOcrLobby === l ? 700 : 500 }}
+                  >
+                    Lobby {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Live Parser Preview */}
           {!isOcrMode && parsedPreview.length > 0 && (
@@ -2279,21 +2429,36 @@ export default function PlayerEntryPage() {
                         <div style={{ fontSize: '0.72rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.name}>
                           {item.name}
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Lobby #:</span>
-                          <input
-                            type="number"
-                            className="editable-input"
-                            style={{ width: 45, padding: '1px 3px', fontSize: '0.68rem' }}
-                            value={item.lobby}
-                            onClick={e => e.stopPropagation()}
-                            onChange={e => {
-                              const val = parseInt(e.target.value) || 1;
-                              setOcrQueue(old => old.map(qi => qi.id === item.id ? { ...qi, lobby: val } : qi));
-                            }}
-                            disabled={item.status === 'scanning'}
-                          />
-                        </div>
+                        {isMobile ? (
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            color: getLobbyColor(item.lobby || mobileOcrLobby).text,
+                            background: getLobbyColor(item.lobby || mobileOcrLobby).bg,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            display: 'inline-block',
+                            marginTop: 4
+                          }}>
+                            Lobby {item.lobby || mobileOcrLobby}
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Lobby #:</span>
+                            <input
+                              type="number"
+                              className="editable-input"
+                              style={{ width: 45, padding: '1px 3px', fontSize: '0.68rem' }}
+                              value={item.lobby}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => {
+                                const val = parseInt(e.target.value) || 1;
+                                setOcrQueue(old => old.map(qi => qi.id === item.id ? { ...qi, lobby: val } : qi));
+                              }}
+                              disabled={item.status === 'scanning'}
+                            />
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={(e) => {
@@ -3381,9 +3546,37 @@ export default function PlayerEntryPage() {
                   <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', letterSpacing: '0.03em' }}>
                     {teamName.toUpperCase()}
                   </span>
-                  <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem' }}>
-                    {teamPlayers.length} PL
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {canEdit && !isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to clear player stats for "${teamName}" on Day ${day}?`)) {
+                            handleClearPlayerStats('team', teamName);
+                          }
+                        }}
+                        style={{
+                          background: 'none',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          borderRadius: 4,
+                          padding: '2px 6px',
+                          cursor: 'pointer',
+                          color: 'var(--danger)',
+                          fontSize: '0.65rem',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}
+                        title={`Clear ${teamName} stats for Day ${day}`}
+                      >
+                        <Trash2 size={10} /> Clear
+                      </button>
+                    )}
+                    <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem' }}>
+                      {teamPlayers.length} PL
+                    </span>
+                  </div>
                 </div>
 
                 {/* Table Header */}
@@ -3508,9 +3701,37 @@ export default function PlayerEntryPage() {
                   <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--gold)', letterSpacing: '0.03em' }}>
                     {teamName.toUpperCase()}
                   </span>
-                  <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem' }}>
-                    {teamPlayers.length} PL
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {canEdit && !isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to clear player stats for "${teamName}" on Day ${day}?`)) {
+                            handleClearPlayerStats('team', teamName);
+                          }
+                        }}
+                        style={{
+                          background: 'none',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          borderRadius: 4,
+                          padding: '2px 6px',
+                          cursor: 'pointer',
+                          color: 'var(--danger)',
+                          fontSize: '0.65rem',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}
+                        title={`Clear ${teamName} stats for Day ${day}`}
+                      >
+                        <Trash2 size={10} /> Clear
+                      </button>
+                    )}
+                    <span className="data-table-count" style={{ padding: '2px 6px', fontSize: '0.65rem' }}>
+                      {teamPlayers.length} PL
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -3633,6 +3854,136 @@ export default function PlayerEntryPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Clear Player Stats Modal */}
+      {clearModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-gold)',
+            borderRadius: 14, padding: '24px', width: '100%', maxWidth: 480,
+            boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Trash2 size={18} style={{ color: 'var(--danger)' }} />
+                </div>
+                <div>
+                  <h3 style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', margin: 0 }}>
+                    Clear Player Stats
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Tournament Day {day} {selectedGroup ? `(${selectedGroup.groupName})` : ''}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setClearModalOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                disabled={clearing}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 20 }}>
+              Choose whether you want to clear player stats for a single team or wipe all player entries for the entire day.
+            </p>
+
+            {/* Option 1: Clear Particular Team */}
+            <div style={{
+              background: 'var(--bg-alt-row)',
+              border: '1px solid var(--border-md)',
+              borderRadius: 10,
+              padding: '14px',
+              marginBottom: 14
+            }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: 4 }}>
+                Option 1: Clear a Particular Team
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+                Reset kills, damage, and accuracy for players in the selected team only.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <select
+                  className="form-select"
+                  style={{ flex: 1, minWidth: 160, fontSize: '0.82rem', padding: '6px 10px' }}
+                  value={selectedTeamToClear}
+                  onChange={(e) => setSelectedTeamToClear(e.target.value)}
+                  disabled={clearing}
+                >
+                  <option value="">-- Select Team --</option>
+                  {teams.map(t => (
+                    <option key={t} value={t}>{t} ({playersByTeam[t]?.length || 0} players)</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.4)', fontWeight: 600 }}
+                  onClick={() => {
+                    if (!selectedTeamToClear) {
+                      toast.error('Please select a team to clear');
+                      return;
+                    }
+                    if (window.confirm(`Are you sure you want to clear player stats for "${selectedTeamToClear}" on Day ${day}?`)) {
+                      handleClearPlayerStats('team');
+                    }
+                  }}
+                  disabled={clearing || !selectedTeamToClear}
+                >
+                  {clearing ? 'Clearing...' : 'Clear Team'}
+                </button>
+              </div>
+            </div>
+
+            {/* Option 2: Clear Entire Day */}
+            <div style={{
+              background: 'rgba(239,68,68,0.05)',
+              border: '1px solid rgba(239,68,68,0.25)',
+              borderRadius: 10,
+              padding: '14px',
+              marginBottom: 20
+            }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--danger)', marginBottom: 4 }}>
+                Option 2: Clear Entire Day {day}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+                Permanently delete all player stats (kills, damage, accuracy) across all lobbies for Day {day}.
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ background: 'var(--danger)', borderColor: 'var(--danger)', width: '100%', justifyContent: 'center' }}
+                onClick={() => {
+                  if (window.confirm(`Warning: This will permanently delete ALL player stats for ALL teams on Day ${day}. Proceed?`)) {
+                    handleClearPlayerStats('entire');
+                  }
+                }}
+                disabled={clearing}
+              >
+                {clearing ? 'Clearing Day...' : `Clear All Players for Day ${day}`}
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setClearModalOpen(false)}
+                disabled={clearing}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

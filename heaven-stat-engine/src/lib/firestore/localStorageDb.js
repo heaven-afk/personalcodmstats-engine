@@ -581,6 +581,17 @@ export function localDeleteTeamMatchResult(tId, resId) {
   setStorageItem(`heaven_results_teams_${tId}`, list);
 }
 
+export function localDeleteTeamMatchResultsFiltered(tId, { day, lobby, groupId } = {}) {
+  let list = localGetTeamMatchResults(tId);
+  list = list.filter(r => {
+    if (day !== undefined && Number(r.day) !== Number(day)) return true;
+    if (lobby !== undefined && Number(r.lobby) !== Number(lobby)) return true;
+    if (groupId && r.groupId !== groupId) return true;
+    return false;
+  });
+  setStorageItem(`heaven_results_teams_${tId}`, list);
+}
+
 // Player Match Results
 export function localGetPlayerMatchResults(tId) {
   return getStorageItem(`heaven_results_players_${tId}`);
@@ -666,6 +677,18 @@ export function localDeleteBonusPoint(tId, bonusId) {
 export function localDeletePlayerMatchResult(tId, resId) {
   let list = localGetPlayerMatchResults(tId);
   list = list.filter(r => r.id !== resId);
+  setStorageItem(`heaven_results_players_${tId}`, list);
+}
+
+export function localDeletePlayerMatchResultsFiltered(tId, { day, playerIds, groupId } = {}) {
+  let list = localGetPlayerMatchResults(tId);
+  const pIdSet = playerIds && Array.isArray(playerIds) ? new Set(playerIds) : null;
+  list = list.filter(r => {
+    if (day !== undefined && Number(r.day) !== Number(day)) return true;
+    if (groupId && r.groupId !== groupId) return true;
+    if (pIdSet && !pIdSet.has(r.playerId)) return true;
+    return false;
+  });
   setStorageItem(`heaven_results_players_${tId}`, list);
 }
 

@@ -67,6 +67,32 @@ export async function deleteTeamMatchResult(tournamentId, resultId) {
   await deleteDoc(doc(db, 'tournaments', tournamentId, 'teamMatchResults', resultId));
 }
 
+export async function clearTeamMatchResults(tournamentId, { day, lobby, groupId } = {}) {
+  if (!isFirebaseConfigured) {
+    return localDb.localDeleteTeamMatchResultsFiltered(tournamentId, { day, lobby, groupId });
+  }
+  try {
+    localDb.localDeleteTeamMatchResultsFiltered(tournamentId, { day, lobby, groupId });
+  } catch {}
+
+  const constraints = [];
+  if (day !== undefined) constraints.push(where('day', '==', Number(day)));
+  if (lobby !== undefined) constraints.push(where('lobby', '==', Number(lobby)));
+  if (groupId) constraints.push(where('groupId', '==', groupId));
+
+  const snap = await getDocs(
+    query(collection(db, 'tournaments', tournamentId, 'teamMatchResults'), ...constraints)
+  );
+
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return docs.length;
+}
+
 export async function getTeamMatchResultsByGroup(tournamentId, groupId) {
   if (!isFirebaseConfigured) {
     const list = await getTeamMatchResults(tournamentId);
@@ -199,6 +225,35 @@ export async function deletePlayerMatchResult(tournamentId, resultId) {
     return localDb.localDeletePlayerMatchResult(tournamentId, resultId);
   }
   await deleteDoc(doc(db, 'tournaments', tournamentId, 'playerMatchResults', resultId));
+}
+
+export async function clearPlayerMatchResults(tournamentId, { day, playerIds, groupId } = {}) {
+  if (!isFirebaseConfigured) {
+    return localDb.localDeletePlayerMatchResultsFiltered(tournamentId, { day, playerIds, groupId });
+  }
+  try {
+    localDb.localDeletePlayerMatchResultsFiltered(tournamentId, { day, playerIds, groupId });
+  } catch {}
+
+  const constraints = [];
+  if (day !== undefined) constraints.push(where('day', '==', Number(day)));
+  if (groupId) constraints.push(where('groupId', '==', groupId));
+
+  const snap = await getDocs(
+    query(collection(db, 'tournaments', tournamentId, 'playerMatchResults'), ...constraints)
+  );
+
+  const pIdSet = playerIds && Array.isArray(playerIds) ? new Set(playerIds) : null;
+  const docsToDelete = pIdSet 
+    ? snap.docs.filter(d => pIdSet.has(d.data().playerId))
+    : snap.docs;
+
+  for (let i = 0; i < docsToDelete.length; i += 400) {
+    const batch = writeBatch(db);
+    docsToDelete.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return docsToDelete.length;
 }
 
 // ─── Bonus Points ─────────────────────────────────────────────────────────────
