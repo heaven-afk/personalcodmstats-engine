@@ -1,0 +1,108 @@
+{
+  "coverage": {
+    "tournamentsCount": 3,
+    "tournaments": [],
+    "totalPlayerMatchdayRecords": 1410,
+    "totalUniquePlayers": 209,
+    "totalUniqueTeams": 33,
+    "totalMatchdays": 17,
+    "tournamentBreakdown": {
+      "FRIENDS OR FOES": {
+        "tournamentId": "fzfBOCu36E55QFfoBxkW",
+        "stage": "Standard",
+        "matchdays": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "lobbiesPerDay": {
+          "Day_1": 3,
+          "Day_2": 3,
+          "Day_3": 3,
+          "Day_4": 3,
+          "Day_5": 3,
+          "Day_6": 3
+        },
+        "playerMatchdayRecords": 517,
+        "uniquePlayers": 118,
+        "uniqueTeams": 21
+      },
+      "ELITE ESPORT": {
+        "tournamentId": "xLGEeoQ0RBBoKnNflAw3",
+        "stage": "Standard",
+        "matchdays": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "lobbiesPerDay": {
+          "Day_1": 3,
+          "Day_2": 3,
+          "Day_3": 3,
+          "Day_4": 3,
+          "Day_5": 3
+        },
+        "playerMatchdayRecords": 409,
+        "uniquePlayers": 120,
+        "uniqueTeams": 23
+      },
+      "MAJOR GAMING LEAGUE TIER 1": {
+        "tournamentId": "cfyGuA5dboYeyGp4XPYC",
+        "stage": "Tier 1",
+        "matchdays": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "lobbiesPerDay": {
+          "Day_1": 3,
+          "Day_2": 3,
+          "Day_3": 3,
+          "Day_4": 3,
+          "Day_5": 3,
+          "Day_6": 3
+        },
+        "playerMatchdayRecords": 484,
+        "uniquePlayers": 111,
+        "uniqueTeams": 20
+      }
+    }
+  },
+  "anomaliesSummary": {
+    "totalAnomalies": 3,
+    "anomalies": [
+      {
+        "type": "MISSING_TEAM_AVERAGE_PLACEMENT",
+        "tournament": "FRIENDS OR FOES",
+        "matchday": 6,
+        "player": "APOLLO",
+        "team": "CIAO GUARDIANS",
+        "details": "Team placements missing or unrecorded for this matchday"
+      },
+      {
+        "type": "MISSING_TEAM_AVERAGE_PLACEMENT",
+        "tournament": "FRIENDS OR FOES",
+        "matchday": 6,
+        "player": "VENOM",
+        "team": "CIAO GUARDIANS",
+        "details": "Team placements missing or unrecorded for this matchday"
+      },
+      {
+        "type": "MISSING_TEAM_AVERAGE_PLACEMENT",
+        "tournament": "ELITE ESPORT",
+        "matchday": 5,
+        "player": "PAXTON",
+        "team": "Wicked Esports",
+        "details": "Team placements missing or unrecorded for this matchday"
+      }
+    ]
+  }
+}

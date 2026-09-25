@@ -687,7 +687,7 @@ export default function TournamentOverviewPage() {
 
                         return (
                           <div
-                            key={uid}
+                            key={uidStr}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
@@ -702,7 +702,7 @@ export default function TournamentOverviewPage() {
                               <UserAvatar
                                 src={matchedUser?.avatarUrl}
                                 name={displayName}
-                                uid={matchedUser?.uid || uid}
+                                uid={matchedUser?.uid || uidStr}
                                 status={isOnline ? 'online' : 'offline'}
                                 size="xs"
                                 showPresence={true}
@@ -723,7 +723,7 @@ export default function TournamentOverviewPage() {
                               type="button"
                               className="btn btn-ghost btn-xs"
                               style={{ color: 'var(--danger)', padding: '2px 4px', marginLeft: 6 }}
-                              onClick={() => handleRemoveEditor(uid)}
+                              onClick={() => handleRemoveEditor(rawUid)}
                               disabled={updatingEditors}
                               title="Revoke access"
                             >

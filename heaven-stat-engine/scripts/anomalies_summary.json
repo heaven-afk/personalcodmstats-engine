@@ -1,0 +1,108 @@
+{
+  "anomalyTypeCounts": {
+    "PLAYER_TEAM_MISMATCH_IN_MATCHDAY": 6,
+    "MISSING_TEAM_MATCH_RESULTS": 3,
+    "MISSING_KILL_SHARE_DUE_TO_NO_TEAM_DATA": 3
+  },
+  "anomalies": [
+    {
+      "type": "PLAYER_TEAM_MISMATCH_IN_MATCHDAY",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 3,
+      "player": "APOLLO",
+      "recordedTeam": "CIAO GUARDIANS",
+      "lobbyTeam": "KYZON ALLIANCE",
+      "lobby": 2
+    },
+    {
+      "type": "PLAYER_TEAM_MISMATCH_IN_MATCHDAY",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 3,
+      "player": "APOLLO",
+      "recordedTeam": "CIAO GUARDIANS",
+      "lobbyTeam": "KYZON ALLIANCE",
+      "lobby": 1
+    },
+    {
+      "type": "PLAYER_TEAM_MISMATCH_IN_MATCHDAY",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 3,
+      "player": "APOLLO",
+      "recordedTeam": "CIAO GUARDIANS",
+      "lobbyTeam": "KYZON ALLIANCE",
+      "lobby": 3
+    },
+    {
+      "type": "PLAYER_TEAM_MISMATCH_IN_MATCHDAY",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 2,
+      "player": "APOLLO",
+      "recordedTeam": "CIAO GUARDIANS",
+      "lobbyTeam": "KYZON ALLIANCE",
+      "lobby": 3
+    },
+    {
+      "type": "PLAYER_TEAM_MISMATCH_IN_MATCHDAY",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 2,
+      "player": "APOLLO",
+      "recordedTeam": "CIAO GUARDIANS",
+      "lobbyTeam": "KYZON ALLIANCE",
+      "lobby": 1
+    },
+    {
+      "type": "PLAYER_TEAM_MISMATCH_IN_MATCHDAY",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 2,
+      "player": "APOLLO",
+      "recordedTeam": "CIAO GUARDIANS",
+      "lobbyTeam": "KYZON ALLIANCE",
+      "lobby": 2
+    },
+    {
+      "type": "MISSING_TEAM_MATCH_RESULTS",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 6,
+      "team": "CIAO GUARDIANS",
+      "team_id": "xZgUbwrDC2TK3wcpPUY3",
+      "player": "APOLLO"
+    },
+    {
+      "type": "MISSING_KILL_SHARE_DUE_TO_NO_TEAM_DATA",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 6,
+      "player": "APOLLO",
+      "team": "CIAO GUARDIANS"
+    },
+    {
+      "type": "MISSING_TEAM_MATCH_RESULTS",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 6,
+      "team": "CIAO GUARDIANS",
+      "team_id": "xZgUbwrDC2TK3wcpPUY3",
+      "player": "VENOM"
+    },
+    {
+      "type": "MISSING_KILL_SHARE_DUE_TO_NO_TEAM_DATA",
+      "tournament": "FRIENDS OR FOES",
+      "matchday": 6,
+      "player": "VENOM",
+      "team": "CIAO GUARDIANS"
+    },
+    {
+      "type": "MISSING_TEAM_MATCH_RESULTS",
+      "tournament": "ELITE ESPORT",
+      "matchday": 5,
+      "team": "Wicked Esports",
+      "team_id": "siPv7Ygm9BKPZ5jHgV9j",
+      "player": "PAXTON"
+    },
+    {
+      "type": "MISSING_KILL_SHARE_DUE_TO_NO_TEAM_DATA",
+      "tournament": "ELITE ESPORT",
+      "matchday": 5,
+      "player": "PAXTON",
+      "team": "Wicked Esports"
+    }
+  ]
+}
