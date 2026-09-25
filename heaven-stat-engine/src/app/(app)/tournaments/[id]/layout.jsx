@@ -59,19 +59,27 @@ export default function TournamentLayout({ children }) {
     }
   }, [loading, authLoading, tournament, router]);
 
-  if (loading || authLoading) return <LoadingSpinner size="lg" />;
-  if (!tournament) return <LoadingSpinner size="lg" />; // Brief spinner while redirecting
-
-  const editors = Array.isArray(tournament.editorUids) ? tournament.editorUids : [];
+  const editors = useMemo(() => (Array.isArray(tournament?.editorUids) ? tournament.editorUids : []), [tournament?.editorUids]);
   const userEmail = user?.email?.toLowerCase()?.trim();
   const isCreator = Boolean(
-    (tournament.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
+    (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
-  const isAssignedEditor = isUserAssignedEditor(editors, user?.uid, userEmail);
+  const isAssignedEditor = useMemo(() => isUserAssignedEditor(editors, user?.uid, userEmail), [editors, user?.uid, userEmail]);
 
   const canEdit = Boolean(isOwner || isCreator || isAssignedEditor);
   const canManageEditors = Boolean(isOwner || isCreator);
+
+  const contextValue = useMemo(() => ({
+    tournament,
+    setTournament,
+    refresh,
+    canEdit,
+    canManageEditors,
+  }), [tournament, refresh, canEdit, canManageEditors]);
+
+  if (loading || authLoading) return <LoadingSpinner size="lg" />;
+  if (!tournament) return <LoadingSpinner size="lg" />; // Brief spinner while redirecting
 
   const dateRange = formatEventDates(tournament.eventStartDate, tournament.eventEndDate);
 
@@ -113,7 +121,7 @@ export default function TournamentLayout({ children }) {
       <TournamentSubNav tournamentId={id} canEdit={canEdit} />
 
       {/* Pass tournament + refresh + permissions to children via context */}
-      <TournamentContext.Provider value={useMemo(() => ({ tournament, setTournament, refresh, canEdit, canManageEditors }), [tournament, refresh, canEdit, canManageEditors])}>
+      <TournamentContext.Provider value={contextValue}>
         {children}
       </TournamentContext.Provider>
     </div>
