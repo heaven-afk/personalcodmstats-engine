@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useSWR from 'swr';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 const STATUS_OPTIONS = ['all', 'setup', 'active', 'completed', 'archived'];
 
@@ -67,11 +68,14 @@ export default function MyProjectsPage() {
   const userUid = user?.uid;
 
   const isUserProject = (t) => {
+    if (!t) return false;
     if (!userUid && !userEmail) return false;
-    const isCreator = (t.createdBy && t.createdBy === userUid) ||
-      (userEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === userEmail);
-    const editors = t.editorUids || [];
-    const isAssigned = editors.some(e => e === userUid || (userEmail && e.toLowerCase() === userEmail));
+    const isCreator = Boolean(
+      (t.createdBy && t.createdBy === userUid) ||
+      (userEmail && t.creatorEmail && t.creatorEmail.toLowerCase().trim() === userEmail)
+    );
+    const editors = Array.isArray(t.editorUids) ? t.editorUids : [];
+    const isAssigned = isUserAssignedEditor(editors, userUid, userEmail);
     return Boolean(isCreator || isAssigned);
   };
 

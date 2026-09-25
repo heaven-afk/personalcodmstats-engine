@@ -22,6 +22,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
 import { Plus, Trash2, Upload, Users, Shield, Search, Check, FileSpreadsheet, X, ChevronRight, ClipboardPaste, Lock, Globe, User } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 // ─── Sheet Picker Modal ───────────────────────────────────────────────────────
 function SheetPickerModal({ sheets, onSelect, onClose }) {
@@ -370,12 +371,12 @@ export default function RegisterPage() {
   if (loading) return <LoadingSpinner size="lg" text="Loading registrations..." />;
 
   const { user, isOwner, isOperator } = useAuth();
-  const userEmail = user?.email?.toLowerCase();
-  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
-  const isAssigned = (tournament?.editorUids || []).some(
-    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  const userEmail = user?.email?.toLowerCase()?.trim();
+  const isCreator = Boolean(
+    (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
+  const isAssigned = isUserAssignedEditor(tournament?.editorUids, user?.uid, userEmail);
   const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   const hasGroups = groups.length > 0;

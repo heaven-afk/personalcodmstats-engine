@@ -1,6 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 import { getTournaments } from '@/lib/firestore/tournaments';
 import { getPlayers, getTeams } from '@/lib/firestore/registry';
 import { getTeamMatchResults } from '@/lib/firestore/matchData';
@@ -25,6 +26,21 @@ export default function DashboardPage() {
   const [topPlayers, setTopPlayers] = useState([]);
   const [topTeamForms, setTopTeamForms] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const myProjectsCount = useMemo(() => {
+    const uEmail = user?.email?.toLowerCase()?.trim();
+    const uUid = user?.uid;
+    if (!uUid && !uEmail) return 0;
+    return allTournaments.filter(t => {
+      if (!t) return false;
+      const isCreator = Boolean(
+        (t.createdBy && t.createdBy === uUid) ||
+        (uEmail && t.creatorEmail && t.creatorEmail.toLowerCase().trim() === uEmail)
+      );
+      const isAssigned = isUserAssignedEditor(t.editorUids, uUid, uEmail);
+      return isCreator || isAssigned;
+    }).length;
+  }, [allTournaments, user?.email, user?.uid]);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -160,23 +176,9 @@ export default function DashboardPage() {
           <Link href="/projects" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(201, 168, 76, 0.35)' }}>
             <FolderGit2 size={16} className="text-gold" />
             My Projects
-            {allTournaments.filter(t => {
-              const uEmail = user?.email?.toLowerCase();
-              const uUid = user?.uid;
-              if (!uUid && !uEmail) return false;
-              const isCreator = (t.createdBy && t.createdBy === uUid) || (uEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === uEmail);
-              const isAssigned = (t.editorUids || []).some(e => e === uUid || (uEmail && e.toLowerCase() === uEmail));
-              return Boolean(isCreator || isAssigned);
-            }).length > 0 && (
+            {myProjectsCount > 0 && (
               <span style={{ fontSize: '0.72rem', background: 'rgba(201,168,76,0.2)', color: 'var(--gold)', padding: '1px 7px', borderRadius: 10, fontWeight: 700, marginLeft: 2 }}>
-                {allTournaments.filter(t => {
-                  const uEmail = user?.email?.toLowerCase();
-                  const uUid = user?.uid;
-                  if (!uUid && !uEmail) return false;
-                  const isCreator = (t.createdBy && t.createdBy === uUid) || (uEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === uEmail);
-                  const isAssigned = (t.editorUids || []).some(e => e === uUid || (uEmail && e.toLowerCase() === uEmail));
-                  return Boolean(isCreator || isAssigned);
-                }).length}
+                {myProjectsCount}
               </span>
             )}
           </Link>

@@ -10,6 +10,7 @@ import ActiveCollaborators from '@/components/ui/ActiveCollaborators';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 // Context so child pages can read the tournament
 export const TournamentContext = createContext(null);
@@ -61,13 +62,13 @@ export default function TournamentLayout({ children }) {
   if (loading || authLoading) return <LoadingSpinner size="lg" />;
   if (!tournament) return <LoadingSpinner size="lg" />; // Brief spinner while redirecting
 
-  const editors = tournament.editorUids || [];
-  const userEmail = user?.email?.toLowerCase();
-  const isCreator = (tournament.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
-  const isAssignedEditor = editors.some(
-    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  const editors = Array.isArray(tournament.editorUids) ? tournament.editorUids : [];
+  const userEmail = user?.email?.toLowerCase()?.trim();
+  const isCreator = Boolean(
+    (tournament.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
+  const isAssignedEditor = isUserAssignedEditor(editors, user?.uid, userEmail);
 
   const canEdit = Boolean(isOwner || isCreator || isAssignedEditor);
   const canManageEditors = Boolean(isOwner || isCreator);

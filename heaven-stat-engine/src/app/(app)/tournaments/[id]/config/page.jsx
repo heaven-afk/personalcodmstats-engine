@@ -6,6 +6,7 @@ import { updateTournament, deleteTournament, setTournamentRanked, getTournaments
 import { rankEvent } from '@/lib/firestore/rankEvent';
 import { getGroups, updateGroup } from '@/lib/firestore/groups';
 import toast from 'react-hot-toast';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 import Modal from '@/components/ui/Modal';
 import { Plus, Trash2, Check, Zap, ChevronLeft, Medal } from 'lucide-react';
 
@@ -76,12 +77,12 @@ export default function EditTournamentConfigPage() {
   const { tournament, refresh, setTournament } = useTournament();
   const { user, isOwner, isOperator, loading: authLoading } = useAuth();
 
-  const userEmail = user?.email?.toLowerCase();
-  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
-  const isAssigned = (tournament?.editorUids || []).some(
-    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  const userEmail = user?.email?.toLowerCase()?.trim();
+  const isCreator = Boolean(
+    (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
+  const isAssigned = isUserAssignedEditor(tournament?.editorUids, user?.uid, userEmail);
   const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   useEffect(() => {

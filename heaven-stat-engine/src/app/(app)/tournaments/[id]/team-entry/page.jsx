@@ -23,6 +23,7 @@ import { AVAILABLE_MAPS } from '@/lib/constants/maps';
 import { getActiveMapConfig } from '@/lib/utils/mapConfig';
 import { REVIVE_TYPES, getReviveType } from '@/lib/constants/revives';
 import { getActiveReviveConfig, getReviveTypeForMatch } from '@/lib/utils/reviveConfig';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 // Distinct color per lobby slot (cycles if >6 lobbies)
 const LOBBY_COLORS = [
@@ -583,12 +584,12 @@ export default function TeamEntryPage() {
   const [showRef, setShowRef] = useState(false);
   const [saving, setSaving] = useState({});
 
-  const userEmail = user?.email?.toLowerCase();
-  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
-  const isAssigned = (tournament?.editorUids || []).some(
-    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  const userEmail = user?.email?.toLowerCase()?.trim();
+  const isCreator = Boolean(
+    (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
+  const isAssigned = isUserAssignedEditor(tournament?.editorUids, user?.uid, userEmail);
   const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   const [groups, setGroups] = useState([]);

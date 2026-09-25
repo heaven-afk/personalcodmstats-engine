@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useSWR from 'swr';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 const STATUS_OPTIONS = ['all', 'setup', 'active', 'completed', 'archived'];
 
@@ -88,11 +89,14 @@ export default function TournamentsListPage() {
 
   const checkCanEdit = (t) => {
     if (isOwner) return true;
-    const userEmail = user?.email?.toLowerCase();
-    const isCreator = (t.createdBy && t.createdBy === user?.uid) ||
-      (userEmail && t.creatorEmail && t.creatorEmail.toLowerCase() === userEmail);
-    const editors = t.editorUids || [];
-    const isAssigned = editors.some(e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail));
+    if (!t) return false;
+    const userEmail = user?.email?.toLowerCase()?.trim();
+    const isCreator = Boolean(
+      (t.createdBy && t.createdBy === user?.uid) ||
+      (userEmail && t.creatorEmail && t.creatorEmail.toLowerCase().trim() === userEmail)
+    );
+    const editors = Array.isArray(t.editorUids) ? t.editorUids : [];
+    const isAssigned = isUserAssignedEditor(editors, user?.uid, userEmail);
     return Boolean(isCreator || isAssigned);
   };
 

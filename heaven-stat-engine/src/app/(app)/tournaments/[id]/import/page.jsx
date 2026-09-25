@@ -27,18 +27,19 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Papa from 'papaparse';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 export default function ImportHubPage() {
   const { id: tournamentId } = useParams();
   const { tournament, refresh } = useTournament();
   const { user, isOwner, isOperator } = useAuth();
 
-  const userEmail = user?.email?.toLowerCase();
-  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
-  const isAssigned = (tournament?.editorUids || []).some(
-    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  const userEmail = user?.email?.toLowerCase()?.trim();
+  const isCreator = Boolean(
+    (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
+  const isAssigned = isUserAssignedEditor(tournament?.editorUids, user?.uid, userEmail);
   const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   const fileRef = useRef(null);

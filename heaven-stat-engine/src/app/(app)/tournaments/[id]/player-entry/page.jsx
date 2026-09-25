@@ -15,6 +15,7 @@ import { Save, Upload, X, Check, FileSpreadsheet, ClipboardPaste, ChevronRight, 
 import { getAllSheetsAsCSV, readExcelAsGrid, parseCSVToGrid, getSheetNames } from '@/lib/importers/csvParser';
 import { uploadAndParseImage } from '@/lib/importers/ocrClient';
 import { cleanTeamName, stringSimilarity } from '@/lib/utils/similarity';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 // Curated harmonious color shades for team preview sections
 const TEAM_SHADES = [
@@ -847,12 +848,12 @@ export default function PlayerEntryPage() {
   const lobbiesPerDay = activeStructure.lobbiesPerDay || 4;
   const maxLobbies = lobbiesPerDay; // L1, L2, L3...
 
-  const userEmail = user?.email?.toLowerCase();
-  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
-  const isAssigned = (tournament?.editorUids || []).some(
-    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  const userEmail = user?.email?.toLowerCase()?.trim();
+  const isCreator = Boolean(
+    (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
+  const isAssigned = isUserAssignedEditor(tournament?.editorUids, user?.uid, userEmail);
   const canEdit = Boolean(isOwner || isCreator || isAssigned);
 
   // Lock state — persisted per tournament + day in localStorage

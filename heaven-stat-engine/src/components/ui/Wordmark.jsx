@@ -27,6 +27,9 @@ export default function Wordmark({ size = 'md', className = '', showText = true 
           alt="Heaven Stat Engine"
           width={iconDim}
           height={iconDim}
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
       </div>

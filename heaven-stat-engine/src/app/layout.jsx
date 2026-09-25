@@ -33,6 +33,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <head>
+        <link rel="preload" as="image" href="/brand/heaven_stat_engine_icon.png" fetchPriority="high" />
         <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
         <link rel="icon" href="/brand/heaven_stat_engine_app_icon.png?v=3" type="image/png" />
         <link rel="apple-touch-icon" href="/brand/heaven_stat_engine_app_icon.png?v=3" />

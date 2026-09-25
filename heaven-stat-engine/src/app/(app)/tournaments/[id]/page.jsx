@@ -13,6 +13,8 @@ import { auth } from '@/lib/firebase';
 import toast from 'react-hot-toast';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AVAILABLE_MAPS } from '@/lib/constants/maps';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { isUserAssignedEditor } from '@/lib/utils/editorUtils';
 
 const STATUS_FLOW = ['setup', 'active', 'completed', 'archived'];
 
@@ -22,12 +24,12 @@ export default function TournamentOverviewPage() {
   const router = useRouter();
   const [advancing, setAdvancing] = useState(false);
 
-  const userEmail = user?.email?.toLowerCase();
-  const isCreator = (tournament?.createdBy && tournament.createdBy === user?.uid) ||
-    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase() === userEmail);
-  const isAssigned = (tournament?.editorUids || []).some(
-    e => e === user?.uid || (userEmail && e.toLowerCase() === userEmail)
+  const userEmail = user?.email?.toLowerCase()?.trim();
+  const isCreator = Boolean(
+    (tournament?.createdBy && tournament.createdBy === user?.uid) ||
+    (userEmail && tournament?.creatorEmail && tournament.creatorEmail.toLowerCase().trim() === userEmail)
   );
+  const isAssigned = isUserAssignedEditor(tournament?.editorUids, user?.uid, userEmail);
 
   const canEdit = Boolean(isOwner || isCreator || isAssigned);
   const canManageEditors = Boolean(isOwner || isCreator);
@@ -72,9 +74,7 @@ export default function TournamentOverviewPage() {
 
   const checkUserAssigned = useCallback((u) => {
     if (!u) return false;
-    const resolvedUid = u.uid || u.email;
-    const email = u.email?.toLowerCase();
-    return (tournament?.editorUids || []).includes(resolvedUid) || (email && (tournament?.editorUids || []).includes(email));
+    return isUserAssignedEditor(tournament?.editorUids, u.uid, u.email);
   }, [tournament?.editorUids]);
 
   const handleInviteUser = async (targetUser) => {
@@ -83,10 +83,10 @@ export default function TournamentOverviewPage() {
       return;
     }
     const resolvedUid = targetUser.uid || targetUser.email;
-    const resolvedEmail = targetUser.email?.toLowerCase();
+    const resolvedEmail = targetUser.email ? targetUser.email.toLowerCase().trim() : null;
 
-    const currentEditors = tournament.editorUids || [];
-    if (currentEditors.includes(resolvedUid) || (resolvedEmail && currentEditors.includes(resolvedEmail))) {
+    const currentEditors = Array.isArray(tournament?.editorUids) ? tournament.editorUids : [];
+    if (isUserAssignedEditor(currentEditors, resolvedUid, resolvedEmail)) {
       toast.error('This user already has editor access to this tournament');
       return;
     }
@@ -247,8 +247,13 @@ export default function TournamentOverviewPage() {
     loadGroupsList();
   }, [loadGroupsList]);
 
-  const { structure = {}, scoring = {} } = tournament;
-  const currentIdx = STATUS_FLOW.indexOf(tournament.status);
+  if (!tournament) {
+    return <LoadingSpinner size="lg" text="Loading tournament details..." />;
+  }
+
+  const structure = tournament.structure || {};
+  const scoring = tournament.scoring || {};
+  const currentIdx = Math.max(0, STATUS_FLOW.indexOf(tournament.status || 'setup'));
 
   const handleAdvance = async () => {
     if (!canEdit) { toast.error('Edit permission required'); return; }
@@ -407,9 +412,9 @@ export default function TournamentOverviewPage() {
               const aOnline = checkUserOnline(a) ? 1 : 0;
               const bOnline = checkUserOnline(b) ? 1 : 0;
               if (bOnline !== aOnline) return bOnline - aOnline;
-              const nameA = a.username && a.username.trim() ? a.username.trim() : a.email;
-              const nameB = b.username && b.username.trim() ? b.username.trim() : b.email;
-              return nameA.localeCompare(nameB);
+              const nameA = a?.username && a.username.trim() ? a.username.trim() : (a?.email || '');
+              const nameB = b?.username && b.username.trim() ? b.username.trim() : (b?.email || '');
+              return String(nameA).localeCompare(String(nameB));
             });
 
             return (
@@ -668,11 +673,16 @@ export default function TournamentOverviewPage() {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
-                      {tournament.editorUids.map(uid => {
-                        const matchedUser = allowedUsers.find(u => u.uid === uid || u.email?.toLowerCase() === uid.toLowerCase());
+                      {(Array.isArray(tournament.editorUids) ? tournament.editorUids : []).map(rawUid => {
+                        const uidStr = typeof rawUid === 'string' ? rawUid : (rawUid?.uid || rawUid?.email || '');
+                        const uidLower = uidStr.toLowerCase();
+                        const matchedUser = allowedUsers.find(u =>
+                          (u.uid && u.uid === uidStr) ||
+                          (u.email && u.email.toLowerCase() === uidLower)
+                        );
                         const displayName = matchedUser?.username && matchedUser.username.trim()
                           ? matchedUser.username.trim()
-                          : (matchedUser?.email || uid);
+                          : (matchedUser?.email || uidStr || 'Unknown User');
                         const isOnline = matchedUser ? checkUserOnline(matchedUser) : false;
 
                         return (

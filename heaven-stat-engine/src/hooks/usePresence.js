@@ -44,7 +44,7 @@ export function useUserPresence(identifier) {
       });
 
       return () => {
-        off(statusRef);
+        if (typeof unsubscribe === 'function') unsubscribe();
       };
     } else {
       // Lookup by email from all status
@@ -72,7 +72,7 @@ export function useUserPresence(identifier) {
       });
 
       return () => {
-        off(allStatusRef);
+        if (typeof unsubscribe === 'function') unsubscribe();
       };
     }
   }, [identifier]);
@@ -99,7 +99,7 @@ export function useAllPresence() {
     });
 
     return () => {
-      off(allStatusRef);
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
 
@@ -127,7 +127,7 @@ export function useTournamentPresence(tournamentId) {
     });
 
     return () => {
-      off(tourRef);
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, [tournamentId]);
 
